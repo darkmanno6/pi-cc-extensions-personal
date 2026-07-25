@@ -20,6 +20,7 @@
   "files": [
     "extensions",
     "assets/readme",
+    "themes",
     "README.md"
   ],
   "pi": {
@@ -28,6 +29,9 @@
       "./extensions/context.ts",
       "./extensions/session-reference.ts",
       "./extensions/agent-autocomplete.ts"
+    ],
+    "themes": [
+      "./themes/github-dark-default.json"
     ],
     "image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp"
   },

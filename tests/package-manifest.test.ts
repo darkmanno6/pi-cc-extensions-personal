@@ -9,5 +9,6 @@ test("package manifest only lists extension factory entry points", () => {
 		"./extensions/context.ts",
 		"./extensions/session-reference.ts",
 		"./extensions/agent-autocomplete.ts",
+		"./extensions/ask-user-question/index.ts",
 	]);
 });

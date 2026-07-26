@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：集成 Claude Code 风格界面、上下文检查及 Agent 与 Session 引用的 Pi 效率扩展套件">
+  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：集成 Claude Code 风格界面、结构化问卷、上下文检查及 Agent 与 Session 引用的 Pi 效率扩展套件">
 </p>
 
 <p align="center">
@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  面向 Pi 的终端效率扩展套件 · Claude Code 风格界面 · 上下文检查 · Agent 与 Session 引用
+  面向 Pi 的终端效率扩展套件 · Claude Code 风格界面 · 结构化问卷 · 上下文检查 · Agent 与 Session 引用
 </p>
 
 ---
@@ -88,6 +88,21 @@
 
 Compact transcript 行为改编自 [avhagedorn/pi-compact-transcript](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2（MIT，Alan Hagedorn）。
 
+### 结构化问卷
+
+`extensions/ask-user-question/index.ts` 内置 `ask_user_question` 工具，支持：
+
+- 单选、多选、2–4 个选项及最多 4 个问题的标签页问卷
+- `Type something.` 自定义回答、备注和 Markdown 预览
+- RPC / ACP 原生对话框降级；无 UI 时自动移除工具
+- TUI 使用 Pi 原生临时 editor component，不替换 editor factory：兼容默认滚动编辑器，也兼容 `pi-zentui` fixed-editor
+- 响应式高度预算：常规终端为历史 transcript 至少保留 6 行、约 30% 高度；`Ctrl+]` 可折叠为单行并保留答案
+- UI 固定使用英文，不加载国际化套件或语言包
+
+配置文件为 `~/.config/rpiv-ask-user-question/config.json`。可通过 `collapseKey` 修改折叠快捷键，详见 [`extensions/ask-user-question/README.md`](./extensions/ask-user-question/README.md)。
+
+该扩展基于 [`@juicesharp/rpiv-ask-user-question`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question) v2.1.0（MIT）内置，并包含本项目针对默认滚动编辑器、固定编辑器与历史消息视口的兼容优化。
+
 ### 上下文窗口查看
 
 `extensions/context.ts` 注册 `/context`，展示当前上下文窗口的使用分布，并可进一步预览：
@@ -139,6 +154,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 ```text
 /context
 /ccstyle on
+# ask_user_question 会自动作为工具提供给模型
 ```
 
 ## 本地开发
@@ -160,6 +176,8 @@ pi install /absolute/path/to/pi-cc-extensions
 /reload
 ```
 
+`ask-user-question` 的 TUI 模块会被进程缓存；修改该目录或重装依赖后需完整退出并重启 Pi，不能只执行 `/reload`。
+
 ## 兼容性
 
 - Node.js `>=22.19.0`
@@ -171,7 +189,6 @@ pi install /absolute/path/to/pi-cc-extensions
 | 扩展                                     | 作用                                                                          |
 | ------------------------------------------ | ------------------------------------------------------------------------------- |
 | `npm:pi-theme-picker`                    | 通过`/theme` 交互式切换 Pi 主题，支持模糊搜索和实时预览                       |
-| `npm:@juicesharp/rpiv-ask-user-question` | 提供`ask_user_question` 结构化问卷工具，支持单选、多选、预览和备注            |
 | `npm:pi-mcp-adapter`                     | 将 MCP 服务接入 Pi，并通过代理工具按需发现，减少上下文占用                    |
 | `npm:@tintinweb/pi-subagents`            | Claude Code 风格的并行 SubAgent、后台任务、任务编排、工作树隔离和自定义 Agent |
 | `npm:@ayulab/pi-rewind`                  | 基于 checkpoint 的`/rewind` 回退，支持分别恢复代码、对话或两者                |
@@ -181,6 +198,6 @@ pi install /absolute/path/to/pi-cc-extensions
 
 ### 使用注意
 
-- `pi-cc-extensions` 与 `pi-zentui` 都会修改 Pi 的 TUI / renderer。若出现布局或渲染冲突，建议先确定一个作为主要界面扩展，另一个按需停用。
+- 内置问卷采用非 overlay 的临时 editor component，兼容 `pi-zentui` 固定编辑器；常规终端会保留历史消息视口。
 - `pi-mcp-adapter` 默认延迟连接 MCP 服务，有助于节省上下文；包含凭据的 MCP 配置不要提交到仓库。
 - `pi-compact-thinking` 和 `pi-zentui` 都涉及 Pi 内部 UI 行为，升级 Pi 后若出现异常，优先执行 `/reload` 或暂时停用对应扩展。

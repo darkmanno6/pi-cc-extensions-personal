@@ -333,9 +333,14 @@ const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
 const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
+const ZENTUI_WHEEL_ROWS = 3;
+const FIXED_EDITOR_WHEEL_ROWS = 5;
 let toolMouseTui: any = null;
 let toolMouseUi: any = null;
 let toolMouseFixedFeaturesEnabled = false;
+let wheelExtraRowRemainder = 0;
+let lastWheelDirection: "up" | "down" | null = null;
+let collapseCompensationRemainder = 0;
 let toolMouseInputUnsubscribe: (() => void) | null = null;
 let toolMouseInputPatchTui: any = null;
 let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
@@ -556,6 +561,29 @@ function formatShortcut(shortcut: string): string {
 
 function isScrollBottomInput(data: string): boolean {
 	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
+}
+
+function wheelDirection(data: string): "up" | "down" | null {
+	const packets = parseSgrMousePackets(data);
+	for (const packet of packets ?? []) {
+		if (packet.final !== "M") continue;
+		const baseButton = packet.code & ~(4 | 8 | 16 | 32);
+		if (baseButton === 64) return "up";
+		if (baseButton === 65) return "down";
+	}
+	return null;
+}
+
+/** Return how often Zentui's 3-row wheel handler should receive this event. */
+export function fixedEditorWheelDispatchCount(direction: "up" | "down"): number {
+	if (lastWheelDirection !== direction) {
+		lastWheelDirection = direction;
+		wheelExtraRowRemainder = 0;
+	}
+	wheelExtraRowRemainder += FIXED_EDITOR_WHEEL_ROWS - ZENTUI_WHEEL_ROWS;
+	if (wheelExtraRowRemainder < ZENTUI_WHEEL_ROWS) return 1;
+	wheelExtraRowRemainder -= ZENTUI_WHEEL_ROWS;
+	return 2;
 }
 
 function isScrollNavigationInput(data: string): boolean {
@@ -822,14 +850,41 @@ function handleScrollButtonClick(tui: any, packet: SgrMousePacket): boolean {
 	return jumpToBottomWithoutSubmit(tui);
 }
 
+function scheduleCollapseViewportCompensation(
+	tui: any,
+	removedRows: number,
+	packet: SgrMousePacket,
+): void {
+	if (removedRows <= 0 || !useFixedEditorFeatures(tui)) return;
+	const originalHandle = toolMouseInputPatchTui === tui ? toolMouseInputPatchOriginalHandle : null;
+	if (!originalHandle) return;
+
+	process.nextTick(() => {
+		if (toolMouseTui !== tui || toolMouseInputPatchOriginalHandle !== originalHandle) return;
+		const targetRows = removedRows + collapseCompensationRemainder;
+		const dispatches = Math.max(0, Math.round(targetRows / ZENTUI_WHEEL_ROWS));
+		collapseCompensationRemainder = targetRows - dispatches * ZENTUI_WHEEL_ROWS;
+		const wheelDown = `\x1b[<65;${packet.col};${packet.row}M`;
+		for (let index = 0; index < dispatches; index++) {
+			Reflect.apply(originalHandle, tui, [wheelDown]);
+		}
+	});
+}
+
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const hit = findToolAtScreenRow(tui, packet.row);
 	if (!hit) return false;
 
-	const nextExpanded = !Boolean(hit.component.expanded);
-	hit.component.setExpanded(nextExpanded);
+	const wasExpanded = Boolean(hit.component.expanded);
+	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
+	const previousHeight = wasExpanded ? renderComponentTree(hit.component, width).length : 0;
+	hit.component.setExpanded(!wasExpanded);
 	hit.component.invalidate?.();
+	const nextHeight = wasExpanded ? renderComponentTree(hit.component, width).length : 0;
 	tui.requestRender?.();
+	if (wasExpanded) {
+		scheduleCollapseViewportCompensation(tui, previousHeight - nextHeight, packet);
+	}
 	return true;
 }
 
@@ -878,7 +933,13 @@ function patchToolMouseInputCapture(tui: any): void {
 				}
 			}
 		}
-		const result = Reflect.apply(originalHandle, this, args);
+		const direction =
+			typeof data === "string" && useFixedEditorFeatures(this) ? wheelDirection(data) : null;
+		const dispatchCount = direction ? fixedEditorWheelDispatchCount(direction) : 1;
+		let result = Reflect.apply(originalHandle, this, args);
+		for (let index = 1; index < dispatchCount; index++) {
+			result = Reflect.apply(originalHandle, this, args);
+		}
 		if (typeof data === "string") scheduleScrollButtonSync(this, data);
 		return result;
 	};
@@ -971,6 +1032,9 @@ function teardownToolMouseInteraction(): void {
 	toolMouseTui = null;
 	toolMouseUi = null;
 	toolMouseFixedFeaturesEnabled = false;
+	wheelExtraRowRemainder = 0;
+	lastWheelDirection = null;
+	collapseCompensationRemainder = 0;
 }
 
 export function installToolMouseInteraction(
@@ -1044,7 +1108,7 @@ function modeSettingDescription(mode: CompactStyleMode): string {
 
 function fixedEditorSettingDescription(enabled: boolean): string {
 	return enabled
-		? "Enables mouse capture, tool click expansion, fixed viewport mapping, the back-to-bottom button, message count, and Ctrl+End."
+		? "Enables mouse capture, 5-row wheel scrolling, tool click expansion with collapse anchoring, fixed viewport mapping, the back-to-bottom button, message count, and Ctrl+End."
 		: "Uses terminal-native wheel scrolling; disables mouse capture, tool clicks, fixed viewport mapping, button, and message count. Ctrl+End remains enabled.";
 }
 

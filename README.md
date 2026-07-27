@@ -85,7 +85,7 @@
 }
 ```
 
-`mode` 可取 `on`、`off` 或 `compact`。`fixedEditorFeatures` 默认为 `true`，启用 fixed editor 的工具鼠标点击、滚动到底部按钮、消息计数和专用 viewport 映射；设为 `false` 后关闭终端鼠标上报及上述功能，让非 fixed editor 恢复终端原生滚轮滚动（工具仍可通过键盘展开）。`Ctrl+End` 在两种模式下均保留。旧版 `enabled: true/false` 会自动迁移为 `on/off`。排除名单使用精确工具名；手动修改配置后执行 `/reload`。`Agent` 的专用 renderer 始终保留。
+`mode` 可取 `on`、`off` 或 `compact`。`fixedEditorFeatures` 默认为 `true`，启用 fixed editor 的每刻度 5 行滚动、工具鼠标点击、收起位置补偿、滚动到底部按钮、消息计数和专用 viewport 映射；设为 `false` 后关闭终端鼠标上报及上述功能，让非 fixed editor 恢复终端原生滚轮滚动（工具仍可通过键盘展开）。`Ctrl+End` 在两种模式下均保留。旧版 `enabled: true/false` 会自动迁移为 `on/off`。排除名单使用精确工具名；手动修改配置后执行 `/reload`。`Agent` 的专用 renderer 始终保留。
 
 Compact transcript 行为改编自 [avhagedorn/pi-compact-transcript](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2（MIT，Alan Hagedorn）。
 

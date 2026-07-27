@@ -2,8 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import claudeCodeStyleExtension, {
+	fixedEditorWheelDispatchCount,
 	installToolMouseInteraction,
 } from "../extensions/claude-code-style.ts";
+
+test("fixed editor wheel dispatch averages five rows per tick", () => {
+	installToolMouseInteraction({}, false);
+	assert.deepEqual((["up", "up", "up"] as const).map(fixedEditorWheelDispatchCount), [1, 2, 2]);
+	assert.deepEqual(
+		(["down", "down", "down"] as const).map(fixedEditorWheelDispatchCount),
+		[1, 2, 2],
+	);
+});
 
 test("tool click uses fixed-editor visible rows without previousViewportTop", async () => {
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
@@ -171,6 +181,73 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
+});
+
+test("collapsing a fixed-editor tool compensates removed rows", async () => {
+	let wheelDownDispatches = 0;
+	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
+	inputListeners.add((data) => {
+		if (/^\x1b\[<65;/.test(data)) wheelDownDispatches++;
+		return undefined;
+	});
+	const tool = {
+		toolCallId: "tool-expanded",
+		expanded: true,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return this.expanded
+				? ["", "✓ Bash(echo ok)", "  │ one", "  │ two", "  │ three", "  │ four", "  │ five"]
+				: ["", "✓ Bash(echo ok)", "  └ 5 lines (ctrl+o expand / click)"];
+		},
+	};
+	const terminalPrototype = {
+		get rows() {
+			return 30;
+		},
+	};
+	const terminal = Object.assign(Object.create(terminalPrototype), {
+		columns: 80,
+		write() {},
+	});
+	Object.defineProperty(terminal, "rows", { configurable: true, get: () => 25 });
+	const tui = {
+		terminal,
+		children: [tool],
+		previousLines: tool.render(),
+		handleInput(data: string) {
+			for (const listener of inputListeners) {
+				if (listener(data)?.consume) return;
+			}
+		},
+		requestRender() {
+			this.previousLines = tool.render();
+		},
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, factory: any) {
+				if (typeof factory === "function") {
+					factory(tui, { fg: (_color: string, text: string) => text });
+				}
+			},
+			onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
+				inputListeners.add(handler);
+				return () => inputListeners.delete(handler);
+			},
+		},
+	};
+
+	installToolMouseInteraction(ctx, true);
+	tui.handleInput("\x1b[<0;10;2M");
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	assert.equal(tool.expanded, false);
+	assert.equal(wheelDownDispatches, 1);
+	installToolMouseInteraction({}, false);
 });
 
 test("disabled fixed editor features release mouse reporting but retain Ctrl+End", () => {

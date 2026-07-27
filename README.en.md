@@ -1,0 +1,174 @@
+<p align="center">
+  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions: a productivity extension suite for Pi">
+</p>
+
+<p align="center">
+  <a href="https://pi.dev/packages?name=pi-cc-extensions"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
+  <a href="https://www.npmjs.com/package/pi-cc-extensions"><img alt="npm version" src="https://img.shields.io/npm/v/pi-cc-extensions?style=flat-square&color=66E3C4"></a>
+  <a href="#compatibility"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
+  <a href="./extensions"><img alt="TypeScript extensions" src="https://img.shields.io/badge/TypeScript-extensions-3178C6?style=flat-square"></a>
+</p>
+
+<p align="center">
+  Claude Code-style output, structured questionnaires, context inspection, and Agent / Session references.
+</p>
+
+<p align="center">
+  <a href="./README.md">简体中文</a> · <strong>English</strong>
+</p>
+
+---
+
+## Preview
+
+<table>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="./assets/readme/welcome.webp" width="100%" alt="Pi welcome screen">
+      <br>
+      <sub><b>Welcome screen</b><br><code>npm:pi-startup-header</code> with <code>npm:pi-zentui</code></sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./assets/readme/fixed-editor-navigation.webp" width="100%" alt="Tool results, back-to-bottom control, and Ctrl+End in the fixed editor">
+      <br>
+      <sub><b>Fixed-editor workflow</b><br>Tool summaries, expand/collapse, and keyboard navigation</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./assets/readme/session-reference.webp" width="100%" alt="Selecting a previous Session through at-sign completion">
+      <br>
+      <sub><b>Session references</b><br>Find and inject previous context through completion</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="./assets/readme/context-usage.webp" width="100%" alt="Context window usage breakdown">
+      <br>
+      <sub><b>Context usage</b><br>Inspect usage by category</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="./assets/readme/context-preview.webp" width="100%" alt="Previewing injected context">
+      <br>
+      <sub><b>Context preview</b><br>Inspect the content injected into the model</sub>
+    </td>
+  </tr>
+</table>
+
+## Quick start
+
+```bash
+pi install npm:pi-cc-extensions
+```
+
+Run `/reload` after installation, then try:
+
+```text
+/ccstyle       # Configure output and fixed-editor interaction
+/context       # Inspect context usage
+@              # Complete Agents, Sessions, and files
+```
+
+The `ask_user_question` tool is registered automatically.
+
+## Features
+
+
+| Feature                   | Description                                                                                      | Entry point         |
+| --------------------------- | -------------------------------------------------------------------------------------------------- | --------------------- |
+| Claude Code-style output  | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` / `compact` modes        | `/ccstyle`          |
+| Fixed-editor interaction  | Five-row wheel scrolling, tool clicks, collapse anchoring, back-to-bottom control, and`Ctrl+End` | `/ccstyle`          |
+| Structured questionnaires | Single choice, multiple choice, custom answers, Markdown previews, and RPC / ACP fallback        | `ask_user_question` |
+| Context inspection        | Usage breakdown and previews for the system prompt, tools, skills, and messages                  | `/context`          |
+| Session references        | Search and inject effective context from previous Sessions or existing SubAgents                 | `@session:`         |
+| Agent completion          | Complete and delegate custom Agents from`~/.pi/agent/agents/*.md`                                | `@agent-name`       |
+| Theme                     | Includes the GitHub Dark Default theme                                                           | `/theme`            |
+
+### Output modes
+
+
+| Mode      | Behavior                                                              |
+| ----------- | ----------------------------------------------------------------------- |
+| `on`      | Claude Code-style tool output with rich diffs for`edit` and `write`   |
+| `off`     | Native Pi renderers                                                   |
+| `compact` | One-line previews, merged repeated calls, duration, and run summaries |
+
+```text
+/ccstyle on
+/ccstyle off
+/ccstyle compact
+/ccstyle status
+```
+
+Configuration is stored in `~/.pi/agent/claude-code-style.json`:
+
+```json
+{
+  "mode": "on",
+  "excludeRenderers": [],
+  "fixedEditorFeatures": true
+}
+```
+
+- `excludeRenderers` uses exact tool names. `Agent` always keeps its dedicated renderer.
+- `fixedEditorFeatures: true` enables fixed-editor mouse scrolling, clicks, viewport mapping, and the back-to-bottom indicator.
+- Set it to `false` to disable terminal mouse reporting and restore native terminal wheel scrolling. `Ctrl+End` remains available.
+- Run `/reload` after editing the file manually.
+
+### Structured questionnaires
+
+Supports 1–4 questions, 2–4 options per question, single and multiple selection, custom answers, and optional Markdown previews. The TUI preserves transcript space; RPC / ACP environments fall back to native dialogs.
+
+Questionnaire configuration is stored at `~/.config/rpiv-ask-user-question/config.json`. See [`extensions/ask-user-question/README.md`](./extensions/ask-user-question/README.md) for shortcuts and detailed behavior.
+
+### `@` references
+
+- Enter `@session:` to reference a previous Session.
+- Enter `@agent-name` to delegate to a custom Agent.
+- Compatible with `@bacnh85/pi-fff` and `@tintinweb/pi-subagents`.
+- Session context is deduplicated and size-limited before injection.
+
+## Other installation methods
+
+```bash
+# GitHub
+pi install git:github.com/minuque/pi-cc-extensions
+
+# Local repository
+pi install /absolute/path/to/pi-cc-extensions
+```
+
+## Local development
+
+```bash
+npm test
+npm run typecheck
+pi -e .
+```
+
+Run `/reload` after changing extensions. Changes under `extensions/ask-user-question/`, or reinstalling its dependencies, require a full Pi restart.
+
+## Compatibility
+
+- Node.js `>=22.19.0`
+- Loaded through `pi.extensions` and `pi.themes` in the root `package.json`
+- If a Pi, TUI, or `pi-zentui` update causes display issues, try `/reload` first
+
+## Recommended companions
+
+
+| Extension                     | Purpose                                                      |
+| ------------------------------- | -------------------------------------------------------------- |
+| `npm:pi-zentui`               | Fixed editor, status line, and Git status                    |
+| `npm:@tintinweb/pi-subagents` | Parallel SubAgents, background tasks, and worktree isolation |
+| `npm:pi-mcp-adapter`          | On-demand MCP tool discovery with lower context usage        |
+| `npm:pi-theme-picker`         | Theme search and live preview                                |
+| `npm:@ayulab/pi-rewind`       | Checkpoint-based code or conversation rollback               |
+| `npm:pi-compact-thinking`     | Compact rendering for hidden thinking blocks                 |
+| `npm:pi-startup-header`       | Theme-aware startup header                                   |
+
+## Credits
+
+- Compact transcript behavior is based on [`avhagedorn/pi-compact-transcript`](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2 (MIT).
+- Structured questionnaires are based on [`@juicesharp/rpiv-ask-user-question`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question) v2.1.0 (MIT).
+- Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md).

@@ -15,7 +15,10 @@ import type { PreviewPaneProps } from "../view/components/preview/preview-pane.j
 import { PreviewPane } from "../view/components/preview/preview-pane.js";
 import { SubmitPicker } from "../view/components/submit-picker.js";
 import { TabBar } from "../view/components/tab-bar.js";
-import type { WrappingSelectItem, WrappingSelectTheme } from "../view/components/wrapping-select.js";
+import type {
+	WrappingSelectItem,
+	WrappingSelectTheme,
+} from "../view/components/wrapping-select.js";
 import { DialogView } from "../view/dialog-builder.js";
 import { QuestionnairePropsAdapter } from "../view/props-adapter.js";
 import type { StatefulView } from "../view/stateful-view.js";
@@ -158,7 +161,9 @@ class QuestionnaireBuilder {
 			optionListView: optionList,
 			previewBlock,
 		});
-		const multiSelect = question.multiSelect ? new MultiSelectView(this.theme, question) : undefined;
+		const multiSelect = question.multiSelect
+			? new MultiSelectView(this.theme, question)
+			: undefined;
 		const bodyHeights = this.buildBodyHeights(question, preview, multiSelect);
 		return { optionList, preview, multiSelect, bodyHeights };
 	}
@@ -168,7 +173,9 @@ class QuestionnaireBuilder {
 		preview: PreviewPane,
 		multiSelect: MultiSelectView | undefined,
 	): (width: number) => TabBodyHeights {
-		return question.multiSelect ? multiSelectBodyHeights(multiSelect!) : previewBodyHeights(preview);
+		return question.multiSelect
+			? multiSelectBodyHeights(multiSelect!)
+			: previewBodyHeights(preview);
 	}
 
 	/**
@@ -204,7 +211,9 @@ class QuestionnaireBuilder {
 		return { current };
 	}
 
-	private pickInitialActivePreview(tabs: ReadonlyArray<TabComponents>): StatefulView<PreviewPaneProps> {
+	private pickInitialActivePreview(
+		tabs: ReadonlyArray<TabComponents>,
+	): StatefulView<PreviewPaneProps> {
 		const idx = selectActivePreviewPaneIndex(this.initialState.currentTab, this.questions.length);
 		return tabs[idx]?.preview ?? tabs[0]!.preview;
 	}
@@ -238,7 +247,9 @@ class QuestionnaireBuilder {
 	): ReadonlyArray<BoundGlobalBinding> {
 		return [
 			globalBinding({ component: dialog, select: selectDialogProps }),
-			...(submitPicker ? [globalBinding({ component: submitPicker, select: selectSubmitPickerProps })] : []),
+			...(submitPicker
+				? [globalBinding({ component: submitPicker, select: selectSubmitPickerProps })]
+				: []),
 			...(tabBar ? [globalBinding({ component: tabBar, select: selectTabBarProps })] : []),
 		];
 	}

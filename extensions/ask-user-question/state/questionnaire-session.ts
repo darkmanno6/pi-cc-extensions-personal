@@ -91,9 +91,7 @@ export class QuestionnaireSession {
 		const theme = config.theme;
 		// Collapsed render keeps one focused hint row in the temporary editor slot,
 		// so the transcript regains space while Ctrl+] can still expand the questionnaire.
-		const collapsedRender = (_width: number): string[] => [
-			theme.fg("dim", ` ${COLLAPSED_HINT} `),
-		];
+		const collapsedRender = (_width: number): string[] => [theme.fg("dim", ` ${COLLAPSED_HINT} `)];
 
 		this.component = {
 			render: (width) => (this.state.collapsed ? collapsedRender(width) : built.render(width)),
@@ -192,5 +190,4 @@ export class QuestionnaireSession {
 		const arr = this.itemsByTab[this.state.currentTab] ?? [];
 		return this.state.optionIndex < arr.length ? arr[this.state.optionIndex] : undefined;
 	}
-
 }

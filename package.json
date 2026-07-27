@@ -1,63 +1,66 @@
 {
-  "name": "pi-cc-extensions",
-  "version": "0.8.9",
-  "description": "A Pi productivity suite with Claude Code-style UI, structured questionnaires, context inspection, and agent/session references",
-  "type": "module",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "pi-coding-agent",
-    "claude-code",
-    "questionnaire"
-  ],
-  "homepage": "https://github.com/minuque/pi-cc-extensions#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/minuque/pi-cc-extensions.git"
-  },
-  "bugs": {
-    "url": "https://github.com/minuque/pi-cc-extensions/issues"
-  },
-  "files": [
-    "extensions",
-    "assets/readme",
-    "themes",
-    "README.md"
-  ],
-  "pi": {
-    "extensions": [
-      "./extensions/claude-code-style.ts",
-      "./extensions/context.ts",
-      "./extensions/session-reference.ts",
-      "./extensions/agent-autocomplete.ts",
-      "./extensions/ask-user-question/index.ts"
-    ],
-    "themes": [
-      "./themes/github-dark-default.json"
-    ],
-    "image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp"
-  },
-  "scripts": {
-    "test": "node --test tests/**/*.test.ts",
-    "typecheck": "node scripts/typecheck.mjs",
-    "preversion": "npm run typecheck && npm test",
-    "release": "npm version patch && npm publish",
-    "release:minor": "npm version minor && npm publish",
-    "release:major": "npm version major && npm publish"
-  },
-  "dependencies": {
-    "@juicesharp/rpiv-config": "^2.1.0",
-    "typebox": "^1.1.24"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
-  },
-  "engines": {
-    "node": ">=22.19.0"
-  },
-  "devDependencies": {
-    "@types/node": "^26.1.1"
-  }
+	"name": "pi-cc-extensions",
+	"version": "0.8.9",
+	"description": "A Pi productivity suite with Claude Code-style UI, structured questionnaires, context inspection, and agent/session references",
+	"type": "module",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"pi-coding-agent",
+		"claude-code",
+		"questionnaire"
+	],
+	"homepage": "https://github.com/minuque/pi-cc-extensions#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/minuque/pi-cc-extensions.git"
+	},
+	"bugs": {
+		"url": "https://github.com/minuque/pi-cc-extensions/issues"
+	},
+	"files": [
+		"extensions",
+		"assets/readme",
+		"themes",
+		"README.md"
+	],
+	"pi": {
+		"extensions": [
+			"./extensions/claude-code-style.ts",
+			"./extensions/context.ts",
+			"./extensions/session-reference.ts",
+			"./extensions/agent-autocomplete.ts",
+			"./extensions/ask-user-question/index.ts"
+		],
+		"themes": [
+			"./themes/github-dark-default.json"
+		],
+		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp"
+	},
+	"scripts": {
+		"test": "node --test tests/**/*.test.ts",
+		"typecheck": "node scripts/typecheck.mjs",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"preversion": "npm run format:check && npm run typecheck && npm test",
+		"release": "npm version patch && npm publish",
+		"release:minor": "npm version minor && npm publish",
+		"release:major": "npm version major && npm publish"
+	},
+	"dependencies": {
+		"@juicesharp/rpiv-config": "^2.1.0",
+		"typebox": "^1.1.24"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*",
+		"@earendil-works/pi-tui": "*"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.5",
+		"@types/node": "^26.1.1"
+	}
 }

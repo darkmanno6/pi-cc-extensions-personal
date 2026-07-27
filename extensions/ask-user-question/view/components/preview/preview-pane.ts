@@ -168,7 +168,11 @@ export class PreviewPane implements StatefulView<PreviewPaneProps>, Component {
 		const adaptiveLeft = this.getAdaptiveLeft(width);
 		const { optionsWidth, previewWidth } = bodyWidths(width, mode, adaptiveLeft);
 		const optionsHeight = this.optionListView.render(optionsWidth).length;
-		const previewBlockHeight = this.previewBlock.blockHeight(previewWidth, this.props.selectedIndex, mode);
+		const previewBlockHeight = this.previewBlock.blockHeight(
+			previewWidth,
+			this.props.selectedIndex,
+			mode,
+		);
 		if (mode === "side-by-side") return Math.max(optionsHeight, previewBlockHeight);
 		return optionsHeight + STACKED_GAP_ROWS + previewBlockHeight;
 	}

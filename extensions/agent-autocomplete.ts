@@ -87,20 +87,15 @@ export function createAgentAutocompleteProvider(
 
 			const [baseSuggestions, matches] = await Promise.all([
 				current.getSuggestions(lines, cursorLine, cursorCol, options),
-				Promise.resolve(query.trim()
-					? fuzzyFilter(agents, query, (a) => a.name)
-					: agents),
+				Promise.resolve(query.trim() ? fuzzyFilter(agents, query, (a) => a.name) : agents),
 			]);
 			if (options.signal.aborted) return null;
 
-			const agentItems: AutocompleteItem[] = matches
-				.slice(0, MAX_SUGGESTIONS)
-				.map((agent) => ({
-					value: `@${agent.name}`,
-					label: `[SubAgent] ${agent.displayName}`,
-					description: agent.description
-						+ (agent.model ? ` · ${agent.model}` : ""),
-				}));
+			const agentItems: AutocompleteItem[] = matches.slice(0, MAX_SUGGESTIONS).map((agent) => ({
+				value: `@${agent.name}`,
+				label: `[SubAgent] ${agent.displayName}`,
+				description: agent.description + (agent.model ? ` · ${agent.model}` : ""),
+			}));
 			const hasCompatibleBaseSuggestions = baseSuggestions?.prefix === `@${query}`;
 			const agentValues = new Set(agents.map((agent) => `@${agent.name}`));
 			const baseItems = hasCompatibleBaseSuggestions
@@ -191,11 +186,11 @@ export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 
 		return {
 			systemPrompt:
-				event.systemPrompt
-				+ `\n\nThe user's prompt references these subagent types: ${agentList}. `
-				+ `You MUST use the Agent tool for EACH mentioned subagent to delegate the relevant parts of the request. `
-				+ `Handle different subagents separately — do NOT merge their tasks into a single Agent call. `
-				+ `For example, if the user mentions @coder and @explore, make two separate Agent tool calls, one with subagent_type="coder" and another with subagent_type="explore".`,
+				event.systemPrompt +
+				`\n\nThe user's prompt references these subagent types: ${agentList}. ` +
+				`You MUST use the Agent tool for EACH mentioned subagent to delegate the relevant parts of the request. ` +
+				`Handle different subagents separately — do NOT merge their tasks into a single Agent call. ` +
+				`For example, if the user mentions @coder and @explore, make two separate Agent tool calls, one with subagent_type="coder" and another with subagent_type="explore".`,
 		};
 	});
 }

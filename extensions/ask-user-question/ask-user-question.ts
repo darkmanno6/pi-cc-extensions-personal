@@ -65,7 +65,11 @@ type SessionModule = typeof import("./state/questionnaire-session.js");
 
 type SessionLoad =
 	| { ok: true; module: SessionModule }
-	| { ok: false; error: Extract<QuestionnaireError, "session_load_failed" | "stale_module_cache">; message: string };
+	| {
+			ok: false;
+			error: Extract<QuestionnaireError, "session_load_failed" | "stale_module_cache">;
+			message: string;
+	  };
 
 /**
  * Lazy-load the ~560ms QuestionnaireSession view/TUI render graph, guarding
@@ -84,7 +88,11 @@ export async function loadQuestionnaireSession(): Promise<SessionLoad> {
 		mod = await import("./state/questionnaire-session.js");
 	} catch (e) {
 		const cause = e instanceof Error ? e.message : String(e);
-		return { ok: false, error: "session_load_failed", message: `${ERROR_SESSION_LOAD_FAILED} (cause: ${cause})` };
+		return {
+			ok: false,
+			error: "session_load_failed",
+			message: `${ERROR_SESSION_LOAD_FAILED} (cause: ${cause})`,
+		};
 	}
 	if (typeof mod.QuestionnaireSession !== "function") {
 		const keys = JSON.stringify(Object.keys(mod));
@@ -147,7 +155,8 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const typed = params as unknown as QuestionParams;
-			if (!ctx.hasUI) return buildToolResult(ERROR_NO_UI, { answers: [], cancelled: true, error: "no_ui" });
+			if (!ctx.hasUI)
+				return buildToolResult(ERROR_NO_UI, { answers: [], cancelled: true, error: "no_ui" });
 
 			const validation = validateQuestionnaire(typed);
 			if (validation.ok === false) {
@@ -176,13 +185,19 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 				}
 			}
 
-			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) => buildItemsForQuestion(q));
+			const itemsByTab: WrappingSelectItem[][] = typed.questions.map((q) =>
+				buildItemsForQuestion(q),
+			);
 
 			// Lazy — QuestionnaireSession pulls the ~560ms view/TUI render graph;
 			// load it only when the tool runs, not at extension registration.
 			const sessionLoad = await loadQuestionnaireSession();
 			if (sessionLoad.ok === false) {
-				return buildToolResult(sessionLoad.message, { answers: [], cancelled: true, error: sessionLoad.error });
+				return buildToolResult(sessionLoad.message, {
+					answers: [],
+					cancelled: true,
+					error: sessionLoad.error,
+				});
 			}
 			const { QuestionnaireSession } = sessionLoad.module;
 			// Resolve the collapse/expand key spec from config. Default is `ctrl+]`; users
@@ -219,7 +234,11 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 					if (hasDialogUI(ctx.ui)) {
 						return buildQuestionnaireResponse(await runRpcQuestionnaire(ctx.ui, typed), typed);
 					}
-					return buildToolResult(ERROR_NO_CUSTOM_UI, { answers: [], cancelled: true, error: "no_custom_ui" });
+					return buildToolResult(ERROR_NO_CUSTOM_UI, {
+						answers: [],
+						cancelled: true,
+						error: "no_custom_ui",
+					});
 				}
 
 				return buildQuestionnaireResponse(result, typed);
@@ -237,7 +256,10 @@ Preview content is rendered as markdown in a monospace box. Multi-line text with
 	// re-imports and surfaces it through loadQuestionnaireSession's structured
 	// envelope. unref keeps the timer from holding a non-TUI embedder's process
 	// open.
-	const timer = setTimeout(() => void loadQuestionnaireSession().catch(() => undefined), PREWARM_DELAY_MS);
+	const timer = setTimeout(
+		() => void loadQuestionnaireSession().catch(() => undefined),
+		PREWARM_DELAY_MS,
+	);
 	timer.unref?.();
 }
 

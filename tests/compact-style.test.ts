@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AssistantMessageComponent, ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	ToolExecutionComponent,
+	initTheme,
+} from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
 	installCompactStyle,
@@ -12,7 +16,10 @@ import {
 	summaryLine,
 	type CompactStyleMode,
 } from "../extensions/compact-style.ts";
-import claudeCodeStyleExtension, { normalizeConfig, renderCollapsedToolResult } from "../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension, {
+	normalizeConfig,
+	renderCollapsedToolResult,
+} from "../extensions/claude-code-style.ts";
 
 initTheme("dark");
 
@@ -52,15 +59,21 @@ function textResult(text: string, isError = false) {
 }
 
 test("normalizeConfig migrates enabled configs and accepts all three modes", () => {
-	assert.deepEqual(normalizeConfig({ enabled: false, excludeRenderers: ["edit", "edit", "", 42] }), {
-		mode: "off",
-		excludeRenderers: ["edit"],
-	});
+	assert.deepEqual(
+		normalizeConfig({ enabled: false, excludeRenderers: ["edit", "edit", "", 42] }),
+		{
+			mode: "off",
+			excludeRenderers: ["edit"],
+		},
+	);
 	assert.deepEqual(normalizeConfig({ enabled: true }), { mode: "on", excludeRenderers: [] });
-	assert.deepEqual(normalizeConfig({ mode: "compact", enabled: false, excludeRenderers: ["Agent", "Agent"] }), {
-		mode: "compact",
-		excludeRenderers: ["Agent"],
-	});
+	assert.deepEqual(
+		normalizeConfig({ mode: "compact", enabled: false, excludeRenderers: ["Agent", "Agent"] }),
+		{
+			mode: "compact",
+			excludeRenderers: ["Agent"],
+		},
+	);
 	assert.deepEqual(normalizeConfig({ mode: "off" }), { mode: "off", excludeRenderers: [] });
 	assert.deepEqual(normalizeConfig({ mode: "unknown" }), { mode: "on", excludeRenderers: [] });
 });
@@ -80,14 +93,25 @@ test("compact duration, previews, and summaries stay concise", () => {
 	assert.equal(formatDuration(1000), "1s");
 	assert.equal(formatDuration(61_000), "1m1s");
 	assert.equal(previewFor("bash", { command: "printf hello" }), "$ printf hello");
-	assert.equal(previewFor("read", { path: "/tmp/a.ts", offset: 4, limit: 2 }), "read /tmp/a.ts:4-5");
-	assert.equal(previewFor("write", { path: "/tmp/a.ts", content: "one\ntwo" }), "write /tmp/a.ts (2 lines)");
-	assert.equal(summaryLine({ reads: 1, edits: 2, commands: 1, failed: 1, durationMs: 61_000 }),
-		"Read 1 file, edited 2 files, ran 1 command, 1 failed · 1m1s");
+	assert.equal(
+		previewFor("read", { path: "/tmp/a.ts", offset: 4, limit: 2 }),
+		"read /tmp/a.ts:4-5",
+	);
+	assert.equal(
+		previewFor("write", { path: "/tmp/a.ts", content: "one\ntwo" }),
+		"write /tmp/a.ts (2 lines)",
+	);
+	assert.equal(
+		summaryLine({ reads: 1, edits: 2, commands: 1, failed: 1, durationMs: 61_000 }),
+		"Read 1 file, edited 2 files, ran 1 command, 1 failed · 1m1s",
+	);
 });
 
 test("compact previews strip terminal controls without changing line counts", () => {
-	assert.equal(previewFor("bash", { command: "before\x1b]0;spoofed title\x07after" }), "$ beforeafter");
+	assert.equal(
+		previewFor("bash", { command: "before\x1b]0;spoofed title\x07after" }),
+		"$ beforeafter",
+	);
 	assert.equal(previewFor("read", { path: "/tmp/\x1b[31mred\x1b[0m.ts" }), "read /tmp/red.ts");
 	assert.equal(resultPreview(textResult("before\x1b]0;spoofed title\x07after")), "beforeafter");
 	assert.equal(resultPreview(textResult("\x1b[31mred\x1b[0m")), "red");
@@ -126,15 +150,32 @@ test("summary renderer is a dynamic component and refresh requests a repaint", (
 		},
 	};
 	const component = summaryRenderer({ data: { reads: 2, durationMs: 1000 } }, {}, styledTheme);
-	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["│ <italic>Read 2 files · 1s</italic>"]);
+	assert.deepEqual(
+		component.render(80).map((line: string) => line.trimEnd()),
+		["│ <italic>Read 2 files · 1s</italic>"],
+	);
 	mode = "off";
 	assert.deepEqual(component.render(80), [], "the same mounted component hides immediately");
 	mode = "on";
-	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["│ <italic>Read 2 files · 1s</italic>"]);
+	assert.deepEqual(
+		component.render(80).map((line: string) => line.trimEnd()),
+		["│ <italic>Read 2 files · 1s</italic>"],
+	);
 	mode = "compact";
-	assert.deepEqual(component.render(80).map((line: string) => line.trimEnd()), ["│ <italic>Read 2 files · 1s</italic>"]);
+	assert.deepEqual(
+		component.render(80).map((line: string) => line.trimEnd()),
+		["│ <italic>Read 2 files · 1s</italic>"],
+	);
 
-	new ToolExecutionComponent("read", "refresh-test", { path: "a.ts" }, {}, undefined, ui, process.cwd());
+	new ToolExecutionComponent(
+		"read",
+		"refresh-test",
+		{ path: "a.ts" },
+		{},
+		undefined,
+		ui,
+		process.cwd(),
+	);
 	hooks.refresh();
 	assert.ok(renderRequests.includes(true), "refresh asks the TUI to render immediately");
 	hooks.onSessionShutdown({}, createContext(ui));
@@ -186,15 +227,27 @@ test("reload and resume keep transcript components rebuilt before session_start"
 		assert.doesNotMatch(rendered(rebuiltTool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 
 		hooks.onSessionStart({ reason }, createContext(ui));
-		assert.doesNotMatch(rendered(rebuiltAssistant), /Thinking/, `${reason} retains the rebuilt assistant row`);
+		assert.doesNotMatch(
+			rendered(rebuiltAssistant),
+			/Thinking/,
+			`${reason} retains the rebuilt assistant row`,
+		);
 		assert.match(rendered(rebuiltTool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/, `${reason} retains the rebuilt tool row`);
 		assert.ok(renderRequests.includes(true), `${reason} retains the rebuilt row's TUI`);
 		assert.equal(staleInvalidations, 0, `${reason} discarded old-session registries at shutdown`);
 
 		mode = "off";
 		hooks.refresh();
-		assert.match(rendered(rebuiltAssistant), /Thinking/, `${reason} can restore the rebuilt assistant row`);
-		assert.doesNotMatch(rendered(rebuiltTool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/, `${reason} can restore the rebuilt tool row`);
+		assert.match(
+			rendered(rebuiltAssistant),
+			/Thinking/,
+			`${reason} can restore the rebuilt assistant row`,
+		);
+		assert.doesNotMatch(
+			rendered(rebuiltTool),
+			/[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+			`${reason} can restore the rebuilt tool row`,
+		);
 		hooks.onSessionShutdown({ reason: "quit" }, createContext(ui));
 	}
 });
@@ -215,7 +268,15 @@ test("shutdown restores compact rows and prototype methods owned by this install
 		getExcludeRenderers: () => [],
 	});
 	hooks.onSessionStart({}, createContext(ui));
-	const tool = new ToolExecutionComponent("unload-tool", "unload-id", {}, {}, undefined, ui as any, process.cwd()) as any;
+	const tool = new ToolExecutionComponent(
+		"unload-tool",
+		"unload-id",
+		{},
+		{},
+		undefined,
+		ui as any,
+		process.cwd(),
+	) as any;
 	const assistant = new AssistantMessageComponent(
 		assistantMessage([{ type: "thinking", thinking: "restore me" }]),
 		true,
@@ -228,7 +289,9 @@ test("shutdown restores compact rows and prototype methods owned by this install
 	assert.equal(toolPrototype.render, originalRender);
 	assert.equal(assistantPrototype.updateContent, originalUpdateContent);
 	assert.deepEqual(
-		[tool.contentText, tool.contentBox, tool.selfRenderContainer].filter((child) => tool.children.includes(child)),
+		[tool.contentText, tool.contentBox, tool.selfRenderContainer].filter((child) =>
+			tool.children.includes(child),
+		),
 		[tool.contentText],
 	);
 	assert.doesNotMatch(rendered(tool), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
@@ -246,23 +309,38 @@ test("failed compact installation restores patches and severs host callbacks", (
 	const originalRender = toolPrototype.render;
 	const originalUpdateContent = assistantPrototype.updateContent;
 	let modeCalls = 0;
-	assert.throws(() => installCompactStyle({
-		registerEntryRenderer() {
-			throw new Error("renderer registration failed");
-		},
-	} as any, {
-		getMode: () => {
-			modeCalls++;
-			return "compact";
-		},
-		getExcludeRenderers: () => [],
-	}), /renderer registration failed/);
+	assert.throws(
+		() =>
+			installCompactStyle(
+				{
+					registerEntryRenderer() {
+						throw new Error("renderer registration failed");
+					},
+				} as any,
+				{
+					getMode: () => {
+						modeCalls++;
+						return "compact";
+					},
+					getExcludeRenderers: () => [],
+				},
+			),
+		/renderer registration failed/,
+	);
 	assert.equal(toolPrototype.updateDisplay, originalUpdateDisplay);
 	assert.equal(toolPrototype.render, originalRender);
 	assert.equal(assistantPrototype.updateContent, originalUpdateContent);
 	modeCalls = 0;
 	const ui = createUi();
-	new ToolExecutionComponent("failed-install", "failed-install-id", {}, {}, undefined, ui as any, process.cwd());
+	new ToolExecutionComponent(
+		"failed-install",
+		"failed-install-id",
+		{},
+		{},
+		undefined,
+		ui as any,
+		process.cwd(),
+	);
 	assert.equal(modeCalls, 0);
 });
 
@@ -302,27 +380,62 @@ test("compact prototype replacement chains external wrappers", () => {
 		getExcludeRenderers: () => [],
 	});
 	const secondOwnedUpdateDisplay = toolPrototype.updateDisplay;
-	assert.notEqual(secondOwnedUpdateDisplay, externalUpdateDisplay, "replacement installs a fresh owner");
+	assert.notEqual(
+		secondOwnedUpdateDisplay,
+		externalUpdateDisplay,
+		"replacement installs a fresh owner",
+	);
 	firstModeCalls = 0;
 	const ui = createUi();
 	secondHooks.onSessionStart({ reason: "reload" }, createContext(ui));
-	new ToolExecutionComponent("replacement-tool", "replacement", {}, {}, undefined, ui as any, process.cwd());
+	new ToolExecutionComponent(
+		"replacement-tool",
+		"replacement",
+		{},
+		{},
+		undefined,
+		ui as any,
+		process.cwd(),
+	);
 	new AssistantMessageComponent(assistantMessage([{ type: "text", text: "replacement" }]), true);
 	assert.ok(externalToolCalls > 0, "the replacement chains the current external tool wrapper");
-	assert.ok(externalAssistantCalls > 0, "the replacement chains the current external assistant wrapper");
+	assert.ok(
+		externalAssistantCalls > 0,
+		"the replacement chains the current external assistant wrapper",
+	);
 	assert.equal(firstModeCalls, 0, "the replaced wrapper no longer calls its old host");
 
 	firstHooks.onSessionShutdown({ reason: "late" }, createContext(ui));
-	assert.equal(toolPrototype.updateDisplay, secondOwnedUpdateDisplay, "a stale owner cannot tear down its replacement");
+	assert.equal(
+		toolPrototype.updateDisplay,
+		secondOwnedUpdateDisplay,
+		"a stale owner cannot tear down its replacement",
+	);
 	secondHooks.onSessionShutdown({ reason: "quit" }, createContext(ui));
-	assert.equal(toolPrototype.updateDisplay, externalUpdateDisplay, "shutdown does not overwrite a later tool wrapper");
-	assert.equal(assistantPrototype.updateContent, externalUpdateContent, "shutdown does not overwrite a later assistant wrapper");
+	assert.equal(
+		toolPrototype.updateDisplay,
+		externalUpdateDisplay,
+		"shutdown does not overwrite a later tool wrapper",
+	);
+	assert.equal(
+		assistantPrototype.updateContent,
+		externalUpdateContent,
+		"shutdown does not overwrite a later assistant wrapper",
+	);
 	assert.equal(toolPrototype.render, originalRender, "methods still owned by compact are restored");
 
 	firstModeCalls = 0;
 	firstMode = "compact";
 	secondMode = "compact";
-	new ToolExecutionComponent("unloaded-tool", "unloaded", {}, {}, undefined, ui as any, process.cwd());
+	new ToolExecutionComponent(
+		"unloaded-tool",
+		"unloaded",
+		{},
+		{},
+		undefined,
+		ui as any,
+		process.cwd(),
+	);
 	assert.equal(firstModeCalls, 0, "an unloaded wrapper remains an inert pass-through");
 
 	// The external wrappers belong to this test, so remove them explicitly.
@@ -353,7 +466,18 @@ test("compact reclaims assistant rendering after a later thinking extension patc
 	prototype.updateContent = laterRenderer;
 	try {
 		hooks.onSessionStart({}, ctx);
-		assert.equal(prototype.updateContent, ccstyleUpdateContent, "ccstyle reclaims the outer renderer");
+		assert.equal(
+			prototype.updateContent,
+			ccstyleUpdateContent,
+			"ccstyle reclaims the outer renderer",
+		);
+		prototype.updateContent = laterRenderer;
+		hooks.onSessionCompact({}, ctx);
+		assert.equal(
+			prototype.updateContent,
+			ccstyleUpdateContent,
+			"compaction reclaims the outer renderer",
+		);
 		const component = new AssistantMessageComponent(
 			assistantMessage([{ type: "thinking", thinking: "hidden" }]),
 			true,
@@ -388,11 +512,18 @@ test("compact restores contentText for tools without definitions", () => {
 
 	mode = "off";
 	hooks.refresh();
-	const mountedShells = [component.contentText, component.contentBox, component.selfRenderContainer]
-		.filter((child) => component.children.includes(child));
+	const mountedShells = [
+		component.contentText,
+		component.contentBox,
+		component.selfRenderContainer,
+	].filter((child) => component.children.includes(child));
 	assert.deepEqual(mountedShells, [component.contentText]);
 	assert.doesNotMatch(rendered(component), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
-	assert.equal(rendered(component).match(/undefined-definition/g)?.length, 1, "no stale self-rendered duplicate row remains");
+	assert.equal(
+		rendered(component).match(/undefined-definition/g)?.length,
+		1,
+		"no stale self-rendered duplicate row remains",
+	);
 	hooks.onSessionShutdown({}, createContext(ui));
 });
 
@@ -420,7 +551,11 @@ test("Agent and excluded tools retain their dedicated renderers and declared she
 		process.cwd(),
 	) as any;
 	agent.updateResult(textResult("ignored"));
-	assert.equal(agent.children.includes(agent.contentBox), true, "Agent's explicit default shell is respected");
+	assert.equal(
+		agent.children.includes(agent.contentBox),
+		true,
+		"Agent's explicit default shell is respected",
+	);
 	assert.equal(agent.children.includes(agent.selfRenderContainer), false);
 	assert.match(rendered(agent), /agent call/);
 	assert.match(rendered(agent), /agent result/);
@@ -436,7 +571,11 @@ test("Agent and excluded tools retain their dedicated renderers and declared she
 		process.cwd(),
 	) as any;
 	excluded.updateResult(textResult("ignored"));
-	assert.equal(excluded.children.includes(excluded.selfRenderContainer), true, "excluded tool's self shell is respected");
+	assert.equal(
+		excluded.children.includes(excluded.selfRenderContainer),
+		true,
+		"excluded tool's self shell is respected",
+	);
 	assert.match(rendered(excluded), /special call/);
 	assert.match(rendered(excluded), /special result/);
 	assert.doesNotMatch(rendered(excluded), /[✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
@@ -451,11 +590,22 @@ test("compact tool rows align with and separate a thinking ticker", () => {
 		getExcludeRenderers: () => [],
 	});
 	hooks.onSessionStart({}, ctx);
-	const tool = new ToolExecutionComponent("read", "thinking-tool", { path: "a.ts" }, {}, undefined, ui as any, process.cwd());
-	hooks.onMessageUpdate({
-		assistantMessageEvent: { type: "thinking_delta" },
-		message: assistantMessage([{ type: "thinking", thinking: "Inspect the implementation" }]),
-	}, ctx);
+	const tool = new ToolExecutionComponent(
+		"read",
+		"thinking-tool",
+		{ path: "a.ts" },
+		{},
+		undefined,
+		ui as any,
+		process.cwd(),
+	);
+	hooks.onMessageUpdate(
+		{
+			assistantMessageEvent: { type: "thinking_delta" },
+			message: assistantMessage([{ type: "thinking", thinking: "Inspect the implementation" }]),
+		},
+		ctx,
+	);
 	assert.deepEqual(
 		tool.render(120).map((line: string) => line.trimEnd()),
 		["", " ✓ read a.ts {running}", " ↳ Inspect the implementation"],
@@ -473,15 +623,29 @@ test("compact assistant rendering hides thinking regardless of Pi setting and pr
 	hooks.onSessionStart({}, createContext(ui));
 	const cases = [
 		{
-			message: assistantMessage([{ type: "thinking", thinking: "hidden" }], "error", "network failed"),
+			message: assistantMessage(
+				[{ type: "thinking", thinking: "hidden" }],
+				"error",
+				"network failed",
+			),
 			text: /Error: network failed/,
 		},
 		{
-			message: assistantMessage([{ type: "thinking", thinking: "hidden" }, { type: "text", text: "partial answer" }], "length"),
+			message: assistantMessage(
+				[
+					{ type: "thinking", thinking: "hidden" },
+					{ type: "text", text: "partial answer" },
+				],
+				"length",
+			),
 			text: /maximum output token limit/,
 		},
 		{
-			message: assistantMessage([{ type: "text", text: "partial answer" }], "error", "provider failed"),
+			message: assistantMessage(
+				[{ type: "text", text: "partial answer" }],
+				"error",
+				"provider failed",
+			),
 			text: /Error: provider failed/,
 		},
 		{
@@ -506,7 +670,11 @@ test("compact assistant rendering hides thinking regardless of Pi setting and pr
 	assert.doesNotMatch(rendered(nativeThinkingEnabled), /must stay hidden|Thinking|Thought for/);
 	mode = "on";
 	nativeThinkingEnabled.updateContent(nativeThinkingEnabled.lastMessage);
-	assert.match(rendered(nativeThinkingEnabled), /must stay hidden|Thinking/, "switching modes restores Pi's setting");
+	assert.match(
+		rendered(nativeThinkingEnabled),
+		/must stay hidden|Thinking/,
+		"switching modes restores Pi's setting",
+	);
 	hooks.onSessionShutdown({}, createContext(ui));
 });
 
@@ -536,7 +704,11 @@ test("reload and resume hydration split failed tools from same-name bursts", () 
 			};
 
 			const first = rebuild(`${reason}-success-1`, `${reason}-first.ts`, textResult("ok"));
-			const failed = rebuild(`${reason}-failure`, `${reason}-failed.ts`, textResult("permission denied", true));
+			const failed = rebuild(
+				`${reason}-failure`,
+				`${reason}-failed.ts`,
+				textResult("permission denied", true),
+			);
 			assert.match(rendered(first), new RegExp(`read ${reason}-first\\.ts`));
 			assert.match(rendered(failed), new RegExp(`read ${reason}-failed\\.ts`));
 
@@ -573,20 +745,35 @@ test("bursts merge, failures regain an independent row, and agent_end persists a
 	hooks.onAgentStart({}, ctx);
 	const components = ["a.ts", "b.ts", "c.ts"].map((path, index) => {
 		const id = `read-${index + 1}`;
-		const component = new ToolExecutionComponent("read", id, { path }, {}, undefined, ui as any, process.cwd());
+		const component = new ToolExecutionComponent(
+			"read",
+			id,
+			{ path },
+			{},
+			undefined,
+			ui as any,
+			process.cwd(),
+		);
 		hooks.onToolExecutionStart({ toolCallId: id, toolName: "read", args: { path } }, ctx);
 		return component;
 	});
 	assert.deepEqual(components[0]!.render(120), []);
 	assert.deepEqual(components[1]!.render(120), []);
 	assert.match(rendered(components[2]), /3× read c\.ts/);
-	assert.match(rendered(components[2]), /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/, "running tools use Claude's braille loader");
+	assert.match(
+		rendered(components[2]),
+		/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/,
+		"running tools use Claude's braille loader",
+	);
 
-	hooks.onToolExecutionEnd({
-		toolCallId: "read-2",
-		result: textResult("permission denied", true),
-		isError: true,
-	}, ctx);
+	hooks.onToolExecutionEnd(
+		{
+			toolCallId: "read-2",
+			result: textResult("permission denied", true),
+			isError: true,
+		},
+		ctx,
+	);
 	assert.match(rendered(components[1]), /read b\.ts/);
 	assert.doesNotMatch(rendered(components[1]), /3×/, "the failed tool is rendered as its own row");
 
@@ -613,14 +800,17 @@ test("on mode persists recap entries while off mode does not", () => {
 		const entries: Array<{ type: string; data: any }> = [];
 		const ui = createUi();
 		const ctx = createContext(ui);
-		const hooks = installCompactStyle({
-			appendEntry(type: string, data: any) {
-				entries.push({ type, data });
+		const hooks = installCompactStyle(
+			{
+				appendEntry(type: string, data: any) {
+					entries.push({ type, data });
+				},
+			} as any,
+			{
+				getMode: () => mode,
+				getExcludeRenderers: () => [],
 			},
-		} as any, {
-			getMode: () => mode,
-			getExcludeRenderers: () => [],
-		});
+		);
 		hooks.onSessionStart({}, ctx);
 		hooks.onAgentStart({}, ctx);
 		for (const [index, path] of ["a.ts", "b.ts"].entries()) {
@@ -654,7 +844,10 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 
 	claudeCodeStyleExtension(pi as any);
 	const command = commands.get("ccstyle");
-	assert.deepEqual(command.getArgumentCompletions("").map((item: any) => item.value), ["on", "off", "compact", "status"]);
+	assert.deepEqual(
+		command.getArgumentCompletions("").map((item: any) => item.value),
+		["on", "off", "compact", "status"],
+	);
 	assert.deepEqual(shortcuts, []);
 
 	let panel: any;
@@ -672,14 +865,23 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 		},
 	});
 	const panelLines = panel.render(80).map((line: string) => line.trimEnd());
-	assert.ok(panelLines.some((line: string) => line.includes("on") && line.includes("Claude Code style")));
-	assert.ok(panelLines.some((line: string) => line.includes("off") && line.includes("Pi native output")));
-	assert.ok(panelLines.some((line: string) => line.includes("compact") && line.includes("Compact transcript")));
+	assert.ok(
+		panelLines.some((line: string) => line.includes("on") && line.includes("Claude Code style")),
+	);
+	assert.ok(
+		panelLines.some((line: string) => line.includes("off") && line.includes("Pi native output")),
+	);
+	assert.ok(
+		panelLines.some(
+			(line: string) => line.includes("compact") && line.includes("Compact transcript"),
+		),
+	);
 	assert.match(panelLines[0]!, /─|━/, "panel has a top divider");
 	assert.match(panelLines.at(-1)!, /─|━/, "panel has a bottom divider");
 
 	for (const name of [
 		"session_start",
+		"session_compact",
 		"agent_start",
 		"agent_end",
 		"turn_start",

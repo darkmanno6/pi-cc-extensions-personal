@@ -99,7 +99,8 @@ function contentBlockToText(part: unknown): string {
 	const block = part as Record<string, unknown>;
 	if (block.type === "text" && typeof block.text === "string") return block.text;
 	if (block.type === "image") return "[image]";
-	if (block.type === "toolCall" && typeof block.name === "string") return `[tool call: ${block.name}]`;
+	if (block.type === "toolCall" && typeof block.name === "string")
+		return `[tool call: ${block.name}]`;
 	return "";
 }
 
@@ -214,7 +215,10 @@ function boundedTranscript(messages: unknown[], limits: ReferenceLimits, maxByte
 
 	if (complete) return complete.join("\n\n");
 	const marker = "\n\n… [earlier transcript truncated] …\n\n";
-	return truncateUtf8(`${head.join("")}${marker}${tail.map((part) => part.text).join("\n\n")}`, maxBytes);
+	return truncateUtf8(
+		`${head.join("")}${marker}${tail.map((part) => part.text).join("\n\n")}`,
+		maxBytes,
+	);
 }
 
 export function formatReferenceSession(
@@ -230,7 +234,8 @@ export function formatReferenceSession(
 		"Transcript:",
 	].join("\n");
 	const transcriptBudget = Math.max(0, limits.maxSessionBytes - byteLength(metadata) - 1);
-	const transcript = boundedTranscript(source.messages, limits, transcriptBudget) || "(no textual context)";
+	const transcript =
+		boundedTranscript(source.messages, limits, transcriptBudget) || "(no textual context)";
 	return truncateUtf8(`${metadata}\n${transcript}`, limits.maxSessionBytes);
 }
 

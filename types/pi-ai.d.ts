@@ -3,7 +3,7 @@
 
 /* eslint-disable */
 declare module "@earendil-works/pi-ai" {
-  export function complete(...args: any[]): any;
-  export type AssistantMessage = any;
-  export type Context = any;
+	export function complete(...args: any[]): any;
+	export type AssistantMessage = any;
+	export type Context = any;
 }

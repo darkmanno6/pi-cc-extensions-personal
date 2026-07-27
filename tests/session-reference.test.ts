@@ -65,10 +65,11 @@ test("buildReferenceContent enforces incremental session and total byte limits",
 		role: "user",
 		content: `${index}: ${"x".repeat(1_000)}`,
 	}));
-	const content = buildReferenceContent(
-		[{ info, messages }],
-		{ maxMessageBytes: 400, maxSessionBytes: 2_000, maxTotalBytes: 1_000 },
-	);
+	const content = buildReferenceContent([{ info, messages }], {
+		maxMessageBytes: 400,
+		maxSessionBytes: 2_000,
+		maxTotalBytes: 1_000,
+	});
 	assert.ok(Buffer.byteLength(content, "utf8") <= 1_000);
 	assert.match(content, /truncated/);
 });

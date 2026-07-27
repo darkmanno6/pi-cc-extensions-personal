@@ -7,8 +7,9 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works
 function expectedExpandedLines(text: string, prefix: string, width: number): string[] {
 	const normalized = text.replace(/\t/g, "   ").replace(/\n+$/, "");
 	const contentWidth = Math.max(1, width - visibleWidth(prefix));
-	return wrapTextWithAnsi(normalized, contentWidth)
-		.map((line) => truncateToWidth(prefix + line, width, ""));
+	return wrapTextWithAnsi(normalized, contentWidth).map((line) =>
+		truncateToWidth(prefix + line, width, ""),
+	);
 }
 
 test("ExpandedToolResultText preserves lines while caching one width", () => {

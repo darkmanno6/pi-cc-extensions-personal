@@ -56,7 +56,9 @@ export class SubmitPicker implements StatefulView<SubmitPickerProps> {
 			const active = this.props.rows[i]?.active ?? false;
 			const pointer = active ? ACTIVE_POINTER : INACTIVE_POINTER;
 			const number = `${i + 1}${NUMBER_SEPARATOR}`;
-			const label = active ? this.theme.fg("accent", this.theme.bold(text)) : this.theme.fg("text", text);
+			const label = active
+				? this.theme.fg("accent", this.theme.bold(text))
+				: this.theme.fg("text", text);
 			lines.push(truncateToWidth(`${pointer}${number}${label}`, width, ""));
 		}
 		return lines;

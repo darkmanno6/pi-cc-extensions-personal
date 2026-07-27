@@ -1,16 +1,20 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	DynamicBorder,
-	keyHint,
-	ToolExecutionComponent,
-} from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, keyHint, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import {
 	installCompactStyle,
 	type CompactStyleHooks,
 	type CompactStyleMode,
 } from "./compact-style.ts";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
-import { Container, SelectList, Text, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	Container,
+	SelectList,
+	Text,
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -36,10 +40,18 @@ export function normalizeConfig(input: unknown): Config {
 		mode === "on" || mode === "off" || mode === "compact"
 			? mode
 			: typeof source.enabled === "boolean"
-				? (source.enabled ? "on" : "off")
+				? source.enabled
+					? "on"
+					: "off"
 				: "on";
 	const excludeRenderers = Array.isArray(source.excludeRenderers)
-		? [...new Set(source.excludeRenderers.filter((name): name is string => typeof name === "string" && name.length > 0))]
+		? [
+				...new Set(
+					source.excludeRenderers.filter(
+						(name): name is string => typeof name === "string" && name.length > 0,
+					),
+				),
+			]
 		: [];
 	return { mode: migratedMode, excludeRenderers };
 }
@@ -55,8 +67,10 @@ function loadConfig(): Config {
 			// Persist the one-time enabled:boolean -> mode migration while retaining
 			// the existing exclusion list.
 			if (
-				typeof source.enabled === "boolean"
-				&& (source.mode !== "on" && source.mode !== "off" && source.mode !== "compact")
+				typeof source.enabled === "boolean" &&
+				source.mode !== "on" &&
+				source.mode !== "off" &&
+				source.mode !== "compact"
 			) {
 				try {
 					writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
@@ -89,7 +103,10 @@ function textFromResult(result: any): string {
 }
 
 function countLines(text: string): number {
-	return text.trim().split("\n").filter((line) => line.trim().length > 0).length;
+	return text
+		.trim()
+		.split("\n")
+		.filter((line) => line.trim().length > 0).length;
 }
 
 function hasExpandableResult(text: string): boolean {
@@ -240,8 +257,9 @@ export class ExpandedToolResultText {
 
 		const prefixWidth = visibleWidth(this.prefix);
 		const contentWidth = Math.max(1, width - prefixWidth);
-		const lines = wrapTextWithAnsi(this.normalizedText, contentWidth)
-			.map((line) => truncateToWidth(this.prefix + line, width, ""));
+		const lines = wrapTextWithAnsi(this.normalizedText, contentWidth).map((line) =>
+			truncateToWidth(this.prefix + line, width, ""),
+		);
 		this.cachedWidth = width;
 		this.cachedLines = lines;
 		return lines;
@@ -350,11 +368,11 @@ function stripTerminalSequences(value: string): string {
 
 function isToolExecutionComponent(value: any): boolean {
 	return Boolean(
-		value
-		&& typeof value === "object"
-		&& typeof value.toolCallId === "string"
-		&& typeof value.setExpanded === "function"
-		&& typeof value.render === "function",
+		value &&
+			typeof value === "object" &&
+			typeof value.toolCallId === "string" &&
+			typeof value.setExpanded === "function" &&
+			typeof value.render === "function",
 	);
 }
 
@@ -413,8 +431,10 @@ function collectToolComponents(component: any, tools: any[], seen = new Set<any>
 }
 
 function fixedEditorLineMatch(rendered: string, visible: string): boolean {
-	return rendered === visible
-		|| (visible.length >= 8 && (rendered.includes(visible) || visible.includes(rendered)));
+	return (
+		rendered === visible ||
+		(visible.length >= 8 && (rendered.includes(visible) || visible.includes(rendered)))
+	);
 }
 
 function fixedEditorContextScore(
@@ -452,8 +472,9 @@ function findToolAtFixedEditorRow(
 	for (const component of tools) {
 		const expanded = Boolean(component.expanded);
 		if (!expanded && !/(?:expand|\/ click)/i.test(clickedLine)) continue;
-		const renderedLines = renderComponentTree(component, width)
-			.map((line) => stripTerminalSequences(String(line)));
+		const renderedLines = renderComponentTree(component, width).map((line) =>
+			stripTerminalSequences(String(line)),
+		);
 		for (let renderedRow = 0; renderedRow < renderedLines.length; renderedRow++) {
 			if (!fixedEditorLineMatch(renderedLines[renderedRow] ?? "", clickedLine)) continue;
 			const score = fixedEditorContextScore(renderedLines, renderedRow, visibleLines, visibleRow);
@@ -503,16 +524,16 @@ function isFixedEditorTui(tui: any): boolean {
 	if (!terminal) return false;
 	const ownRows = Object.getOwnPropertyDescriptor(terminal, "rows");
 	const prototype = Object.getPrototypeOf(terminal);
-	const inheritedRows = prototype
-		? Object.getOwnPropertyDescriptor(prototype, "rows")
-		: undefined;
+	const inheritedRows = prototype ? Object.getOwnPropertyDescriptor(prototype, "rows") : undefined;
 	return typeof ownRows?.get === "function" && ownRows.get !== inheritedRows?.get;
 }
 
 function formatShortcut(shortcut: string): string {
 	return shortcut
 		.split("+")
-		.map((part) => part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+		.map((part) =>
+			part.length <= 1 ? part.toUpperCase() : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`,
+		)
 		.join("+");
 }
 
@@ -522,18 +543,20 @@ function isScrollBottomInput(data: string): boolean {
 
 function isScrollNavigationInput(data: string): boolean {
 	if (
-		matchesKey(data, "pageUp")
-		|| matchesKey(data, "pageDown")
-		|| ZENTUI_PAGE_UP_INPUT.test(data)
-		|| ZENTUI_PAGE_DOWN_INPUT.test(data)
+		matchesKey(data, "pageUp") ||
+		matchesKey(data, "pageDown") ||
+		ZENTUI_PAGE_UP_INPUT.test(data) ||
+		ZENTUI_PAGE_DOWN_INPUT.test(data)
 	) {
 		return true;
 	}
 	const packets = parseSgrMousePackets(data);
-	return Boolean(packets?.some((packet) => {
-		const baseButton = packet.code & ~(4 | 8 | 16 | 32);
-		return packet.final === "M" && (baseButton === 64 || baseButton === 65);
-	}));
+	return Boolean(
+		packets?.some((packet) => {
+			const baseButton = packet.code & ~(4 | 8 | 16 | 32);
+			return packet.final === "M" && (baseButton === 64 || baseButton === 65);
+		}),
+	);
 }
 
 function directRenderLines(component: any, width: number): string[] {
@@ -563,8 +586,10 @@ function isFixedEditorAtBottom(tui: any): boolean {
 	const rootLines = renderFixedScrollableRoot(tui, width);
 	if (rootLines.length <= visibleLines.length) return true;
 	const tail = rootLines.slice(-visibleLines.length);
-	return tail.every((line, index) =>
-		stripTerminalSequences(String(line)) === stripTerminalSequences(String(visibleLines[index] ?? "")),
+	return tail.every(
+		(line, index) =>
+			stripTerminalSequences(String(line)) ===
+			stripTerminalSequences(String(visibleLines[index] ?? "")),
 	);
 }
 
@@ -679,12 +704,15 @@ function containsEditorLike(component: any, focused: any, seen = new Set<any>())
 	seen.add(component);
 	if (component === focused) return true;
 	if (
-		typeof component.getText === "function"
-		&& typeof component.setText === "function"
-		&& typeof component.handleInput === "function"
-	) return true;
-	return Array.isArray(component.children)
-		&& component.children.some((child: any) => containsEditorLike(child, focused, seen));
+		typeof component.getText === "function" &&
+		typeof component.setText === "function" &&
+		typeof component.handleInput === "function"
+	)
+		return true;
+	return (
+		Array.isArray(component.children) &&
+		component.children.some((child: any) => containsEditorLike(child, focused, seen))
+	);
 }
 
 function scrollButtonScreenRow(tui: any, width: number): number | null {
@@ -707,7 +735,8 @@ function scrollButtonScreenRow(tui: any, width: number): number | null {
 	const editor = normalizedClusterLines(children[editorIndex], widthValue);
 	const below = normalizedClusterLines(children[editorIndex + 1], widthValue);
 	const footer = normalizedClusterLines(children[editorIndex + 2], widthValue);
-	const aboveLines = target.lines.length > 0 ? target.lines : normalizedClusterLines(above, widthValue);
+	const aboveLines =
+		target.lines.length > 0 ? target.lines : normalizedClusterLines(above, widthValue);
 
 	const takeLast = (lines: string[], count: number): string[] =>
 		count > 0 ? lines.slice(-count) : [];
@@ -723,7 +752,13 @@ function scrollButtonScreenRow(tui: any, width: number): number | null {
 	const targetRow = target.targetStart - aboveStart;
 	if (targetRow < 0 || targetRow >= aboveVisible.length) return null;
 
-	const allLines = [...statusVisible, ...aboveVisible, ...editorVisible, ...belowVisible, ...footerVisible];
+	const allLines = [
+		...statusVisible,
+		...aboveVisible,
+		...editorVisible,
+		...belowVisible,
+		...footerVisible,
+	];
 	let leadingBlank = 0;
 	while (leadingBlank < allLines.length - 1 && visibleWidth(allLines[leadingBlank] ?? "") === 0) {
 		leadingBlank++;
@@ -747,9 +782,7 @@ function isScrollButtonAtScreenRow(tui: any, packet: SgrMousePacket): boolean {
 }
 
 function jumpToBottomWithoutSubmit(tui: any): boolean {
-	const originalHandle = toolMouseInputPatchTui === tui
-		? toolMouseInputPatchOriginalHandle
-		: null;
+	const originalHandle = toolMouseInputPatchTui === tui ? toolMouseInputPatchOriginalHandle : null;
 	if (!originalHandle) return false;
 
 	// Route Enter through Pi's normal listener chain so pi-zentui can update its
@@ -785,9 +818,10 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 function renderScrollButton(width: number, theme: any): string[] {
 	if (!scrollButtonVisible || !isFixedEditorTui(toolMouseTui)) return [];
 	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
-	const messageText = pendingScrollMessages > 0
-		? `${pendingScrollMessages} new message${pendingScrollMessages === 1 ? "" : "s"}`
-		: "Back to bottom";
+	const messageText =
+		pendingScrollMessages > 0
+			? `${pendingScrollMessages} new message${pendingScrollMessages === 1 ? "" : "s"}`
+			: "Back to bottom";
 	const label = theme.fg("accent", `[ ↓ ${messageText} · ${shortcut} · click ]`);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
@@ -812,7 +846,8 @@ function patchToolMouseInputCapture(tui: any): void {
 			updateScrollButtonFromInput(this, data);
 			// Capture the current viewport before Pi/Zentui applies the scroll input.
 			scheduleScrollButtonSync(this, data);
-			if (isFixedEditorTui(this) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(this)) return;
+			if (isFixedEditorTui(this) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(this))
+				return;
 			const packets = parseSgrMousePackets(data);
 			if (packets) {
 				for (const packet of packets) {
@@ -838,9 +873,9 @@ function patchToolMouseInputCapture(tui: any): void {
 
 function restoreToolMouseInputCapture(): void {
 	if (
-		toolMouseInputPatchTui
-		&& toolMouseInputPatchOriginalHandle
-		&& toolMouseInputPatchTui.handleInput === toolMouseInputPatchWrapper
+		toolMouseInputPatchTui &&
+		toolMouseInputPatchOriginalHandle &&
+		toolMouseInputPatchTui.handleInput === toolMouseInputPatchWrapper
 	) {
 		toolMouseInputPatchTui.handleInput = toolMouseInputPatchOriginalHandle;
 	}
@@ -852,7 +887,11 @@ function restoreToolMouseInputCapture(): void {
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!toolMouseTui) return undefined;
 	updateScrollButtonFromInput(toolMouseTui, data);
-	if (isFixedEditorTui(toolMouseTui) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(toolMouseTui)) {
+	if (
+		isFixedEditorTui(toolMouseTui) &&
+		isScrollBottomInput(data) &&
+		jumpToBottomWithoutSubmit(toolMouseTui)
+	) {
 		return { consume: true };
 	}
 	const packets = parseSgrMousePackets(data);
@@ -864,7 +903,10 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	let consumed = false;
 	for (const packet of packets) {
 		if (!isSgrLeftPress(packet)) continue;
-		if (handleScrollButtonClick(toolMouseTui, packet) || toggleToolAtMouseClick(toolMouseTui, packet)) {
+		if (
+			handleScrollButtonClick(toolMouseTui, packet) ||
+			toggleToolAtMouseClick(toolMouseTui, packet)
+		) {
 			consumed = true;
 		}
 	}
@@ -905,7 +947,8 @@ function teardownToolMouseInteraction(): void {
 function installToolMouseInteraction(ctx: any): void {
 	teardownToolMouseInteraction();
 	if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
-	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function") return;
+	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function")
+		return;
 
 	toolMouseUi = ctx.ui;
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
@@ -922,7 +965,7 @@ function installToolMouseInteraction(ctx: any): void {
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
 }
 
-function scheduleSessionRender(): void {
+function scheduleSessionRender(refresh?: () => void): void {
 	const tui = toolMouseTui;
 	if (!tui || typeof tui.requestRender !== "function") return;
 	if (sessionRenderTimer) clearTimeout(sessionRenderTimer);
@@ -931,7 +974,9 @@ function scheduleSessionRender(): void {
 	// rebuild finish so messages are not left hidden until the next terminal input.
 	sessionRenderTimer = setTimeout(() => {
 		sessionRenderTimer = null;
-		if (toolMouseTui === tui) tui.requestRender(true);
+		if (toolMouseTui !== tui) return;
+		refresh?.();
+		tui.requestRender(true);
 	}, 0);
 }
 
@@ -963,32 +1008,36 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 		{ value: "off", label: "off", description: "Pi native output" },
 		{ value: "compact", label: "compact", description: "Compact transcript" },
 	];
-	const selectedMode = await (ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: (value?: CompactStyleMode) => void) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 0));
-		const selectList = new SelectList(modes, modes.length, {
-			selectedPrefix: (text: string) => theme.fg("accent", text),
-			selectedText: (text: string) => theme.fg("accent", text),
-			description: (text: string) => theme.fg("muted", text),
-			scrollInfo: (text: string) => theme.fg("dim", text),
-			noMatch: (text: string) => theme.fg("warning", text),
-		});
-		selectList.setSelectedIndex(modes.findIndex((item) => item.value === config.mode));
-		selectList.onSelect = (item: { value: string }) => done(item.value as CompactStyleMode);
-		selectList.onCancel = () => done();
-		container.addChild(selectList);
-		container.addChild(new Text(theme.fg("dim", "↑↓ navigate · enter select · esc cancel"), 1, 0));
-		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-		return {
-			render: (width: number) => container.render(width),
-			invalidate: () => container.invalidate(),
-			handleInput(data: string) {
-				selectList.handleInput(data);
-				tui.requestRender();
-			},
-		};
-	}) as Promise<CompactStyleMode | undefined>);
+	const selectedMode = await (ctx.ui.custom(
+		(tui: any, theme: any, _keybindings: any, done: (value?: CompactStyleMode) => void) => {
+			const container = new Container();
+			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+			container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 0));
+			const selectList = new SelectList(modes, modes.length, {
+				selectedPrefix: (text: string) => theme.fg("accent", text),
+				selectedText: (text: string) => theme.fg("accent", text),
+				description: (text: string) => theme.fg("muted", text),
+				scrollInfo: (text: string) => theme.fg("dim", text),
+				noMatch: (text: string) => theme.fg("warning", text),
+			});
+			selectList.setSelectedIndex(modes.findIndex((item) => item.value === config.mode));
+			selectList.onSelect = (item: { value: string }) => done(item.value as CompactStyleMode);
+			selectList.onCancel = () => done();
+			container.addChild(selectList);
+			container.addChild(
+				new Text(theme.fg("dim", "↑↓ navigate · enter select · esc cancel"), 1, 0),
+			);
+			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+			return {
+				render: (width: number) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput(data: string) {
+					selectList.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		},
+	) as Promise<CompactStyleMode | undefined>);
 	if (selectedMode) applyStyleMode(selectedMode, ctx, compactStyle);
 }
 
@@ -1056,7 +1105,12 @@ function createCcstyleTool(originalTool: any): any {
 		},
 		renderResult(result: any, options: any, theme: any, context: any) {
 			if (config.mode !== "on") {
-				return renderDefault(originalTool, "renderResult", [result, options, theme, context], textFromResult(result));
+				return renderDefault(
+					originalTool,
+					"renderResult",
+					[result, options, theme, context],
+					textFromResult(result),
+				);
 			}
 
 			if (options?.isPartial) {
@@ -1071,7 +1125,8 @@ function createCcstyleTool(originalTool: any): any {
 			const rendered = !expanded ? (text ? oneLine(text, 96) : "Done") : text;
 
 			const hint = !expanded && hasExpandableResult(text) ? expandHint(theme) : "";
-			if (expanded) return renderExpandedToolResult(rendered, theme, isError, context?.lastComponent);
+			if (expanded)
+				return renderExpandedToolResult(rendered, theme, isError, context?.lastComponent);
 			return new Text(
 				theme.fg(isError ? "error" : "muted", renderCollapsedToolResult(rendered, hint)),
 				0,
@@ -1132,19 +1187,22 @@ export function preservesOriginalRenderer(
 ): boolean {
 	if (SUBAGENT_TOOL_NAMES.has(toolName)) return true;
 	if (!excludeRenderers.includes(toolName)) return false;
-	return [extensionDefinition, builtInToolDefinition].some((definition) =>
-		definition?.renderShell === "self"
-		|| typeof definition?.renderCall === "function"
-		|| typeof definition?.renderResult === "function",
+	return [extensionDefinition, builtInToolDefinition].some(
+		(definition) =>
+			definition?.renderShell === "self" ||
+			typeof definition?.renderCall === "function" ||
+			typeof definition?.renderResult === "function",
 	);
 }
 
 function syncToolShell(component: any, shell: "default" | "self"): void {
 	const target = shell === "self" ? component.selfRenderContainer : component.contentBox;
 	if (!target || !Array.isArray(component.children)) return;
-	const candidates = new Set([component.contentText, component.contentBox, component.selfRenderContainer].filter(Boolean));
+	const candidates = new Set(
+		[component.contentText, component.contentBox, component.selfRenderContainer].filter(Boolean),
+	);
 	const indexes = component.children
-		.map((child: any, index: number) => candidates.has(child) ? index : -1)
+		.map((child: any, index: number) => (candidates.has(child) ? index : -1))
 		.filter((index: number) => index >= 0);
 	const targetIndex = indexes[0];
 	// During construction getRenderShell() runs immediately before Pi mounts the
@@ -1211,20 +1269,22 @@ function prototypeToolRenderMethods(prototype: any): ToolRenderMethods {
 
 function isOwnershipAwarePatch(value: any): value is GlobalToolRenderPatch {
 	if (!value || value.version !== 2 || !value.installed || !value.downstream) return false;
-	return ["hasRendererDefinition", "getRenderShell", "getCallRenderer", "getResultRenderer"]
-		.every((name) => typeof value.installed[name] === "function" && typeof value.downstream[name] === "function");
+	return ["hasRendererDefinition", "getRenderShell", "getCallRenderer", "getResultRenderer"].every(
+		(name) =>
+			typeof value.installed[name] === "function" && typeof value.downstream[name] === "function",
+	);
 }
 
 function isLegacyInstalledWrapper(method: unknown, downstreamField: string): boolean {
 	if (typeof method !== "function") return false;
 	try {
 		const source = Function.prototype.toString.call(method);
-		return source.includes(downstreamField)
-			&& (
-				source.includes("shouldGloballyStyleTool")
-				|| source.includes("shouldUseSelfShell")
-				|| source.includes("getGloballyStyledTool")
-			);
+		return (
+			source.includes(downstreamField) &&
+			(source.includes("shouldGloballyStyleTool") ||
+				source.includes("shouldUseSelfShell") ||
+				source.includes("getGloballyStyledTool"))
+		);
 	} catch {
 		return false;
 	}
@@ -1235,18 +1295,22 @@ function downstreamForGlobalToolInstall(prototype: any, previous: any): ToolRend
 	if (!previous || previous.prototype !== prototype) return current;
 	if (isOwnershipAwarePatch(previous)) {
 		return {
-			hasRendererDefinition: current.hasRendererDefinition === previous.installed.hasRendererDefinition
-				? previous.downstream.hasRendererDefinition
-				: current.hasRendererDefinition,
-			getRenderShell: current.getRenderShell === previous.installed.getRenderShell
-				? previous.downstream.getRenderShell
-				: current.getRenderShell,
-			getCallRenderer: current.getCallRenderer === previous.installed.getCallRenderer
-				? previous.downstream.getCallRenderer
-				: current.getCallRenderer,
-			getResultRenderer: current.getResultRenderer === previous.installed.getResultRenderer
-				? previous.downstream.getResultRenderer
-				: current.getResultRenderer,
+			hasRendererDefinition:
+				current.hasRendererDefinition === previous.installed.hasRendererDefinition
+					? previous.downstream.hasRendererDefinition
+					: current.hasRendererDefinition,
+			getRenderShell:
+				current.getRenderShell === previous.installed.getRenderShell
+					? previous.downstream.getRenderShell
+					: current.getRenderShell,
+			getCallRenderer:
+				current.getCallRenderer === previous.installed.getCallRenderer
+					? previous.downstream.getCallRenderer
+					: current.getCallRenderer,
+			getResultRenderer:
+				current.getResultRenderer === previous.installed.getResultRenderer
+					? previous.downstream.getResultRenderer
+					: current.getResultRenderer,
 		};
 	}
 
@@ -1321,9 +1385,10 @@ function installGlobalToolRendering(): GlobalToolRenderPatch {
 		},
 		getRenderShell: function (this: any, ...args: any[]) {
 			if (!patch.active) return patch.downstream.getRenderShell.apply(this, args);
-			const shell = shouldUseSelfShell(this, patch) || shouldGloballyStyleTool(this, patch)
-				? "self"
-				: patch.downstream.getRenderShell.apply(this, args);
+			const shell =
+				shouldUseSelfShell(this, patch) || shouldGloballyStyleTool(this, patch)
+					? "self"
+					: patch.downstream.getRenderShell.apply(this, args);
 			syncToolShell(this, shell);
 			return shell;
 		},
@@ -1375,7 +1440,9 @@ type LegacyCompactionRenderPatch = {
 
 /** Disable the pre-native compaction monkey patch left alive by /reload. */
 function deactivateLegacyCompactionRendering() {
-	const patch = (globalThis as any)[GLOBAL_COMPACTION_RENDER_PATCH] as LegacyCompactionRenderPatch | undefined;
+	const patch = (globalThis as any)[GLOBAL_COMPACTION_RENDER_PATCH] as
+		| LegacyCompactionRenderPatch
+		| undefined;
 	if (patch) patch.enabled = () => false;
 }
 
@@ -1434,7 +1501,15 @@ export default function (pi: ExtensionAPI) {
 		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
 		installToolMouseInteraction(ctx);
-		scheduleSessionRender();
+		scheduleSessionRender(compactStyle.refresh);
+	});
+
+	pi.on("session_compact", async (event, ctx) => {
+		compactStyle?.onSessionCompact(event, ctx);
+		// Compaction rebuilds the transcript without session_start. Rebind after
+		// other TUI extensions may have replaced the root input dispatcher.
+		installToolMouseInteraction(ctx);
+		scheduleSessionRender(compactStyle.refresh);
 	});
 
 	pi.on("message_start", async (event) => {
@@ -1481,5 +1556,4 @@ export default function (pi: ExtensionAPI) {
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
 	});
-
 }

@@ -10,7 +10,10 @@ export const ENVELOPE_SUFFIX = "You can now continue with the user's answers in 
  * Pure of `(result, params)`; cancelled and "no segments" both fall to `DECLINE_MESSAGE`
  * so the model sees a single canonical "didn't answer" signal regardless of why.
  */
-export function buildQuestionnaireResponse(result: QuestionnaireResult | null | undefined, params: QuestionParams) {
+export function buildQuestionnaireResponse(
+	result: QuestionnaireResult | null | undefined,
+	params: QuestionParams,
+) {
 	if (!result || result.cancelled) {
 		return buildToolResult(DECLINE_MESSAGE, {
 			answers: result?.answers ?? [],

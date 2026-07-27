@@ -3,25 +3,25 @@
 
 /* eslint-disable */
 declare module "@earendil-works/pi-tui" {
-  export const Text: any;
-  export const Markdown: any;
-  export const Spacer: any;
-  export const Component: any;
-  export const Container: any;
-  export const SelectList: any;
-  export const SettingsList: any;
-  export const Key: any;
-  export const TUI_KEYBINDINGS: any;
-  export function matchesKey(...args: any[]): any;
-  export function isKeyRelease(...args: any[]): any;
-  export function truncateToWidth(...args: any[]): any;
-  export function visibleWidth(...args: any[]): any;
-  export function wrapTextWithAnsi(...args: any[]): any;
-  export function deleteAllKittyImages(...args: any[]): any;
-  export function fuzzyFilter(...args: any[]): any;
+	export const Text: any;
+	export const Markdown: any;
+	export const Spacer: any;
+	export const Component: any;
+	export const Container: any;
+	export const SelectList: any;
+	export const SettingsList: any;
+	export const Key: any;
+	export const TUI_KEYBINDINGS: any;
+	export function matchesKey(...args: any[]): any;
+	export function isKeyRelease(...args: any[]): any;
+	export function truncateToWidth(...args: any[]): any;
+	export function visibleWidth(...args: any[]): any;
+	export function wrapTextWithAnsi(...args: any[]): any;
+	export function deleteAllKittyImages(...args: any[]): any;
+	export function fuzzyFilter(...args: any[]): any;
 
-  export type AutocompleteItem = any;
-  export type AutocompleteProvider = any;
-  export type AutocompleteSuggestions = any;
-  export type SelectItem = any;
+	export type AutocompleteItem = any;
+	export type AutocompleteProvider = any;
+	export type AutocompleteSuggestions = any;
+	export type SelectItem = any;
 }

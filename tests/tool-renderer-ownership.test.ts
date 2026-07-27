@@ -3,7 +3,9 @@ import test from "node:test";
 
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import claudeCodeStyleExtension, { preservesOriginalRenderer } from "../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension, {
+	preservesOriginalRenderer,
+} from "../extensions/claude-code-style.ts";
 
 initTheme("dark");
 
@@ -43,10 +45,7 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 		preservesOriginalRenderer({ name: "edit", renderCall() {} }, "edit", builtIn, ["edit"]),
 		true,
 	);
-	assert.equal(
-		preservesOriginalRenderer(undefined, "edit", builtIn, ["edit"]),
-		true,
-	);
+	assert.equal(preservesOriginalRenderer(undefined, "edit", builtIn, ["edit"]), true);
 	assert.equal(
 		preservesOriginalRenderer({ name: "custom" }, "custom", undefined, ["custom"]),
 		false,
@@ -104,7 +103,9 @@ test("global renderer reload chains external wrappers and shutdown restores them
 		"getCallRenderer",
 		"getResultRenderer",
 	] as const;
-	const originals = Object.fromEntries(methodNames.map((name) => [name, prototype[name]])) as Record<string, Function>;
+	const originals = Object.fromEntries(
+		methodNames.map((name) => [name, prototype[name]]),
+	) as Record<string, Function>;
 	const firstEvents = new Map<string, Function>();
 	const secondEvents = new Map<string, Function>();
 	const makePi = (events: Map<string, Function>) => ({
@@ -119,7 +120,10 @@ test("global renderer reload chains external wrappers and shutdown restores them
 	try {
 		claudeCodeStyleExtension(makePi(firstEvents) as any);
 		const firstPatch = (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
-		const externalCalls = Object.fromEntries(methodNames.map((name) => [name, 0])) as Record<string, number>;
+		const externalCalls = Object.fromEntries(methodNames.map((name) => [name, 0])) as Record<
+			string,
+			number
+		>;
 		const external = {} as Record<string, Function>;
 		for (const name of methodNames) {
 			const downstream = prototype[name];
@@ -147,7 +151,8 @@ test("global renderer reload chains external wrappers and shutdown restores them
 		assert.equal(prototype.getRenderShell.call(receiver), "default");
 		assert.equal(prototype.getCallRenderer.call(receiver), renderCall);
 		assert.equal(prototype.getResultRenderer.call(receiver), renderResult);
-		for (const name of methodNames) assert.equal(externalCalls[name], 1, `${name} chains the external wrapper`);
+		for (const name of methodNames)
+			assert.equal(externalCalls[name], 1, `${name} chains the external wrapper`);
 
 		const secondOwned = Object.fromEntries(methodNames.map((name) => [name, prototype[name]]));
 		await firstEvents.get("session_shutdown")?.({}, ctx);
@@ -175,7 +180,9 @@ test("global renderer migrates legacy Symbol state without retaining old wrapper
 		"getCallRenderer",
 		"getResultRenderer",
 	] as const;
-	const originals = Object.fromEntries(methodNames.map((name) => [name, prototype[name]])) as Record<string, Function>;
+	const originals = Object.fromEntries(
+		methodNames.map((name) => [name, prototype[name]]),
+	) as Record<string, Function>;
 	const events = new Map<string, Function>();
 	const legacy: any = {
 		prototype,
@@ -238,7 +245,9 @@ test("global renderer shutdown does not overwrite wrappers installed later", asy
 		"getCallRenderer",
 		"getResultRenderer",
 	] as const;
-	const originals = Object.fromEntries(methodNames.map((name) => [name, prototype[name]])) as Record<string, Function>;
+	const originals = Object.fromEntries(
+		methodNames.map((name) => [name, prototype[name]]),
+	) as Record<string, Function>;
 	const events = new Map<string, Function>();
 	const ctx = { ui: { setStatus() {} } } as any;
 	try {

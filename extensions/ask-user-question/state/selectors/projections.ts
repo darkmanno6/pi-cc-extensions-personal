@@ -1,4 +1,7 @@
-import { MULTI_SUBMIT_LABEL, type MultiSelectViewProps } from "../../view/components/multi-select-view.js";
+import {
+	MULTI_SUBMIT_LABEL,
+	type MultiSelectViewProps,
+} from "../../view/components/multi-select-view.js";
 import type { OptionListViewProps } from "../../view/components/option-list-view.js";
 import type { PreviewPaneProps } from "../../view/components/preview/preview-pane.js";
 import type { SubmitPickerProps } from "../../view/components/submit-picker.js";

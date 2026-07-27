@@ -80,7 +80,9 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 			// Checked uses the same `accent` hue as the active-row label so checked rows read
 			// as "selected" rather than "success" — matches the visual rhythm of the rest of
 			// the dialog (active pointer, label, picker rows are all accent).
-			const box = row.checked ? this.theme.fg("accent", CHECKED) : this.theme.fg("muted", UNCHECKED);
+			const box = row.checked
+				? this.theme.fg("accent", CHECKED)
+				: this.theme.fg("muted", UNCHECKED);
 			const label = truncateToWidth(opt.label, contentWidth, "…");
 			const styledLabel = row.active ? this.theme.fg("accent", this.theme.bold(label)) : label;
 			const num = String(i + 1).padStart(numberWidth, " ");
@@ -125,7 +127,9 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 			),
 		);
 
-		const nextPointer = this.props.nextActive ? this.theme.fg("accent", ACTIVE_POINTER) : INACTIVE_POINTER;
+		const nextPointer = this.props.nextActive
+			? this.theme.fg("accent", ACTIVE_POINTER)
+			: INACTIVE_POINTER;
 		const nextLabel = this.props.nextActive
 			? this.theme.fg("accent", this.theme.bold(this.props.nextLabel))
 			: this.props.nextLabel;
@@ -145,7 +149,8 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 			const opt = this.question.options[i];
 			const r = this.props.rows[i];
 			if (!opt || !r) continue;
-			const itemHeight = 1 + (opt.description ? wrapTextWithAnsi(opt.description, contentWidth).length : 0);
+			const itemHeight =
+				1 + (opt.description ? wrapTextWithAnsi(opt.description, contentWidth).length : 0);
 			if (r.active) {
 				return [row, row + itemHeight];
 			}
@@ -185,7 +190,9 @@ export class MultiSelectView implements StatefulView<MultiSelectViewProps> {
 		// out of the canonical computation.
 		const numberWidth = String(Math.max(1, this.question.options.length + 1)).length;
 		return (
-			visibleWidth(INACTIVE_POINTER) + numberWidth + visibleWidth(`${NUMBER_SEPARATOR}${UNCHECKED}${BOX_LABEL_GAP}`)
+			visibleWidth(INACTIVE_POINTER) +
+			numberWidth +
+			visibleWidth(`${NUMBER_SEPARATOR}${UNCHECKED}${BOX_LABEL_GAP}`)
 		);
 	}
 }

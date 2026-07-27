@@ -21,7 +21,12 @@
  */
 
 import { ROW_INTENT_META } from "./state/row-intent.js";
-import type { QuestionAnswer, QuestionData, QuestionnaireResult, QuestionParams } from "./tool/types.js";
+import type {
+	QuestionAnswer,
+	QuestionData,
+	QuestionnaireResult,
+	QuestionParams,
+} from "./tool/types.js";
 
 const MULTI_SELECT_INSTRUCTIONS =
 	'Enter the numbers of all that apply, comma-separated (e.g. "1,3"), or type a custom answer as plain text.';
@@ -81,12 +86,17 @@ function buildPreviewBlock(question: QuestionData): string {
  * `QuestionAnswer` is produced per question otherwise, so the envelope is
  * identical to the TUI path's.
  */
-export async function runRpcQuestionnaire(ui: DialogUI, params: QuestionParams): Promise<QuestionnaireResult> {
+export async function runRpcQuestionnaire(
+	ui: DialogUI,
+	params: QuestionParams,
+): Promise<QuestionnaireResult> {
 	const answers: QuestionAnswer[] = [];
 	for (let qi = 0; qi < params.questions.length; qi++) {
 		const q = params.questions[qi];
 		const header = q.header ? `[${q.header}] ` : "";
-		const answer = q.multiSelect ? await askMultiSelect(ui, q, qi, header) : await askSingleSelect(ui, q, qi, header);
+		const answer = q.multiSelect
+			? await askMultiSelect(ui, q, qi, header)
+			: await askSingleSelect(ui, q, qi, header);
 		if (answer === undefined) return { answers, cancelled: true };
 		answers.push(answer);
 	}
@@ -143,7 +153,9 @@ async function askMultiSelect(
 		return { questionIndex, question: q.question, kind: "multi", answer: null, selected: [] };
 	}
 	const tokens = trimmed.split(/[,\s]+/).filter((tok) => tok.length > 0);
-	const indices = tokens.map((tok) => (/^\d+\.?$/.test(tok) ? parseIndex(tok, q.options.length) : null));
+	const indices = tokens.map((tok) =>
+		/^\d+\.?$/.test(tok) ? parseIndex(tok, q.options.length) : null,
+	);
 	if (indices.every((i): i is number => i != null)) {
 		const selected: string[] = [];
 		for (const i of indices) {

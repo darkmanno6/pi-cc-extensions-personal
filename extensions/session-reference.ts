@@ -72,8 +72,9 @@ function trackSubagentFromEvent(data: unknown): void {
 	const event = data as Record<string, unknown>;
 	// subagent:async-started payload has "id" as the run ID
 	// subagent:async-complete payload has "runId" as the run ID
-	const runId = (typeof event.id === "string" ? event.id : undefined)
-		?? (typeof event.runId === "string" ? event.runId : undefined);
+	const runId =
+		(typeof event.id === "string" ? event.id : undefined) ??
+		(typeof event.runId === "string" ? event.runId : undefined);
 	if (!runId) return;
 	const sessionId = typeof event.sessionId === "string" ? event.sessionId : undefined;
 	if (!sessionId) return;
@@ -82,14 +83,16 @@ function trackSubagentFromEvent(data: unknown): void {
 	if (existing) {
 		// Completion event — mark completedAt
 		if (typeof event.endedAt === "number" || typeof event.lastUpdate === "number") {
-			existing.completedAt = (typeof event.endedAt === "number" ? event.endedAt : event.lastUpdate) as number;
+			existing.completedAt = (
+				typeof event.endedAt === "number" ? event.endedAt : event.lastUpdate
+			) as number;
 		}
 		return;
 	}
 	// Started event — create new record
 	const agent = typeof event.agent === "string" ? event.agent : "";
 	const cwd = typeof event.cwd === "string" ? event.cwd : "";
-	const startedAt = typeof event.startedAt === "number" ? event.startedAt as number : Date.now();
+	const startedAt = typeof event.startedAt === "number" ? (event.startedAt as number) : Date.now();
 	liveSubagentRecords.set(runId, {
 		runId,
 		sessionId,
@@ -138,12 +141,16 @@ function sessionSearchText(reference: SessionReference): string {
 		reference.info.cwd,
 		reference.info.id,
 		...reference.referenceIds,
-	].filter(Boolean).join(" ");
+	]
+		.filter(Boolean)
+		.join(" ");
 }
 
 function sessionItem(reference: SessionReference, currentCwd: string): AutocompleteItem {
 	const session = reference.info;
-	const workspace = samePath(session.cwd, currentCwd) ? "current workspace" : session.cwd || "unknown workspace";
+	const workspace = samePath(session.cwd, currentCwd)
+		? "current workspace"
+		: session.cwd || "unknown workspace";
 	const label = reference.kind === "subagent" ? "[SubAgent]" : "[Session]";
 	return {
 		value: `${SESSION_REFERENCE_PREFIX}${reference.referenceIds[0]}`,
@@ -152,7 +159,11 @@ function sessionItem(reference: SessionReference, currentCwd: string): Autocompl
 	};
 }
 
-function filterSessions(references: SessionReference[], query: string, currentCwd: string): AutocompleteItem[] {
+function filterSessions(
+	references: SessionReference[],
+	query: string,
+	currentCwd: string,
+): AutocompleteItem[] {
 	if (query.startsWith("session:")) return [];
 
 	const ordered = [...references].sort((left, right) => {
@@ -160,10 +171,10 @@ function filterSessions(references: SessionReference[], query: string, currentCw
 		const rightLocal = samePath(right.info.cwd, currentCwd) ? 1 : 0;
 		return rightLocal - leftLocal || right.info.modified.getTime() - left.info.modified.getTime();
 	});
-	const matches = query.trim()
-		? fuzzyFilter(ordered, query, sessionSearchText)
-		: ordered;
-	return matches.slice(0, MAX_SESSION_SUGGESTIONS).map((reference) => sessionItem(reference, currentCwd));
+	const matches = query.trim() ? fuzzyFilter(ordered, query, sessionSearchText) : ordered;
+	return matches
+		.slice(0, MAX_SESSION_SUGGESTIONS)
+		.map((reference) => sessionItem(reference, currentCwd));
 }
 
 function isPathLikeQuery(query: string): boolean {
@@ -191,7 +202,10 @@ function mergeSessionAndFileItems(
 	return merged;
 }
 
-function liveSubagentReferences(agentIds: Set<string>, currentSessionId: string): SessionReference[] {
+function liveSubagentReferences(
+	agentIds: Set<string>,
+	currentSessionId: string,
+): SessionReference[] {
 	const manager = getSubagentManager();
 	if (!manager) return [];
 
@@ -223,7 +237,10 @@ function liveSubagentReferences(agentIds: Set<string>, currentSessionId: string)
 	return references;
 }
 
-function mergeReferences(sessions: SessionInfo[], subagents: SessionReference[]): SessionReference[] {
+function mergeReferences(
+	sessions: SessionInfo[],
+	subagents: SessionReference[],
+): SessionReference[] {
 	const bySessionId = new Map<string, SessionReference>();
 	for (const session of sessions) {
 		bySessionId.set(session.id, {
@@ -247,7 +264,12 @@ export function createAutocompleteProvider(
 ): AutocompleteProvider {
 	return {
 		triggerCharacters: ["@"],
-		async getSuggestions(lines, cursorLine, cursorCol, options): Promise<AutocompleteSuggestions | null> {
+		async getSuggestions(
+			lines,
+			cursorLine,
+			cursorCol,
+			options,
+		): Promise<AutocompleteSuggestions | null> {
 			const currentLine = lines[cursorLine] ?? "";
 			const query = extractMentionQuery(currentLine.slice(0, cursorCol));
 			if (query === undefined) {
@@ -261,9 +283,7 @@ export function createAutocompleteProvider(
 			if (options.signal.aborted) return null;
 
 			const sessionItems = filterSessions(references, query, currentCwd);
-			const fileItems = baseSuggestions?.prefix === `@${query}`
-				? baseSuggestions.items
-				: [];
+			const fileItems = baseSuggestions?.prefix === `@${query}` ? baseSuggestions.items : [];
 			const items = mergeSessionAndFileItems(sessionItems, fileItems, query);
 			if (items.length === 0) return baseSuggestions;
 			return { prefix: `@${query}`, items };
@@ -295,24 +315,25 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 	// pi-subagents emits "subagent:async-started" and "subagent:async-complete" events.
 	// We track records locally so @[SubAgent] suggestions work even without a global manager.
 	const subagentEventNames = ["subagent:async-started", "subagent:async-complete"];
-	const unsubscribeSubagentEvents = subagentEventNames.map(
-		(eventName) =>
-			pi.events.on(eventName, (data) => {
-				trackSubagentFromEvent(data);
-				if (!data || typeof data !== "object") return;
-				const payload = data as Record<string, unknown>;
-				// subagent:async-started uses "id", subagent:async-complete uses "runId"
-				const id = (typeof payload.id === "string" ? payload.id : undefined)
-					?? (typeof payload.runId === "string" ? payload.runId : undefined);
-				if (typeof id === "string" && id) subagentIds.add(id);
-			}),
+	const unsubscribeSubagentEvents = subagentEventNames.map((eventName) =>
+		pi.events.on(eventName, (data) => {
+			trackSubagentFromEvent(data);
+			if (!data || typeof data !== "object") return;
+			const payload = data as Record<string, unknown>;
+			// subagent:async-started uses "id", subagent:async-complete uses "runId"
+			const id =
+				(typeof payload.id === "string" ? payload.id : undefined) ??
+				(typeof payload.runId === "string" ? payload.runId : undefined);
+			if (typeof id === "string" && id) subagentIds.add(id);
+		}),
 	);
 
 	pi.registerMessageRenderer(SESSION_REFERENCE_CUSTOM_TYPE, (message, _options, theme) => {
 		const details = message.details as ReferenceDetails | undefined;
 		const sessions = details?.sessions ?? [];
 		const labels = sessions.map((session) => session.title).join(", ");
-		const summary = sessions.length === 1 ? "Referenced 1 session" : `Referenced ${sessions.length} sessions`;
+		const summary =
+			sessions.length === 1 ? "Referenced 1 session" : `Referenced ${sessions.length} sessions`;
 		const text = labels ? `${theme.fg("accent", summary)}\n${theme.fg("dim", labels)}` : summary;
 		return new Text(text, 1, 0);
 	});
@@ -329,7 +350,8 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 			sessionsPromise ||= SessionManager.listAll()
 				.then((sessions) =>
 					sessions.filter(
-						(session) => session.id !== currentSessionId && !samePath(currentSessionFile, session.path),
+						(session) =>
+							session.id !== currentSessionId && !samePath(currentSessionFile, session.path),
 					),
 				)
 				.catch((error: unknown) => {
@@ -365,15 +387,13 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		if (referenceIds.length === 0) return;
 
 		const currentSessionId = ctx.sessionManager.getSessionId();
-		const references = await (
-			getAvailableReferences?.() ??
+		const references = await (getAvailableReferences?.() ??
 			SessionManager.listAll().then((sessions) =>
 				mergeReferences(
 					sessions.filter((session) => session.id !== currentSessionId),
 					liveSubagentReferences(subagentIds, currentSessionId),
 				),
-			)
-		);
+			));
 		const referencesById = new Map<string, SessionReference>();
 		for (const reference of references) {
 			for (const id of reference.referenceIds) referencesById.set(id, reference);
@@ -382,7 +402,8 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		const matchingReferences = referenceIds
 			.map((id) => referencesById.get(id))
 			.filter((reference): reference is SessionReference => {
-				if (!reference || reference.info.id === currentSessionId || seenReferences.has(reference)) return false;
+				if (!reference || reference.info.id === currentSessionId || seenReferences.has(reference))
+					return false;
 				seenReferences.add(reference);
 				return true;
 			});
@@ -394,7 +415,10 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		}
 
 		if (matchingReferences.length > MAX_REFERENCED_SESSIONS) {
-			ctx.ui.notify(`session-reference: only the first ${MAX_REFERENCED_SESSIONS} sessions were included`, "warning");
+			ctx.ui.notify(
+				`session-reference: only the first ${MAX_REFERENCED_SESSIONS} sessions were included`,
+				"warning",
+			);
 		}
 
 		const sections: string[] = [];
@@ -402,13 +426,13 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		for (const reference of selected) {
 			try {
 				const info = reference.info;
-				const messages = reference.messages ?? (
-					reference.path
+				const messages =
+					reference.messages ??
+					(reference.path
 						? SessionManager.open(reference.path).buildSessionContext().messages
 						: (() => {
-							throw new Error("reference session is no longer available");
-						})()
-				);
+								throw new Error("reference session is no longer available");
+							})());
 				const source: ReferenceSource = { info, messages };
 				sections.push(formatReferenceSession(source));
 				referencedSessions.push({
@@ -418,7 +442,10 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 				});
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				ctx.ui.notify(`session-reference: failed to read ${reference.info.id}: ${reason}`, "warning");
+				ctx.ui.notify(
+					`session-reference: failed to read ${reference.info.id}: ${reason}`,
+					"warning",
+				);
 			}
 		}
 		if (sections.length === 0) return;

@@ -58,10 +58,14 @@ function isValidCollapseKeySpec(spec: string): boolean {
 	const modifiers = parts.slice(0, -1);
 	if (modifiers.length !== new Set(modifiers).size) return false;
 	if (!modifiers.every((m) => MODIFIERS.has(m))) return false;
-	return base.length === 1 ? /[a-z0-9_\-!@#$%^&*()|~`'":;,./<>?[\]{}=\\]/.test(base) : SPECIAL_KEYS.has(base);
+	return base.length === 1
+		? /[a-z0-9_\-!@#$%^&*()|~`'":;,./<>?[\]{}=\\]/.test(base)
+		: SPECIAL_KEYS.has(base);
 }
 
-export function resolveCollapseKey(config: Pick<AskUserQuestionConfig, "collapseKey">): CollapseKeySpec {
+export function resolveCollapseKey(
+	config: Pick<AskUserQuestionConfig, "collapseKey">,
+): CollapseKeySpec {
 	const raw = config.collapseKey?.trim().toLowerCase();
 	if (raw === undefined || raw === "") return DEFAULT_COLLAPSE_KEY;
 	if (raw === COLLAPSE_KEY_OFF) return COLLAPSE_KEY_OFF;

@@ -1,4 +1,9 @@
-import { CURSOR_MARKER, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import {
+	CURSOR_MARKER,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 
 // Grapheme-aware extraction at the cursor: pi-tui's Input advances `cursor` by
 // grapheme-cluster code-unit length, so the cursor can land between code units of
@@ -68,7 +73,15 @@ function buildCursorRaw(buffer: string, offset: number): string {
  * pi-tui Input.render, ink-text-input, terkelg/prompts, ratatui's user-input example.
  */
 export function renderInlineInputRow(opts: RenderInlineInputOptions): string[] {
-	const { buffer, cursorOffset, rowPrefix, continuationPrefix, contentWidth, selectedText, multiline } = opts;
+	const {
+		buffer,
+		cursorOffset,
+		rowPrefix,
+		continuationPrefix,
+		contentWidth,
+		selectedText,
+		multiline,
+	} = opts;
 	const offset = resolveCursorOffset(buffer, cursorOffset);
 
 	if (multiline) {

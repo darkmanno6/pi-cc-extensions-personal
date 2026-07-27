@@ -34,7 +34,11 @@ export type SentinelLabel = (typeof SENTINEL_LABELS)[SentinelKind];
  * `["Other", other, next]` literal so consumers using
  * `RESERVED_LABELS[i]` indexing or `Set` membership see no behavior change.
  */
-export const RESERVED_LABELS = ["Other", ROW_INTENT_META.other.label, ROW_INTENT_META.next.label] as const;
+export const RESERVED_LABELS = [
+	"Other",
+	ROW_INTENT_META.other.label,
+	ROW_INTENT_META.next.label,
+] as const;
 export type ReservedLabel = (typeof RESERVED_LABELS)[number];
 
 export const OptionSchema = Type.Object({

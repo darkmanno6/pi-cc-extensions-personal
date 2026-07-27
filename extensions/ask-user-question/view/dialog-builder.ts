@@ -6,7 +6,11 @@ import type { PreviewPaneProps } from "./components/preview/preview-pane.js";
 import type { TabBar } from "./components/tab-bar.js";
 import type { StatefulView } from "./stateful-view.js";
 import type { TabComponents } from "./tab-components.js";
-import { QuestionTabStrategy, SubmitTabStrategy, type TabContentStrategy } from "./tab-content-strategy.js";
+import {
+	QuestionTabStrategy,
+	SubmitTabStrategy,
+	type TabContentStrategy,
+} from "./tab-content-strategy.js";
 
 export const HINT_PART_ENTER = "Enter to select";
 export const HINT_PART_NAV = "↑/↓ to navigate";
@@ -27,10 +31,16 @@ export const HINT_PART_EXPAND = "Ctrl+] to expand";
  * prefix substring of the rendered line. On narrow terminals the collapse tail
  * clips with `…` (`OneLineClippedText`); the core is preserved.
  */
-export const HINT_SINGLE = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT_PART_CANCEL].join(" · ");
-export const HINT_MULTI = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT_PART_TAB, HINT_PART_CANCEL].join(
+export const HINT_SINGLE = [HINT_PART_ENTER, HINT_PART_NAV, HINT_PART_NOTES, HINT_PART_CANCEL].join(
 	" · ",
 );
+export const HINT_MULTI = [
+	HINT_PART_ENTER,
+	HINT_PART_NAV,
+	HINT_PART_NOTES,
+	HINT_PART_TAB,
+	HINT_PART_CANCEL,
+].join(" · ");
 /** Single-line footer shown by `QuestionnaireSession` when `state.collapsed === true`. Bypasses `buildHintText`. */
 export const COLLAPSED_HINT = [HINT_PART_EXPAND, HINT_PART_CANCEL].join(" · ");
 export const REVIEW_HEADING = "Review your answers";
@@ -137,7 +147,10 @@ export class DialogView implements StatefulView<DialogProps> {
 		const availableMiddle = Math.max(0, termRows - topFixed - bottomFixed);
 		if (availableMiddle === 0) {
 			// Terminal too small for any middle content — show just chrome.
-			const chromeOnly = [...natural.slice(0, topFixed), ...natural.slice(natural.length - bottomFixed)];
+			const chromeOnly = [
+				...natural.slice(0, topFixed),
+				...natural.slice(natural.length - bottomFixed),
+			];
 			return chromeOnly.length > termRows ? chromeOnly.slice(0, termRows) : chromeOnly;
 		}
 
@@ -149,14 +162,18 @@ export class DialogView implements StatefulView<DialogProps> {
 			const focusedRowInMiddle = headingCount + bodyRange[0];
 			const focusedHeight = bodyRange[1] - bodyRange[0];
 			// Center the focused item vertically in the available middle space.
-			const idealStart = focusedRowInMiddle - Math.floor(Math.max(0, availableMiddle - focusedHeight) / 2);
+			const idealStart =
+				focusedRowInMiddle - Math.floor(Math.max(0, availableMiddle - focusedHeight) / 2);
 			scrollStart = Math.max(0, Math.min(idealStart, middleRows - availableMiddle));
 		} else {
 			// No interactive focus (submit tab) — top-anchor the middle.
 			scrollStart = 0;
 		}
 
-		const scrollableMiddle = natural.slice(topFixed + scrollStart, topFixed + scrollStart + availableMiddle);
+		const scrollableMiddle = natural.slice(
+			topFixed + scrollStart,
+			topFixed + scrollStart + availableMiddle,
+		);
 
 		const hasUp = scrollStart > 0;
 		const hasDown = scrollStart + availableMiddle < middleRows;
@@ -182,7 +199,10 @@ export class DialogView implements StatefulView<DialogProps> {
 		return result.length > termRows ? result.slice(0, termRows) : result;
 	}
 
-	private buildContainerFromStrategy(strategy: TabContentStrategy, headingRowCache: Component[]): Container {
+	private buildContainerFromStrategy(
+		strategy: TabContentStrategy,
+		headingRowCache: Component[],
+	): Container {
 		const { theme, isMulti, tabBar } = this.config;
 		const state = this.liveProps.state;
 		const container = new Container();

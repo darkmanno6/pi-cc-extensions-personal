@@ -31,7 +31,9 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	const editor = {
 		getText: () => "",
 		setText() {},
-		handleInput() { editorInputCount++; },
+		handleInput() {
+			editorInputCount++;
+		},
 		render: () => ["editor"],
 	};
 	const status = { render: () => ["status"] };
@@ -39,7 +41,11 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	const editorContainer = { children: [editor], render: () => ["editor"] };
 	const below = { render: () => ["below"] };
 	const footer = { render: () => ["footer"] };
-	const terminalPrototype = { get rows() { return 30; } };
+	const terminalPrototype = {
+		get rows() {
+			return 30;
+		},
+	};
 	const terminal = Object.assign(Object.create(terminalPrototype), {
 		columns: 80,
 		write() {},
@@ -51,14 +57,12 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		children: [transcript, status, above, editorContainer, below, footer],
 		focusedComponent: editor,
 		// Zentui exposes only the three-row visible transcript window here.
-		previousLines: [
-			"",
-			"✓ Bash(echo ok)",
-			"  └ 1 line output (ctrl+o expand / click)",
-		],
+		previousLines: ["", "✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"],
 		// previousViewportTop is unrelated cursor bookkeeping.
 		previousViewportTop: 17,
-		requestRender(force?: boolean) { renderRequests.push(force); },
+		requestRender(force?: boolean) {
+			renderRequests.push(force);
+		},
 		handleInput(data: string) {
 			if (data === "\x1b[5;9~" && transcript.children.length > 0) {
 				this.previousLines = ["", "✓ Bash(echo old)", "  └ 1 line output (ctrl+o expand / click)"];
@@ -120,6 +124,27 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	tui.handleInput("\x1b[8^");
 	assert.deepEqual(scrollButton.render(80), []);
 	assert.equal(editorInputCount, editorInputsBeforeShortcut);
+
+	// Pi rebuilds the transcript on compaction without session_start. If another
+	// fixed-editor owner replaces the root dispatcher, ccstyle must wrap it again.
+	const replacementHandle = function (this: typeof tui, data: string) {
+		for (const listener of inputListeners) {
+			if (listener(data)?.consume) return;
+		}
+		this.focusedComponent?.handleInput?.(data);
+	};
+	tui.handleInput = replacementHandle;
+	tui.previousLines = ["", "✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
+	visibleTool.expanded = false;
+	expandedToolId = null;
+	await events.get("session_compact")?.({}, { mode: "tui", hasUI: true, ui });
+	assert.notEqual(
+		tui.handleInput,
+		replacementHandle,
+		"compaction reclaims the root input dispatcher",
+	);
+	tui.handleInput("\x1b[<0;20;3M");
+	assert.equal(expandedToolId, "tool-visible");
 
 	// An empty transcript cannot move, so PageUp must never flash the affordance.
 	transcript.children = [];

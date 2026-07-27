@@ -48,13 +48,19 @@ function totalTabs(runtime: QuestionnaireRuntime): number {
 	return runtime.isMulti ? runtime.questions.length + 1 : 1;
 }
 
-function computeAutoAdvanceTab(state: QuestionnaireState, runtime: QuestionnaireRuntime): number | undefined {
+function computeAutoAdvanceTab(
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): number | undefined {
 	if (!runtime.isMulti) return undefined;
 	if (state.currentTab < runtime.questions.length - 1) return state.currentTab + 1;
 	return runtime.questions.length;
 }
 
-function buildSingleSelectAnswer(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionAnswer | null {
+function buildSingleSelectAnswer(
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): QuestionAnswer | null {
 	const q = runtime.questions[state.currentTab];
 	if (!q) return null;
 
@@ -114,16 +120,32 @@ function tabSwitchAction(
 }
 
 // DOWN at the last item wraps to the first (cycle through [option0, …, optionLast]).
-function nextNavOnDown(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
-	return { kind: "nav", nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, runtime.items.length)) };
+function nextNavOnDown(
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): QuestionnaireAction {
+	return {
+		kind: "nav",
+		nextIndex: wrapTab(state.optionIndex + 1, Math.max(1, runtime.items.length)),
+	};
 }
 
 // UP at the first item wraps to the last (symmetric with nextNavOnDown).
-function prevNavOnUp(state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
-	return { kind: "nav", nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, runtime.items.length)) };
+function prevNavOnUp(
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): QuestionnaireAction {
+	return {
+		kind: "nav",
+		nextIndex: wrapTab(state.optionIndex - 1, Math.max(1, runtime.items.length)),
+	};
 }
 
-export function routeKey(data: string, state: QuestionnaireState, runtime: QuestionnaireRuntime): QuestionnaireAction {
+export function routeKey(
+	data: string,
+	state: QuestionnaireState,
+	runtime: QuestionnaireRuntime,
+): QuestionnaireAction {
 	const kb = runtime.keybindings;
 
 	// Collapse/expand is intercepted before inner controls. The questionnaire stays

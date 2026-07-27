@@ -1,5 +1,12 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type Input, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	Container,
+	type Input,
+	Spacer,
+	Text,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import { formatAnswerScalar } from "../tool/format-answer.js";
 import type { QuestionData } from "../tool/types.js";
 import type { PreviewPane, PreviewPaneProps } from "./components/preview/preview-pane.js";
@@ -134,7 +141,10 @@ export class QuestionTabStrategy implements TabContentStrategy {
 		// drops the trailing parts (collapse hint first, then cancel) with `…`.
 		return [
 			new Spacer(1),
-			new OneLineClippedText(this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state)), 1),
+			new OneLineClippedText(
+				this.config.theme.fg("dim", buildHintText(question, this.config.isMulti, state)),
+				1,
+			),
 		];
 	}
 
@@ -175,7 +185,11 @@ export class SubmitTabStrategy implements TabContentStrategy {
 			const answerText = formatAnswerScalar(a, "summary");
 			c.addChild(new Text(this.config.theme.fg("muted", ` ● ${label}`), 1, 0));
 			c.addChild(
-				new Text(`   ${this.config.theme.fg("muted", "→")} ${this.config.theme.fg("text", answerText)}`, 1, 0),
+				new Text(
+					`   ${this.config.theme.fg("muted", "→")} ${this.config.theme.fg("text", answerText)}`,
+					1,
+					0,
+				),
 			);
 			if (a.notes && a.notes.length > 0) {
 				c.addChild(new Text(this.config.theme.fg("dim", `     notes: ${a.notes}`), 1, 0));
@@ -203,10 +217,7 @@ export class SubmitTabStrategy implements TabContentStrategy {
 		const promptText =
 			missing.length === 0
 				? this.config.theme.fg("muted", READY_PROMPT)
-				: this.config.theme.fg(
-						"warning",
-						`${INCOMPLETE_WARNING_PREFIX} ${missing.join(", ")}`,
-					);
+				: this.config.theme.fg("warning", `${INCOMPLETE_WARNING_PREFIX} ${missing.join(", ")}`);
 		const out: Component[] = [new Spacer(1), new Text(promptText, 1, 0), new Spacer(1)];
 		if (this.config.submitPicker) {
 			out.push(this.config.submitPicker);
@@ -236,7 +247,11 @@ export class SubmitTabStrategy implements TabContentStrategy {
  * is the trade we picked over wrapping (which would inflate `footerRowCount` and
  * desync the height math in `DialogView.render`).
  */
-export function buildHintText(question: QuestionData | undefined, isMulti: boolean, state: DialogState): string {
+export function buildHintText(
+	question: QuestionData | undefined,
+	isMulti: boolean,
+	state: DialogState,
+): string {
 	const parts: string[] = [HINT_PART_ENTER, HINT_PART_NAV];
 	if (question?.multiSelect === true) parts.push(HINT_PART_TOGGLE);
 	if (question && !state.notesVisible && !state.inputMode) {

@@ -192,7 +192,10 @@ export class WrappingSelect implements Component {
 
 	private computeVisibleWindow(): { startIndex: number; endIndex: number } {
 		const half = Math.floor(this.maxVisible / 2);
-		const startIndex = Math.max(0, Math.min(this.selectedIndex - half, this.items.length - this.maxVisible));
+		const startIndex = Math.max(
+			0,
+			Math.min(this.selectedIndex - half, this.items.length - this.maxVisible),
+		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.items.length);
 		return { startIndex, endIndex };
 	}
@@ -210,7 +213,10 @@ export class WrappingSelect implements Component {
 	): string[] {
 		const rowPrefix = this.buildRowPrefix(index, isActive, numberWidth);
 		const continuationPrefix = " ".repeat(visibleWidth(rowPrefix));
-		const contentWidth = Math.max(WrappingSelect.MIN_CONTENT_WIDTH, width - visibleWidth(rowPrefix));
+		const contentWidth = Math.max(
+			WrappingSelect.MIN_CONTENT_WIDTH,
+			width - visibleWidth(rowPrefix),
+		);
 
 		if (this.shouldRenderAsInlineInput(item, isActive)) {
 			return this.renderInlineInputRow(rowPrefix, continuationPrefix, contentWidth);
@@ -229,7 +235,13 @@ export class WrappingSelect implements Component {
 		const applySelectedStyle = isActive || isConfirmed;
 
 		return [
-			...this.renderLabelBlock(label, rowPrefix, continuationPrefix, contentWidth, applySelectedStyle),
+			...this.renderLabelBlock(
+				label,
+				rowPrefix,
+				continuationPrefix,
+				contentWidth,
+				applySelectedStyle,
+			),
 			...this.renderDescriptionBlock(item.description, continuationPrefix, contentWidth),
 		];
 	}
@@ -252,7 +264,11 @@ export class WrappingSelect implements Component {
 	 * building core. The `multiline: true` path is byte-identical to the pre-extraction
 	 * output (cursor rationale lives in `inline-input.ts`).
 	 */
-	private renderInlineInputRow(rowPrefix: string, continuationPrefix: string, contentWidth: number): string[] {
+	private renderInlineInputRow(
+		rowPrefix: string,
+		continuationPrefix: string,
+		contentWidth: number,
+	): string[] {
 		return renderInlineInputRow({
 			buffer: this.inputBuffer,
 			cursorOffset: this.inputCursorOffset,

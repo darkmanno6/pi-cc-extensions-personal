@@ -298,7 +298,10 @@ export function resultPreview(result: any, isPartial = false): string {
 		? result.content.find((c: any) => c?.type === "text" && typeof c.text === "string")?.text
 		: undefined;
 	if (!text) return isPartial ? "running" : "";
-	const lines = sanitizeToolResultText(text).trim().split("\n").filter((line) => line.trim().length > 0);
+	const lines = sanitizeToolResultText(text)
+		.trim()
+		.split("\n")
+		.filter((line) => line.trim().length > 0);
 	if (lines.length === 0) return isPartial ? "running" : "";
 	if (lines.length === 1) return lines[0];
 	return `${lines.length} lines`;
@@ -399,7 +402,10 @@ function statusMarker(
 	if (opts.isError) return theme.fg("error", "✗ ");
 	if (opts.running) {
 		if (!CLAUDE_LOADING_TOOLS.has(name)) return theme.fg("accent", "● ");
-		const frame = CLAUDE_LOADING_FRAMES[Math.floor(Date.now() / BLINK_INTERVAL_MS) % CLAUDE_LOADING_FRAMES.length] ?? "⠋";
+		const frame =
+			CLAUDE_LOADING_FRAMES[
+				Math.floor(Date.now() / BLINK_INTERVAL_MS) % CLAUDE_LOADING_FRAMES.length
+			] ?? "⠋";
 		return theme.fg("accent", `${frame} `);
 	}
 	if (opts.hasResult) return theme.fg("success", "✓ ");
@@ -409,10 +415,16 @@ function statusMarker(
 function textSignalHasVisibleContent(assistantMessageEvent: any): boolean {
 	const type = assistantMessageEvent?.type;
 	if (type === "text_delta") {
-		return typeof assistantMessageEvent.delta === "string" && assistantMessageEvent.delta.trim().length > 0;
+		return (
+			typeof assistantMessageEvent.delta === "string" &&
+			assistantMessageEvent.delta.trim().length > 0
+		);
 	}
 	if (type === "text_end") {
-		return typeof assistantMessageEvent.content === "string" && assistantMessageEvent.content.trim().length > 0;
+		return (
+			typeof assistantMessageEvent.content === "string" &&
+			assistantMessageEvent.content.trim().length > 0
+		);
 	}
 	return false;
 }
@@ -492,7 +504,8 @@ function updateCurrentThoughtFromMessage(message: any) {
 }
 
 function anchorCurrentThoughtTo(info: ToolInfo) {
-	if (!thoughtTickerEnabled() || !state.currentThoughtHeading || state.thoughtAnchorId === info.id) return;
+	if (!thoughtTickerEnabled() || !state.currentThoughtHeading || state.thoughtAnchorId === info.id)
+		return;
 	const previousAnchorId = state.thoughtAnchorId;
 	state.thoughtAnchorId = info.id;
 	invalidateToolById(previousAnchorId);
@@ -500,10 +513,18 @@ function anchorCurrentThoughtTo(info: ToolInfo) {
 }
 
 function currentThoughtLine(toolCallId: string, theme: Theme): string {
-	if (!thoughtTickerEnabled() || state.thoughtAnchorId !== toolCallId || !state.currentThoughtHeading) return "";
+	if (
+		!thoughtTickerEnabled() ||
+		state.thoughtAnchorId !== toolCallId ||
+		!state.currentThoughtHeading
+	)
+		return "";
 	const prefix = " ↳ ";
 	const budget = previewWidth((process.stdout.columns || 100) - prefix.length);
-	return theme.fg("dim", prefix) + theme.fg("thinkingText", limitPlain(state.currentThoughtHeading, budget));
+	return (
+		theme.fg("dim", prefix) +
+		theme.fg("thinkingText", limitPlain(state.currentThoughtHeading, budget))
+	);
 }
 
 function upsertToolInfo(id: string, name: string, args: any, invalidate?: () => void): ToolInfo {
@@ -542,7 +563,10 @@ function joinBurst(info: ToolInfo) {
 	}
 
 	// Only consecutive uses of the same tool are grouped.
-	if (state.currentBurst.length && state.currentBurst[state.currentBurst.length - 1].name !== info.name) {
+	if (
+		state.currentBurst.length &&
+		state.currentBurst[state.currentBurst.length - 1].name !== info.name
+	) {
 		state.currentBurst = [];
 	}
 
@@ -592,7 +616,10 @@ function updateToolResult(toolCallId: string, result: any, isError = false, isPa
 		info.running = false;
 		if (info.startedAt) info.durationMs = Date.now() - info.startedAt;
 		if (state.currentBurst.includes(info) && state.currentBurst.length > 1) {
-			info.burstDurationMs = state.currentBurst.reduce((total, tool) => total + (tool.durationMs ?? 0), 0);
+			info.burstDurationMs = state.currentBurst.reduce(
+				(total, tool) => total + (tool.durationMs ?? 0),
+				0,
+			);
 		}
 		if (isError) state.runStats.failedCount++;
 	}
@@ -616,7 +643,9 @@ function compactToolLine(
 	if (info.hidden) return "";
 
 	const isBurst = (info.burstCount ?? 1) > 1;
-	const durationText = formatDuration((isBurst ? (info.burstDurationMs ?? info.durationMs) : info.durationMs) ?? 0);
+	const durationText = formatDuration(
+		(isBurst ? (info.burstDurationMs ?? info.durationMs) : info.durationMs) ?? 0,
+	);
 	const inner = [info.result ? oneLine(info.result) : "", durationText].filter(Boolean).join(" · ");
 	const status = inner ? ` {${inner}}` : info.running ? " {running}" : "";
 	const details = `${info.preview}${status}`;
@@ -629,7 +658,9 @@ function compactToolLine(
 	if (!isBurst) return indent + marker + theme.fg("muted", limitPlain(details));
 
 	const prefix = `${info.burstCount}× `;
-	const budget = previewWidth((process.stdout.columns || 100) - indent.length - prefix.length - MARKER_WIDTH);
+	const budget = previewWidth(
+		(process.stdout.columns || 100) - indent.length - prefix.length - MARKER_WIDTH,
+	);
 	return indent + marker + theme.fg("muted", prefix + limitPlain(details, budget));
 }
 
@@ -662,20 +693,27 @@ function nativeToolShellChild(component: any): any {
 }
 
 function toolShellChildren(component: any): any[] {
-	return [component.contentText, component.contentBox, component.selfRenderContainer].filter(Boolean);
+	return [component.contentText, component.contentBox, component.selfRenderContainer].filter(
+		Boolean,
+	);
 }
 
 function syncToolShellChild(component: any, target: any, preferredIndex?: number): void {
 	if (!target || !Array.isArray(component.children)) return;
 	const candidates = new Set(toolShellChildren(component));
 	const shellIndexes = component.children
-		.map((child: any, index: number) => candidates.has(child) ? index : -1)
+		.map((child: any, index: number) => (candidates.has(child) ? index : -1))
 		.filter((index: number) => index >= 0);
-	const targetIndex = preferredIndex !== undefined && shellIndexes.includes(preferredIndex)
-		? preferredIndex
-		: shellIndexes[0];
+	const targetIndex =
+		preferredIndex !== undefined && shellIndexes.includes(preferredIndex)
+			? preferredIndex
+			: shellIndexes[0];
 	if (targetIndex === undefined) {
-		if (preferredIndex !== undefined && preferredIndex >= 0 && preferredIndex <= component.children.length) {
+		if (
+			preferredIndex !== undefined &&
+			preferredIndex >= 0 &&
+			preferredIndex <= component.children.length
+		) {
 			component.children.splice(preferredIndex, 0, target);
 		} else if (typeof component.addChild === "function") {
 			component.addChild(target);
@@ -706,9 +744,12 @@ function restoreNativeToolShell(component: any): void {
 	delete component[TOOL_NATIVE_CHILD_KEY];
 }
 
-function patchToolExecutionComponent(installation: CompactInstallation): ToolPrototypePatch | undefined {
+function patchToolExecutionComponent(
+	installation: CompactInstallation,
+): ToolPrototypePatch | undefined {
 	const prototype = ToolExecutionComponent.prototype as any;
-	if (typeof prototype.updateDisplay !== "function" || typeof prototype.render !== "function") return undefined;
+	if (typeof prototype.updateDisplay !== "function" || typeof prototype.render !== "function")
+		return undefined;
 
 	const patch: ToolPrototypePatch = {
 		prototype,
@@ -739,7 +780,12 @@ function patchToolExecutionComponent(installation: CompactInstallation): ToolPro
 			}
 			return patch.originalUpdateDisplay.call(this);
 		}
-		if (!this.toolCallId || !this.toolName || !this.selfRenderContainer || typeof this.selfRenderContainer.clear !== "function") {
+		if (
+			!this.toolCallId ||
+			!this.toolName ||
+			!this.selfRenderContainer ||
+			typeof this.selfRenderContainer.clear !== "function"
+		) {
 			this.__compactStyleForceSelf = false;
 			this.__compactStyleHidden = false;
 			restoreNativeToolShell(this);
@@ -817,27 +863,39 @@ function appendNativeStopReason(component: any, message: any, theme: Theme): voi
 	component.hasToolCalls = hasToolCalls;
 	if (message.stopReason === "length") {
 		component.contentContainer.addChild(new Spacer(1));
-		component.contentContainer.addChild(new Text(
-			theme.fg("error", "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete."),
-			component.outputPad,
-			0,
-		));
+		component.contentContainer.addChild(
+			new Text(
+				theme.fg(
+					"error",
+					"Error: Model stopped because it reached the maximum output token limit. The response may be incomplete.",
+				),
+				component.outputPad,
+				0,
+			),
+		);
 	} else if (!hasToolCalls) {
 		if (message.stopReason === "aborted") {
-			const abortMessage = message.errorMessage && message.errorMessage !== "Request was aborted"
-				? message.errorMessage
-				: "Operation aborted";
+			const abortMessage =
+				message.errorMessage && message.errorMessage !== "Request was aborted"
+					? message.errorMessage
+					: "Operation aborted";
 			component.contentContainer.addChild(new Spacer(1));
-			component.contentContainer.addChild(new Text(theme.fg("error", abortMessage), component.outputPad, 0));
+			component.contentContainer.addChild(
+				new Text(theme.fg("error", abortMessage), component.outputPad, 0),
+			);
 		} else if (message.stopReason === "error") {
 			const errorMessage = message.errorMessage || "Unknown error";
 			component.contentContainer.addChild(new Spacer(1));
-			component.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), component.outputPad, 0));
+			component.contentContainer.addChild(
+				new Text(theme.fg("error", `Error: ${errorMessage}`), component.outputPad, 0),
+			);
 		}
 	}
 }
 
-function patchAssistantMessageComponent(installation: CompactInstallation): AssistantPrototypePatch | undefined {
+function patchAssistantMessageComponent(
+	installation: CompactInstallation,
+): AssistantPrototypePatch | undefined {
 	const prototype = AssistantMessageComponent.prototype as any;
 	if (typeof prototype.updateContent !== "function") return undefined;
 
@@ -884,14 +942,19 @@ function patchAssistantMessageComponent(installation: CompactInstallation): Assi
 		// text and stop-reason paths exactly, while intentionally omitting thinking.
 		this.lastMessage = message;
 		this.contentContainer.clear();
-		const texts = message.content.filter((content: any) => content.type === "text" && content.text?.trim());
+		const texts = message.content.filter(
+			(content: any) => content.type === "text" && content.text?.trim(),
+		);
 		const hasToolCalls = message.content.some((content: any) => content.type === "toolCall");
-		const hasTerminalNotice = message.stopReason === "length"
-			|| (!hasToolCalls && (message.stopReason === "aborted" || message.stopReason === "error"));
+		const hasTerminalNotice =
+			message.stopReason === "length" ||
+			(!hasToolCalls && (message.stopReason === "aborted" || message.stopReason === "error"));
 		if (texts.length > 0) {
 			this.contentContainer.addChild(new Spacer(1));
 			for (const content of texts) {
-				this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme));
+				this.contentContainer.addChild(
+					new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme),
+				);
 			}
 		}
 		if (texts.length > 0 || hasTerminalNotice) {
@@ -932,7 +995,8 @@ function restorePrototypePatches(installation: CompactInstallation): void {
 		if (toolPatch.prototype.render === toolPatch.patchedRender) {
 			toolPatch.prototype.render = toolPatch.originalRender;
 		}
-		if (toolPatch.prototype[TOOL_PATCH_KEY] === toolPatch) delete toolPatch.prototype[TOOL_PATCH_KEY];
+		if (toolPatch.prototype[TOOL_PATCH_KEY] === toolPatch)
+			delete toolPatch.prototype[TOOL_PATCH_KEY];
 	}
 
 	const assistantPatch = installation.assistantPatch;
@@ -973,7 +1037,8 @@ export function refreshCompactTranscript(): void {
 
 export function normalizeSummary(input: unknown): CompactSummaryData {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-	const num = (value: unknown) => (typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0);
+	const num = (value: unknown) =>
+		typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 	return {
 		reads: num(source.reads),
 		edits: num(source.edits),
@@ -1020,9 +1085,10 @@ export class DynamicSummaryComponent {
 	render(width: number): string[] {
 		const line = currentMode() !== "off" ? summaryLine(this.data) : "";
 		if (!line) return [];
-		const italic = typeof (this.theme as any).italic === "function"
-			? (this.theme as any).italic(this.theme.fg("muted", line))
-			: this.theme.fg("muted", line);
+		const italic =
+			typeof (this.theme as any).italic === "function"
+				? (this.theme as any).italic(this.theme.fg("muted", line))
+				: this.theme.fg("muted", line);
 		const prefix = this.theme.fg("borderMuted", "│ ");
 		return new Text(prefix + italic, 0, 0).render(width);
 	}
@@ -1045,6 +1111,7 @@ function appendRunSummary() {
 
 export type CompactStyleHooks = {
 	onSessionStart(event: unknown, ctx: ExtensionContext): void;
+	onSessionCompact(event: unknown, ctx: ExtensionContext): void;
 	onSessionShutdown(event: unknown, ctx: ExtensionContext): void;
 	onAgentStart(event: unknown, ctx: ExtensionContext): void;
 	onAgentEnd(event: unknown, ctx: ExtensionContext): void;
@@ -1099,8 +1166,9 @@ export function installCompactStyle(pi: ExtensionAPI, host: CompactStyleHost): C
 	try {
 		patchRenderers(installation);
 		if (typeof (pi as any).registerEntryRenderer === "function") {
-			pi.registerEntryRenderer(SUMMARY_ENTRY_TYPE, (entry: any, _options: any, theme: Theme) =>
-				new DynamicSummaryComponent(entry.data, theme),
+			pi.registerEntryRenderer(
+				SUMMARY_ENTRY_TYPE,
+				(entry: any, _options: any, theme: Theme) => new DynamicSummaryComponent(entry.data, theme),
 			);
 		}
 	} catch (error) {
@@ -1120,6 +1188,14 @@ export function installCompactStyle(pi: ExtensionAPI, host: CompactStyleHost): C
 			// Keep those new references and repaint now that the new theme is known.
 			refreshCompactTranscript();
 			ctx.ui.setStatus(STATUS_KEY, undefined);
+		},
+		onSessionCompact: (_event, ctx) => {
+			if (!isOwner()) return;
+			// Pi rebuilds transcript components after compaction without emitting
+			// session_start. Reclaim renderer ownership and repaint retained rows.
+			ensureAssistantPatchOwnership(installation);
+			captureTheme(ctx);
+			refreshCompactTranscript();
 		},
 		onSessionShutdown: (_event, ctx) => {
 			if (isOwner()) teardownCompactInstallation(installation);
@@ -1150,7 +1226,8 @@ export function installCompactStyle(pi: ExtensionAPI, host: CompactStyleHost): C
 			ensureAssistantPatchOwnership(installation);
 			captureTheme(ctx);
 			const type = event?.assistantMessageEvent?.type;
-			if (typeof type === "string" && type.startsWith("thinking_")) updateCurrentThoughtFromMessage(event.message);
+			if (typeof type === "string" && type.startsWith("thinking_"))
+				updateCurrentThoughtFromMessage(event.message);
 			if (textSignalHasVisibleContent(event?.assistantMessageEvent)) {
 				clearCurrentThought();
 				state.currentBurst = [];

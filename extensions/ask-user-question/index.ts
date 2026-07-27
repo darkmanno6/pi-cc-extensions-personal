@@ -3,15 +3,15 @@ import { registerAskUserQuestionTool } from "./ask-user-question.js";
 import { registerAskUserQuestionReconciler } from "./reconcile.js";
 
 export {
-  ASK_USER_BLOCKED_EVENT,
-  ASK_USER_PROMPT_EVENT,
-  type AskUserBlockedEventPayload,
-  type AskUserPromptEventPayload,
-  type AskUserPromptOption,
-  type AskUserPromptQuestion,
+	ASK_USER_BLOCKED_EVENT,
+	ASK_USER_PROMPT_EVENT,
+	type AskUserBlockedEventPayload,
+	type AskUserPromptEventPayload,
+	type AskUserPromptOption,
+	type AskUserPromptQuestion,
 } from "./events.js";
 
 export default function (pi: ExtensionAPI) {
-  registerAskUserQuestionTool(pi);
-  registerAskUserQuestionReconciler(pi);
+	registerAskUserQuestionTool(pi);
+	registerAskUserQuestionReconciler(pi);
 }

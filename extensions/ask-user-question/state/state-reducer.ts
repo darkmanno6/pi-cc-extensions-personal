@@ -29,7 +29,10 @@ export interface ApplyResult {
 	effects: readonly Effect[];
 }
 
-function orderedAnswers(state: QuestionnaireState, questions: readonly QuestionData[]): QuestionAnswer[] {
+function orderedAnswers(
+	state: QuestionnaireState,
+	questions: readonly QuestionData[],
+): QuestionAnswer[] {
 	const out: QuestionAnswer[] = [];
 	for (let i = 0; i < questions.length; i++) {
 		const a = state.answers.get(i);
@@ -54,7 +57,10 @@ function syncMultiSelectFromAnswers(
 	return indices;
 }
 
-function persistMultiSelectAnswer(state: QuestionnaireState, ctx: ApplyContext): ReadonlyMap<number, QuestionAnswer> {
+function persistMultiSelectAnswer(
+	state: QuestionnaireState,
+	ctx: ApplyContext,
+): ReadonlyMap<number, QuestionAnswer> {
 	const q = ctx.questions[state.currentTab];
 	if (!q?.multiSelect) return state.answers;
 	const selected: string[] = [];
@@ -87,7 +93,11 @@ function notesValueFor(state: QuestionnaireState, tab: number): string {
 	return state.notesByTab.get(tab) ?? state.answers.get(tab)?.notes ?? "";
 }
 
-function switchTabResult(state: QuestionnaireState, nextTab: number, ctx: ApplyContext): ApplyResult {
+function switchTabResult(
+	state: QuestionnaireState,
+	nextTab: number,
+	ctx: ApplyContext,
+): ApplyResult {
 	const notesValue = notesValueFor(state, nextTab);
 	const transitioned: QuestionnaireState = {
 		...state,
@@ -138,7 +148,8 @@ const navHandler: Handler<"nav"> = (state, action, ctx) => {
 	return { state: next, effects: [] };
 };
 
-const tabSwitchHandler: Handler<"tab_switch"> = (state, action, ctx) => switchTabResult(state, action.nextTab, ctx);
+const tabSwitchHandler: Handler<"tab_switch"> = (state, action, ctx) =>
+	switchTabResult(state, action.nextTab, ctx);
 
 const confirmHandler: Handler<"confirm"> = (state, action, ctx) => {
 	let answer = action.answer;
@@ -158,7 +169,8 @@ const confirmHandler: Handler<"confirm"> = (state, action, ctx) => {
 	// Custom free-text on a multi-select tab is mutually exclusive with checkbox selections:
 	// clear the checked set immediately so [✔] glyphs vanish on Enter. (A custom answer
 	// carries no `selected` array, so syncMultiSelectFromAnswers keeps it empty on tab-back.)
-	const isCustomMulti = answer.kind === "custom" && ctx.questions[answer.questionIndex]?.multiSelect === true;
+	const isCustomMulti =
+		answer.kind === "custom" && ctx.questions[answer.questionIndex]?.multiSelect === true;
 	const next: QuestionnaireState = {
 		...state,
 		answers,
@@ -195,7 +207,8 @@ const multiConfirmHandler: Handler<"multi_confirm"> = (state, action, ctx) => {
 		answers,
 		multiSelectChecked: syncMultiSelectFromAnswers(answers, ctx.questions, state.currentTab),
 	};
-	if (action.autoAdvanceTab !== undefined) return switchTabResult(synced, action.autoAdvanceTab, ctx);
+	if (action.autoAdvanceTab !== undefined)
+		return switchTabResult(synced, action.autoAdvanceTab, ctx);
 	return doneFor(synced, ctx, false);
 };
 
@@ -276,7 +289,11 @@ const HANDLERS: { [K in QuestionnaireAction["kind"]]: Handler<K> } = {
  * Delegates to `HANDLERS` — per-kind handlers above are pure, named, and individually testable.
  * `ignore` is also handled outside the reducer by `handleIgnoreInline` in the runtime fast path.
  */
-export function reduce(state: QuestionnaireState, action: QuestionnaireAction, ctx: ApplyContext): ApplyResult {
+export function reduce(
+	state: QuestionnaireState,
+	action: QuestionnaireAction,
+	ctx: ApplyContext,
+): ApplyResult {
 	const handler = HANDLERS[action.kind] as Handler<typeof action.kind>;
 	return handler(state, action as never, ctx);
 }

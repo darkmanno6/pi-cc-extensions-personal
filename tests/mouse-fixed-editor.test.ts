@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension, {
+	installToolMouseInteraction,
+} from "../extensions/claude-code-style.ts";
 
 test("tool click uses fixed-editor visible rows without previousViewportTop", async () => {
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
@@ -98,7 +100,7 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		},
 	};
 
-	claudeCodeStyleExtension(pi as any);
+	claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
 	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
 	tui.handleInput("\x1b[<0;20;3M");
 	assert.equal(expandedToolId, "tool-visible");
@@ -169,4 +171,57 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
+});
+
+test("disabled fixed editor features release mouse reporting but retain Ctrl+End", () => {
+	const writes: string[] = [];
+	const widgetValues: unknown[] = [];
+	const renderRequests: unknown[] = [];
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	const tui = {
+		terminal: {
+			columns: 80,
+			write(value: string) {
+				writes.push(value);
+			},
+		},
+		handleInput() {},
+		requestRender(force?: boolean) {
+			renderRequests.push(force);
+		},
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, value: any) {
+				widgetValues.push(value);
+				if (typeof value === "function") {
+					value(tui, { fg: (_color: string, text: string) => text });
+				}
+			},
+			onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
+				inputHandler = handler;
+				return () => {
+					if (inputHandler === handler) inputHandler = undefined;
+				};
+			},
+		},
+	};
+
+	installToolMouseInteraction(ctx, true);
+	assert.ok(writes.some((value) => value.includes("?1000h")));
+	const disabledWritesStart = writes.length;
+	installToolMouseInteraction(ctx, false);
+	const disabledWrites = writes.slice(disabledWritesStart);
+	assert.ok(disabledWrites.some((value) => value.includes("?1000l")));
+	assert.ok(!disabledWrites.some((value) => value.includes("?1000h")));
+	assert.equal(typeof widgetValues.at(-1), "function");
+
+	const result = inputHandler?.("\x1b[8^");
+	assert.deepEqual(result, { consume: true });
+	assert.equal(writes.at(-1), "\x1b[0m");
+	assert.deepEqual(renderRequests, [undefined]);
+
+	installToolMouseInteraction({}, false);
 });

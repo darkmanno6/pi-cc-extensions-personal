@@ -64,18 +64,32 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 		{
 			mode: "off",
 			excludeRenderers: ["edit"],
+			fixedEditorFeatures: true,
 		},
 	);
-	assert.deepEqual(normalizeConfig({ enabled: true }), { mode: "on", excludeRenderers: [] });
+	assert.deepEqual(normalizeConfig({ enabled: true }), {
+		mode: "on",
+		excludeRenderers: [],
+		fixedEditorFeatures: true,
+	});
 	assert.deepEqual(
 		normalizeConfig({ mode: "compact", enabled: false, excludeRenderers: ["Agent", "Agent"] }),
 		{
 			mode: "compact",
 			excludeRenderers: ["Agent"],
+			fixedEditorFeatures: true,
 		},
 	);
-	assert.deepEqual(normalizeConfig({ mode: "off" }), { mode: "off", excludeRenderers: [] });
-	assert.deepEqual(normalizeConfig({ mode: "unknown" }), { mode: "on", excludeRenderers: [] });
+	assert.deepEqual(normalizeConfig({ mode: "off", fixedEditorFeatures: false }), {
+		mode: "off",
+		excludeRenderers: [],
+		fixedEditorFeatures: false,
+	});
+	assert.deepEqual(normalizeConfig({ mode: "unknown" }), {
+		mode: "on",
+		excludeRenderers: [],
+		fixedEditorFeatures: true,
+	});
 });
 
 test("rendererRoute keeps Agent and exclusions native in every mode", () => {
@@ -842,7 +856,7 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 		},
 	};
 
-	claudeCodeStyleExtension(pi as any);
+	claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
 	const command = commands.get("ccstyle");
 	assert.deepEqual(
 		command.getArgumentCompletions("").map((item: any) => item.value),
@@ -864,18 +878,16 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 			setStatus() {},
 		},
 	});
-	const panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	let panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	assert.ok(panelLines.some((line: string) => line.includes("Mode") && line.includes("on")));
+	assert.ok(panelLines.some((line: string) => line.includes("rich edit/write diffs")));
 	assert.ok(
-		panelLines.some((line: string) => line.includes("on") && line.includes("Claude Code style")),
+		panelLines.some((line: string) => line.includes("Fixed editor feature") && line.includes("on")),
 	);
-	assert.ok(
-		panelLines.some((line: string) => line.includes("off") && line.includes("Pi native output")),
-	);
-	assert.ok(
-		panelLines.some(
-			(line: string) => line.includes("compact") && line.includes("Compact transcript"),
-		),
-	);
+	panel.handleInput("\x1b[B");
+	panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	assert.ok(panelLines.some((line: string) => line.includes("mouse capture")));
+	assert.ok(panelLines.some((line: string) => line.includes("Ctrl+End")));
 	assert.match(panelLines[0]!, /─|━/, "panel has a top divider");
 	assert.match(panelLines.at(-1)!, /─|━/, "panel has a bottom divider");
 

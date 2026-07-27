@@ -1,5 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DynamicBorder, keyHint, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import {
+	DynamicBorder,
+	getSettingsListTheme,
+	keyHint,
+	ToolExecutionComponent,
+} from "@earendil-works/pi-coding-agent";
 import {
 	installCompactStyle,
 	type CompactStyleHooks,
@@ -7,8 +12,13 @@ import {
 } from "./compact-style.ts";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 import {
+	installWriteOverride,
+	renderRichToolResult,
+	WriteExecutionMetadataStore,
+} from "./tool-diff/index.ts";
+import {
 	Container,
-	SelectList,
+	SettingsList,
 	Text,
 	matchesKey,
 	truncateToWidth,
@@ -29,6 +39,7 @@ import { join } from "node:path";
 export type Config = {
 	mode: CompactStyleMode;
 	excludeRenderers: string[];
+	fixedEditorFeatures: boolean;
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "claude-code-style.json");
@@ -53,7 +64,8 @@ export function normalizeConfig(input: unknown): Config {
 				),
 			]
 		: [];
-	return { mode: migratedMode, excludeRenderers };
+	const fixedEditorFeatures = source.fixedEditorFeatures !== false;
+	return { mode: migratedMode, excludeRenderers, fixedEditorFeatures };
 }
 
 let config: Config = loadConfig();
@@ -83,7 +95,7 @@ function loadConfig(): Config {
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}
-	return { mode: "on", excludeRenderers: [] };
+	return { mode: "on", excludeRenderers: [], fixedEditorFeatures: true };
 }
 
 function saveConfig() {
@@ -323,6 +335,7 @@ const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u
 const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
 let toolMouseTui: any = null;
 let toolMouseUi: any = null;
+let toolMouseFixedFeaturesEnabled = false;
 let toolMouseInputUnsubscribe: (() => void) | null = null;
 let toolMouseInputPatchTui: any = null;
 let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
@@ -492,7 +505,7 @@ function findToolAtFixedEditorRow(
 function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null {
 	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
-	if (isFixedEditorTui(tui)) {
+	if (useFixedEditorFeatures(tui)) {
 		// Zentui replaces Pi's root render with the already-sliced visible
 		// transcript. previousViewportTop remains cursor bookkeeping and must not
 		// be added to a physical mouse row here.
@@ -526,6 +539,10 @@ function isFixedEditorTui(tui: any): boolean {
 	const prototype = Object.getPrototypeOf(terminal);
 	const inheritedRows = prototype ? Object.getOwnPropertyDescriptor(prototype, "rows") : undefined;
 	return typeof ownRows?.get === "function" && ownRows.get !== inheritedRows?.get;
+}
+
+function useFixedEditorFeatures(tui: any): boolean {
+	return toolMouseFixedFeaturesEnabled && isFixedEditorTui(tui);
 }
 
 function formatShortcut(shortcut: string): string {
@@ -579,7 +596,7 @@ function renderFixedScrollableRoot(tui: any, width: number): string[] {
 }
 
 function isFixedEditorAtBottom(tui: any): boolean {
-	if (!isFixedEditorTui(tui)) return true;
+	if (!useFixedEditorFeatures(tui)) return true;
 	const visibleLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
 	if (visibleLines.length === 0) return true;
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
@@ -601,7 +618,8 @@ function hideScrollButton(tui: any): void {
 }
 
 function scheduleScrollButtonSync(tui: any, data: string): void {
-	if (!isScrollNavigationInput(data) || scrollButtonSyncScheduled) return;
+	if (!useFixedEditorFeatures(tui) || !isScrollNavigationInput(data) || scrollButtonSyncScheduled)
+		return;
 	scrollButtonSyncScheduled = true;
 	const previousLines = tui.previousLines;
 	const check = (attempt: number) => {
@@ -629,7 +647,7 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 }
 
 function updateScrollButtonFromInput(tui: any, data: string): void {
-	if (!isFixedEditorTui(tui)) return;
+	if (!useFixedEditorFeatures(tui)) return;
 	if (matchesKey(data, "enter") || matchesKey(data, "return") || isScrollBottomInput(data)) {
 		hideScrollButton(tui);
 	}
@@ -716,7 +734,7 @@ function containsEditorLike(component: any, focused: any, seen = new Set<any>())
 }
 
 function scrollButtonScreenRow(tui: any, width: number): number | null {
-	if (!scrollButtonVisible || !isFixedEditorTui(tui) || !scrollButtonWidget) return null;
+	if (!scrollButtonVisible || !useFixedEditorFeatures(tui) || !scrollButtonWidget) return null;
 	const children = Array.isArray(tui?.children) ? tui.children : [];
 	const editorIndex = children.findIndex((child: any) =>
 		containsEditorLike(child, tui.focusedComponent),
@@ -816,7 +834,7 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 }
 
 function renderScrollButton(width: number, theme: any): string[] {
-	if (!scrollButtonVisible || !isFixedEditorTui(toolMouseTui)) return [];
+	if (!scrollButtonVisible || !useFixedEditorFeatures(toolMouseTui)) return [];
 	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
 	const messageText =
 		pendingScrollMessages > 0
@@ -846,7 +864,11 @@ function patchToolMouseInputCapture(tui: any): void {
 			updateScrollButtonFromInput(this, data);
 			// Capture the current viewport before Pi/Zentui applies the scroll input.
 			scheduleScrollButtonSync(this, data);
-			if (isFixedEditorTui(this) && isScrollBottomInput(data) && jumpToBottomWithoutSubmit(this))
+			if (
+				useFixedEditorFeatures(this) &&
+				isScrollBottomInput(data) &&
+				jumpToBottomWithoutSubmit(this)
+			)
 				return;
 			const packets = parseSgrMousePackets(data);
 			if (packets) {
@@ -887,12 +909,18 @@ function restoreToolMouseInputCapture(): void {
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!toolMouseTui) return undefined;
 	updateScrollButtonFromInput(toolMouseTui, data);
-	if (
-		isFixedEditorTui(toolMouseTui) &&
-		isScrollBottomInput(data) &&
-		jumpToBottomWithoutSubmit(toolMouseTui)
-	) {
-		return { consume: true };
+	if (isScrollBottomInput(data)) {
+		if (useFixedEditorFeatures(toolMouseTui) && jumpToBottomWithoutSubmit(toolMouseTui)) {
+			return { consume: true };
+		}
+		if (!toolMouseFixedFeaturesEnabled) {
+			// Native Pi scrolls through terminal history rather than an internal
+			// viewport. A harmless terminal write makes Ctrl+End snap that history
+			// to the active cursor without enabling mouse reporting.
+			toolMouseTui.terminal?.write?.("\x1b[0m");
+			toolMouseTui.requestRender?.();
+			return { consume: true };
+		}
 	}
 	const packets = parseSgrMousePackets(data);
 	if (!packets) {
@@ -942,19 +970,26 @@ function teardownToolMouseInteraction(): void {
 	scrollButtonSyncScheduled = false;
 	toolMouseTui = null;
 	toolMouseUi = null;
+	toolMouseFixedFeaturesEnabled = false;
 }
 
-function installToolMouseInteraction(ctx: any): void {
+export function installToolMouseInteraction(
+	ctx: any,
+	fixedEditorFeatures = config.fixedEditorFeatures,
+): void {
 	teardownToolMouseInteraction();
 	if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function")
 		return;
 
 	toolMouseUi = ctx.ui;
+	toolMouseFixedFeaturesEnabled = fixedEditorFeatures;
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
-		patchToolMouseInputCapture(tui);
-		tui?.terminal?.write?.(TOOL_MOUSE_ENABLE);
+		if (fixedEditorFeatures) {
+			patchToolMouseInputCapture(tui);
+			tui?.terminal?.write?.(TOOL_MOUSE_ENABLE);
+		}
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),
 			invalidate() {},
@@ -997,48 +1032,84 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, compactStyle: CompactS
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
 
+function modeSettingDescription(mode: CompactStyleMode): string {
+	if (mode === "compact") {
+		return "Compact transcript summaries are enabled. Fixed editor interaction is configured separately below.";
+	}
+	if (mode === "off") {
+		return "Pi native tool rendering is enabled. Fixed editor interaction is configured separately below.";
+	}
+	return "Claude Code style and rich edit/write diffs are enabled. Fixed editor interaction is configured separately below.";
+}
+
+function fixedEditorSettingDescription(enabled: boolean): string {
+	return enabled
+		? "Enables mouse capture, tool click expansion, fixed viewport mapping, the back-to-bottom button, message count, and Ctrl+End."
+		: "Uses terminal-native wheel scrolling; disables mouse capture, tool clicks, fixed viewport mapping, button, and message count. Ctrl+End remains enabled.";
+}
+
 async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Promise<void> {
 	if (ctx?.mode !== "tui" || !ctx?.hasUI || typeof ctx.ui?.custom !== "function") {
 		ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 		return;
 	}
 
-	const modes: Array<{ value: CompactStyleMode; label: string; description: string }> = [
-		{ value: "on", label: "on", description: "Claude Code style" },
-		{ value: "off", label: "off", description: "Pi native output" },
-		{ value: "compact", label: "compact", description: "Compact transcript" },
-	];
-	const selectedMode = await (ctx.ui.custom(
-		(tui: any, theme: any, _keybindings: any, done: (value?: CompactStyleMode) => void) => {
-			const container = new Container();
-			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-			container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 0));
-			const selectList = new SelectList(modes, modes.length, {
-				selectedPrefix: (text: string) => theme.fg("accent", text),
-				selectedText: (text: string) => theme.fg("accent", text),
-				description: (text: string) => theme.fg("muted", text),
-				scrollInfo: (text: string) => theme.fg("dim", text),
-				noMatch: (text: string) => theme.fg("warning", text),
-			});
-			selectList.setSelectedIndex(modes.findIndex((item) => item.value === config.mode));
-			selectList.onSelect = (item: { value: string }) => done(item.value as CompactStyleMode);
-			selectList.onCancel = () => done();
-			container.addChild(selectList);
-			container.addChild(
-				new Text(theme.fg("dim", "↑↓ navigate · enter select · esc cancel"), 1, 0),
-			);
-			container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-			return {
-				render: (width: number) => container.render(width),
-				invalidate: () => container.invalidate(),
-				handleInput(data: string) {
-					selectList.handleInput(data);
-					tui.requestRender();
-				},
-			};
-		},
-	) as Promise<CompactStyleMode | undefined>);
-	if (selectedMode) applyStyleMode(selectedMode, ctx, compactStyle);
+	await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: () => void) => {
+		const container = new Container();
+		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 0));
+		const modeSetting = {
+			id: "mode",
+			label: "Mode",
+			description: modeSettingDescription(config.mode),
+			currentValue: config.mode,
+			values: ["on", "off", "compact"],
+		};
+		const fixedEditorSetting = {
+			id: "fixedEditorFeatures",
+			label: "Fixed editor feature",
+			description: fixedEditorSettingDescription(config.fixedEditorFeatures),
+			currentValue: config.fixedEditorFeatures ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const settingsList = new SettingsList(
+			[modeSetting, fixedEditorSetting],
+			4,
+			getSettingsListTheme(),
+			(id: string, value: string) => {
+				if (id === "mode") {
+					modeSetting.description = modeSettingDescription(value as CompactStyleMode);
+					applyStyleMode(value as CompactStyleMode, ctx, compactStyle);
+					return;
+				}
+				if (id === "fixedEditorFeatures") {
+					config.fixedEditorFeatures = value === "on";
+					fixedEditorSetting.description = fixedEditorSettingDescription(
+						config.fixedEditorFeatures,
+					);
+					saveConfig();
+					installToolMouseInteraction(ctx);
+					refreshCurrentTranscript(compactStyle, ctx);
+					ctx.ui.notify(`Fixed editor feature: ${value}`, "info");
+				}
+			},
+			() => done(),
+			{ enableSearch: false },
+		);
+		container.addChild(settingsList);
+		container.addChild(
+			new Text(theme.fg("dim", "↑↓ navigate · enter/space change · esc close"), 1, 0),
+		);
+		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+		return {
+			render: (width: number) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput(data: string) {
+				settingsList.handleInput?.(data);
+				tui.requestRender();
+			},
+		};
+	});
 }
 
 function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any[], fallback = "") {
@@ -1074,8 +1145,19 @@ function toolCallLabel(toolName: string, toolLabel: string, args: any): string {
 	return toolLabel;
 }
 
+export function shouldRenderRichDiff(
+	mode: CompactStyleMode,
+	toolName: string,
+	isError: boolean,
+): boolean {
+	return mode === "on" && !isError && (toolName === "edit" || toolName === "write");
+}
+
 /** Wrap an arbitrary tool definition with ccstyle call/result rendering. */
-function createCcstyleTool(originalTool: any): any {
+function createCcstyleTool(
+	originalTool: any,
+	writeExecutionMetadata: WriteExecutionMetadataStore,
+): any {
 	const toolName = originalTool.name;
 	const label = isMcpToolDefinition(originalTool, toolName)
 		? toolName
@@ -1120,6 +1202,17 @@ function createCcstyleTool(originalTool: any): any {
 			const isError = options?.isError || context?.isError;
 			setToolVisualState(context, isError ? "error" : "success");
 			const expanded = isToolExpanded(options, context);
+			if (shouldRenderRichDiff(config.mode, toolName, Boolean(isError))) {
+				const richResult = renderRichToolResult(
+					toolName,
+					result,
+					{ ...options, expanded },
+					theme,
+					context,
+					writeExecutionMetadata,
+				);
+				if (richResult) return richResult;
+			}
 
 			const text = textFromResult(result);
 			const rendered = !expanded ? (text ? oneLine(text, 96) : "Done") : text;
@@ -1137,8 +1230,8 @@ function createCcstyleTool(originalTool: any): any {
 }
 
 /**
- * This extension does not register tools. ToolExecutionComponent is shared by
- * the TUI and exported by pi; patch its renderer lookup once so tools use the
+ * Apart from the write override used to capture pre-write content, renderers are
+ * applied through ToolExecutionComponent. Patch its lookup once so tools use the
  * same compact fallback shell by default. Tools named in excludeRenderers keep
  * their original renderer; subagent rendering remains protected.
  */
@@ -1351,7 +1444,9 @@ function disconnectGlobalToolRenderPatch(patch: any): void {
 	else patch.byName = new Map();
 }
 
-function installGlobalToolRendering(): GlobalToolRenderPatch {
+function installGlobalToolRendering(
+	writeExecutionMetadata: WriteExecutionMetadataStore,
+): GlobalToolRenderPatch {
 	const prototype = (ToolExecutionComponent as any).prototype;
 	const host = globalThis as any;
 	const previous = host[GLOBAL_TOOL_RENDER_PATCH];
@@ -1367,7 +1462,7 @@ function installGlobalToolRendering(): GlobalToolRenderPatch {
 		active: true,
 		enabled: () => config.mode === "on",
 		mode: () => config.mode,
-		wrap: createCcstyleTool,
+		wrap: (tool: any) => createCcstyleTool(tool, writeExecutionMetadata),
 		byDefinition: new WeakMap(),
 		byName: new Map(),
 		downstream,
@@ -1447,7 +1542,7 @@ function deactivateLegacyCompactionRendering() {
 }
 
 function notePendingScrollMessage(role: unknown): void {
-	if (!toolMouseTui || !isFixedEditorTui(toolMouseTui) || !scrollButtonVisible) return;
+	if (!toolMouseTui || !useFixedEditorFeatures(toolMouseTui) || !scrollButtonVisible) return;
 	if (role === "assistant") {
 		if (assistantMessageActive) return;
 		assistantMessageActive = true;
@@ -1458,8 +1553,11 @@ function notePendingScrollMessage(role: unknown): void {
 	toolMouseTui.requestRender?.();
 }
 
-export default function (pi: ExtensionAPI) {
-	const globalToolRendering = installGlobalToolRendering();
+export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
+	// The optional override keeps integration tests independent from the user's global config.
+	if (configOverride) config = normalizeConfig({ ...config, ...configOverride });
+	const writeExecutionMetadata = installWriteOverride(pi, new WriteExecutionMetadataStore());
+	const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
 	deactivateLegacyCompactionRendering();
 	const compactStyle: CompactStyleHooks = installCompactStyle(pi, {
 		getMode: () => config.mode,
@@ -1551,6 +1649,7 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", async (event, ctx) => {
 		compactStyle?.onSessionShutdown(event, ctx);
+		writeExecutionMetadata.clear();
 		teardownToolMouseInteraction();
 		deactivateGlobalToolRendering(globalToolRendering);
 		deactivateLegacyCompactionRendering();

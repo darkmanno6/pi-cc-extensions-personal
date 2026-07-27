@@ -9,7 +9,7 @@ import claudeCodeStyleExtension, {
 
 initTheme("dark");
 
-test("claude-code-style initialization does not register built-in tool overrides", async () => {
+test("claude-code-style initialization only registers the write override", async () => {
 	const registeredTools: unknown[] = [];
 	const events = new Map<string, Function>();
 	const pi = {
@@ -25,7 +25,10 @@ test("claude-code-style initialization does not register built-in tool overrides
 
 	claudeCodeStyleExtension(pi as any);
 
-	assert.deepEqual(registeredTools, []);
+	assert.deepEqual(
+		registeredTools.map((tool: any) => tool.name),
+		["write"],
+	);
 	await events.get("session_shutdown")?.({}, { ui: { setStatus() {} } });
 });
 

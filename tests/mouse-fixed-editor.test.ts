@@ -77,9 +77,25 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		},
 		handleInput(data: string) {
 			if (data === "\x1b[5;9~" && transcript.children.length > 0) {
-				this.previousLines = ["", "✓ Bash(echo old)", "  └ 1 line output (ctrl+o expand / click)"];
+				this.previousLines = [
+					"",
+					"✓ Bash(echo old)",
+					"  └ 1 line output (ctrl+o expand / click)",
+					"status",
+					"editor",
+					"below",
+					"footer",
+				];
 			} else if (data === "\x1b[6~" && transcript.children.length > 0) {
-				this.previousLines = ["", "✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
+				this.previousLines = [
+					"",
+					"✓ Bash(echo ok)",
+					"  └ 1 line output (ctrl+o expand / click)",
+					"status",
+					"editor",
+					"below",
+					"footer",
+				];
 			}
 			for (const listener of inputListeners) {
 				if (listener(data)?.consume) return;
@@ -124,6 +140,7 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	events.get("message_start")?.({ message: { role: "assistant" } }, {});
 	assert.match(scrollButton.render(80)[0], /1 new message/);
 	assert.match(scrollButton.render(80)[0], /Ctrl\+End/);
+	assert.doesNotMatch(scrollButton.render(80)[0], /click/i);
 
 	// PageDown reaching the root tail hides the button and clears the count.
 	tui.handleInput("\x1b[6~");

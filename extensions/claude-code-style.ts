@@ -628,14 +628,22 @@ function isFixedEditorAtBottom(tui: any): boolean {
 	const visibleLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
 	if (visibleLines.length === 0) return true;
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
-	const rootLines = renderFixedScrollableRoot(tui, width);
-	if (rootLines.length <= visibleLines.length) return true;
-	const tail = rootLines.slice(-visibleLines.length);
-	return tail.every(
-		(line, index) =>
-			stripTerminalSequences(String(line)) ===
-			stripTerminalSequences(String(visibleLines[index] ?? "")),
+	const rootLines = renderFixedScrollableRoot(tui, width).map((line) =>
+		stripTerminalSequences(String(line)),
 	);
+	while (rootLines.length > 0 && rootLines[rootLines.length - 1] === "") rootLines.pop();
+	if (rootLines.length === 0) return true;
+
+	// previousLines contains both the scrollable root and Zentui's fixed cluster.
+	// Locate the root tail within that full frame instead of requiring it to be
+	// the frame suffix; otherwise status/editor/footer rows keep the button alive.
+	const visible = visibleLines.map((line: unknown) => stripTerminalSequences(String(line)));
+	const matchLength = Math.min(3, rootLines.length);
+	const expected = rootLines.slice(-matchLength);
+	for (let end = matchLength; end <= visible.length; end++) {
+		if (expected.every((line, index) => line === visible[end - matchLength + index])) return true;
+	}
+	return false;
 }
 
 function hideScrollButton(tui: any): void {
@@ -895,7 +903,7 @@ function renderScrollButton(width: number, theme: any): string[] {
 		pendingScrollMessages > 0
 			? `${pendingScrollMessages} new message${pendingScrollMessages === 1 ? "" : "s"}`
 			: "Back to bottom";
-	const label = theme.fg("accent", `[ ↓ ${messageText} · ${shortcut} · click ]`);
+	const label = theme.fg("accent", `[ ↓ ${messageText} · ${shortcut} ]`);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
 }

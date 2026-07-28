@@ -1312,6 +1312,25 @@ function resolveDiffIndicatorMode(
 	return config.diffIndicatorMode ?? DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode;
 }
 
+/** Snapshot or live getter — panel changes must apply on the next paint. */
+export type DisplayConfigInput = ToolDisplayConfig | (() => ToolDisplayConfig);
+
+function resolveLiveDisplayConfig(input: DisplayConfigInput): ToolDisplayConfig {
+	return typeof input === "function" ? input() : input;
+}
+
+/** Cache key fragment so indicator/wrap/limits invalidate without host recreate. */
+function displayConfigCacheKey(config: ToolDisplayConfig): string {
+	return [
+		config.diffViewMode,
+		config.diffIndicatorMode,
+		String(config.diffSplitMinWidth),
+		String(config.diffCollapsedLines),
+		config.diffWordWrap ? "1" : "0",
+		String(config.expandedPreviewMaxLines),
+	].join(":");
+}
+
 function resolveIndicatorGlyph(
 	kind: DiffLineKind,
 	indicatorMode: DiffIndicatorMode,
@@ -2350,24 +2369,38 @@ function createDiffRenderCache() {
 	let cachedWidth: number | undefined;
 	let cachedExpanded: boolean | undefined;
 	let cachedMode: DiffPresentationMode | undefined;
+	let cachedConfigKey: string | undefined;
 	let cachedLines: string[] | undefined;
 
 	return {
-		get(width: number, expanded: boolean, mode: DiffPresentationMode): string[] | undefined {
+		get(
+			width: number,
+			expanded: boolean,
+			mode: DiffPresentationMode,
+			configKey: string,
+		): string[] | undefined {
 			if (
 				cachedLines &&
 				cachedWidth === width &&
 				cachedExpanded === expanded &&
-				cachedMode === mode
+				cachedMode === mode &&
+				cachedConfigKey === configKey
 			) {
 				return cachedLines;
 			}
 			return undefined;
 		},
-		set(width: number, expanded: boolean, mode: DiffPresentationMode, lines: string[]): string[] {
+		set(
+			width: number,
+			expanded: boolean,
+			mode: DiffPresentationMode,
+			configKey: string,
+			lines: string[],
+		): string[] {
 			cachedWidth = width;
 			cachedExpanded = expanded;
 			cachedMode = mode;
+			cachedConfigKey = configKey;
 			cachedLines = lines;
 			return lines;
 		},
@@ -2375,6 +2408,7 @@ function createDiffRenderCache() {
 			cachedWidth = undefined;
 			cachedExpanded = undefined;
 			cachedMode = undefined;
+			cachedConfigKey = undefined;
 			cachedLines = undefined;
 		},
 	};
@@ -2383,7 +2417,7 @@ function createDiffRenderCache() {
 export function renderEditDiffResult(
 	details: unknown,
 	options: DiffRenderOptions,
-	config: ToolDisplayConfig,
+	config: DisplayConfigInput,
 	theme: DiffTheme,
 	fallbackText: string,
 ): Component {
@@ -2418,16 +2452,19 @@ export function renderEditDiffResult(
 	const containerBgAnsi = undefined;
 	const language = resolveLanguageFromPath(options.filePath);
 	const highlightLine = createCodeLineHighlighter(language);
-	const wordWrap = config.diffWordWrap;
-	const indicatorMode = resolveDiffIndicatorMode(config);
 
 	const cache = createDiffRenderCache();
 
 	return {
 		render(width: number): string[] {
+			// Live config: panel can change indicator/wrap/limits after this component is created.
+			const live = resolveLiveDisplayConfig(config);
+			const wordWrap = live.diffWordWrap;
+			const indicatorMode = resolveDiffIndicatorMode(live);
+			const configKey = displayConfigCacheKey(live);
 			const safeWidth = normalizeDiffRenderWidth(width);
-			const mode = resolveDiffPresentationMode(config, safeWidth, canRenderSplitLayout(safeWidth));
-			const cached = cache.get(safeWidth, options.expanded, mode);
+			const mode = resolveDiffPresentationMode(live, safeWidth, canRenderSplitLayout(safeWidth));
+			const cached = cache.get(safeWidth, options.expanded, mode, configKey);
 			if (cached) {
 				return cached;
 			}
@@ -2437,6 +2474,7 @@ export function renderEditDiffResult(
 					safeWidth,
 					options.expanded,
 					mode,
+					configKey,
 					clampDiffLinesToWidth(
 						renderSingleDiffRow(
 							buildDiffSummaryText(parsed.stats, safeWidth),
@@ -2452,8 +2490,8 @@ export function renderEditDiffResult(
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
 			const displayLimit = resolveDiffDisplayLimit(
 				options.expanded,
-				config.diffCollapsedLines,
-				config.expandedPreviewMaxLines,
+				live.diffCollapsedLines,
+				live.expandedPreviewMaxLines,
 			);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			// Only highlight/render a prefix that can fill the display limit; full-diff
@@ -2486,8 +2524,8 @@ export function renderEditDiffResult(
 				bodyRows,
 				safeWidth,
 				options.expanded,
-				config.diffCollapsedLines,
-				config.expandedPreviewMaxLines,
+				live.diffCollapsedLines,
+				live.expandedPreviewMaxLines,
 				parsed.stats.hunks,
 				theme,
 				unprocessedLogicalRows,
@@ -2499,7 +2537,7 @@ export function renderEditDiffResult(
 					: [...headerRows.map((row) => row.text), ...bodyWithLimit];
 
 			const clampedLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, clampedLines);
+			return cache.set(safeWidth, options.expanded, mode, configKey, clampedLines);
 		},
 		invalidate: cache.invalidate,
 	};
@@ -2753,7 +2791,7 @@ function renderWriteOverwriteGuardRows(
 export function renderWriteDiffResult(
 	content: string | undefined,
 	options: DiffRenderOptions,
-	config: ToolDisplayConfig,
+	config: DisplayConfigInput,
 	theme: DiffTheme,
 	fallbackText: string,
 ): Component {
@@ -2782,8 +2820,6 @@ export function renderWriteDiffResult(
 	const containerBgAnsi = undefined;
 	const language = resolveLanguageFromPath(filePath);
 	const highlightLine = createCodeLineHighlighter(language);
-	const wordWrap = config.diffWordWrap;
-	const indicatorMode = resolveDiffIndicatorMode(config);
 
 	let detailedData: WriteDiffData | undefined;
 	const cache = createDiffRenderCache();
@@ -2801,9 +2837,14 @@ export function renderWriteDiffResult(
 
 	return {
 		render(width: number): string[] {
+			// Live config: panel can change indicator/wrap/limits after this component is created.
+			const live = resolveLiveDisplayConfig(config);
+			const wordWrap = live.diffWordWrap;
+			const indicatorMode = resolveDiffIndicatorMode(live);
+			const configKey = displayConfigCacheKey(live);
 			const safeWidth = normalizeDiffRenderWidth(width);
 			const resolvedMode = resolveDiffPresentationMode(
-				config,
+				live,
 				safeWidth,
 				canRenderSplitLayout(safeWidth),
 			);
@@ -2812,7 +2853,7 @@ export function renderWriteDiffResult(
 				: resolvedMode === "split"
 					? "unified"
 					: resolvedMode;
-			const cached = cache.get(safeWidth, options.expanded, mode);
+			const cached = cache.get(safeWidth, options.expanded, mode, configKey);
 			if (cached) {
 				return cached;
 			}
@@ -2832,6 +2873,7 @@ export function renderWriteDiffResult(
 					safeWidth,
 					options.expanded,
 					mode,
+					configKey,
 					clampDiffLinesToWidth(
 						[header, ...renderWriteOverwriteGuardRows(overwriteGuard, safeWidth, theme)],
 						safeWidth,
@@ -2856,6 +2898,7 @@ export function renderWriteDiffResult(
 					safeWidth,
 					options.expanded,
 					mode,
+					configKey,
 					clampDiffLinesToWidth(summaryRows, safeWidth),
 				);
 			}
@@ -2863,8 +2906,8 @@ export function renderWriteDiffResult(
 			const data = getDetailedData();
 			const displayLimit = resolveDiffDisplayLimit(
 				options.expanded,
-				config.diffCollapsedLines,
-				config.expandedPreviewMaxLines,
+				live.diffCollapsedLines,
+				live.expandedPreviewMaxLines,
 			);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
 			const entryBudget = takeEntriesForLineBudget(data.entries, processBudget);
@@ -2901,8 +2944,8 @@ export function renderWriteDiffResult(
 				bodyRows,
 				safeWidth,
 				options.expanded,
-				config.diffCollapsedLines,
-				config.expandedPreviewMaxLines,
+				live.diffCollapsedLines,
+				live.expandedPreviewMaxLines,
 				data.hunkCount,
 				theme,
 				unprocessedLogicalRows,
@@ -2911,7 +2954,7 @@ export function renderWriteDiffResult(
 			const renderedLines =
 				mode === "unified" ? [header, frame, ...bodyWithLimit, frame] : [header, ...bodyWithLimit];
 			const finalLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, finalLines);
+			return cache.set(safeWidth, options.expanded, mode, configKey, finalLines);
 		},
 		invalidate: cache.invalidate,
 	};

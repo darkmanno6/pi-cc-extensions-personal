@@ -2138,6 +2138,8 @@ function createCcstyleTool(
 			setToolVisualState(context, isError ? "error" : "success");
 			const expanded = isToolExpanded(options, context);
 			if (shouldRenderRichDiff(config.mode, toolName, Boolean(isError))) {
+				// Pass getter so Diff indicator / wrap / limits update on the next paint
+				// without recreating the tool result component.
 				const richResult = renderRichToolResult(
 					toolName,
 					result,
@@ -2145,7 +2147,7 @@ function createCcstyleTool(
 					theme,
 					context,
 					writeExecutionMetadata,
-					getToolDisplayConfig(),
+					getToolDisplayConfig,
 				);
 				if (richResult) return richResult;
 			}

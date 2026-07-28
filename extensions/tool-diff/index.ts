@@ -1,7 +1,11 @@
 import { createWriteToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
-import { renderEditDiffResult, renderWriteDiffResult } from "./diff-renderer.ts";
-import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "./types.ts";
+import {
+	renderEditDiffResult,
+	renderWriteDiffResult,
+	type DisplayConfigInput,
+} from "./diff-renderer.ts";
+import { DEFAULT_TOOL_DISPLAY_CONFIG } from "./types.ts";
 import { executeWriteWithMetadata, WriteExecutionMetadataStore } from "./write-execution.ts";
 
 function resultText(result: any): string {
@@ -34,7 +38,8 @@ export function renderRichToolResult(
 	theme: any,
 	context: any,
 	writeMetadata: WriteExecutionMetadataStore,
-	displayConfig: ToolDisplayConfig = DEFAULT_TOOL_DISPLAY_CONFIG,
+	/** Plain snapshot or live getter — getter lets /ccstyle panel changes repaint existing diffs. */
+	displayConfig: DisplayConfigInput = DEFAULT_TOOL_DISPLAY_CONFIG,
 ): any | undefined {
 	if (options?.isPartial || options?.isError || context?.isError) return undefined;
 	const expanded = options?.expanded === true || context?.expanded === true;
@@ -110,4 +115,5 @@ export {
 	type DiffViewMode,
 	type DiffIndicatorMode,
 } from "./types.ts";
+export type { DisplayConfigInput } from "./diff-renderer.ts";
 export { WriteExecutionMetadataStore } from "./write-execution.ts";

@@ -7,9 +7,11 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { shouldRenderRichDiff } from "../extensions/claude-code-style.ts";
 import {
+	DEFAULT_TOOL_DISPLAY_CONFIG,
 	installWriteOverride,
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
+	type ToolDisplayConfig,
 } from "../extensions/tool-diff/index.ts";
 import {
 	executeWriteWithMetadata,
@@ -69,6 +71,49 @@ test("edit rich diff is width-safe and honors collapsed/expanded limits", () => 
 		store,
 	);
 	assert.ok(output(expanded, 32).length > collapsedLines.length);
+});
+
+test("diff indicator mode live-updates on the same component via config getter", () => {
+	// Panel changes must repaint existing tool rows without re-running the tool.
+	let display: ToolDisplayConfig = {
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+		diffViewMode: "unified",
+		diffIndicatorMode: "classic",
+		diffCollapsedLines: 80,
+		expandedPreviewMaxLines: 200,
+	};
+	const component = renderRichToolResult(
+		"edit",
+		{
+			details: { diff: "@@ -1,1 +1,2 @@\n 1|same line\n+2|added line" },
+			content: [],
+		},
+		{ expanded: true },
+		theme,
+		{ args: { path: "sample.ts" } },
+		new WriteExecutionMetadataStore(),
+		() => display,
+	);
+	assert.ok(component, "edit rich diff should render");
+
+	const classicText = output(component, 80).join("\n");
+	assert.match(classicText, /\+.*added line/, "classic mode uses +/- content markers");
+
+	display = { ...display, diffIndicatorMode: "bars" };
+	const barsText = output(component, 80).join("\n");
+	assert.match(barsText, /▌/, "bars mode uses vertical bar markers");
+	assert.notEqual(barsText, classicText, "cache must miss when indicator mode changes");
+
+	display = { ...display, diffIndicatorMode: "none" };
+	const noneText = output(component, 80).join("\n");
+	assert.doesNotMatch(noneText, /▌/);
+	// none: no classic + before added content either (still may contain + in header stats).
+	const bodyLines = noneText.split("\n").filter((line) => line.includes("added line"));
+	assert.ok(bodyLines.length > 0);
+	assert.ok(
+		bodyLines.every((line) => !/^\s*\+/.test(line.replace(/^\s*\d+\s*/, ""))),
+		"none mode should not prefix added body lines with +",
+	);
 });
 
 test("split diff keeps the panel transparent while highlighting changed rows", () => {

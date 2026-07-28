@@ -41,7 +41,7 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 	};
 
 	assert.equal(
-		preservesOriginalRenderer({ name: "edit", renderCall() {} }, "edit", builtIn),
+		preservesOriginalRenderer({ name: "edit", renderCall() {} }, "edit", builtIn, []),
 		false,
 	);
 	assert.equal(

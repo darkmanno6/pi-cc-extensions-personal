@@ -277,29 +277,40 @@ function resolveLanguageFromPath(rawPath: string | undefined): string | undefine
 	}
 }
 
+const MAX_CODE_HIGHLIGHT_CACHE_ENTRIES = 2048;
+
 function createCodeLineHighlighter(language: string | undefined): CodeLineHighlighter {
 	if (!language) {
 		return (line) => sanitizeAnsiForThemedOutput(line);
 	}
 
+	// Insertion-order Map used as a small LRU so large diffs cannot retain every unique line.
 	const cache = new Map<string, string>();
+	const remember = (line: string, value: string): string => {
+		if (cache.has(line)) cache.delete(line);
+		cache.set(line, value);
+		if (cache.size > MAX_CODE_HIGHLIGHT_CACHE_ENTRIES) {
+			const oldest = cache.keys().next().value;
+			if (oldest !== undefined) cache.delete(oldest);
+		}
+		return value;
+	};
 	return (line) => {
 		if (!line) {
 			return line;
 		}
 		const cached = cache.get(line);
 		if (cached !== undefined) {
+			// Refresh recency for LRU.
+			cache.delete(line);
+			cache.set(line, cached);
 			return cached;
 		}
 		try {
 			const highlighted = highlightCode(line, language)[0] ?? line;
-			const sanitized = sanitizeAnsiForThemedOutput(highlighted);
-			cache.set(line, sanitized);
-			return sanitized;
+			return remember(line, sanitizeAnsiForThemedOutput(highlighted));
 		} catch {
-			const sanitizedFallback = sanitizeAnsiForThemedOutput(line);
-			cache.set(line, sanitizedFallback);
-			return sanitizedFallback;
+			return remember(line, sanitizeAnsiForThemedOutput(line));
 		}
 	};
 }
@@ -2148,6 +2159,71 @@ function renderDiffSpacerLine(width: number): string {
 	return safeWidth > 0 ? " ".repeat(safeWidth) : "";
 }
 
+function resolveDiffDisplayLimit(
+	expanded: boolean,
+	maxCollapsedLines: number,
+	maxExpandedLines: number,
+): number {
+	const expandedLimit = Number.isFinite(maxExpandedLines)
+		? maxExpandedLines
+		: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines;
+	const collapsedLimit = Number.isFinite(maxCollapsedLines)
+		? maxCollapsedLines
+		: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines;
+	return expanded ? Math.max(0, expandedLimit) : Math.max(1, collapsedLimit);
+}
+
+/**
+ * How many source rows/entries to fully highlight+render before applyLineLimit.
+ * Extra headroom covers word-wrap expansion so the display limit can still fill.
+ */
+function resolveDiffProcessBudget(displayLimit: number, wordWrap: boolean): number {
+	if (!Number.isFinite(displayLimit) || displayLimit <= 0) {
+		return Number.POSITIVE_INFINITY;
+	}
+	return wordWrap ? displayLimit * 2 + 8 : displayLimit + 4;
+}
+
+function countDiffLineEntries(entries: readonly ParsedDiffEntry[]): number {
+	let count = 0;
+	for (const entry of entries) {
+		if (entry.kind === "line") count++;
+	}
+	return count;
+}
+
+function takeEntriesForLineBudget(
+	entries: ParsedDiffEntry[],
+	maxLineEntries: number,
+): { entries: ParsedDiffEntry[]; totalLineEntries: number; processedLineEntries: number } {
+	const totalLineEntries = countDiffLineEntries(entries);
+	if (!Number.isFinite(maxLineEntries) || maxLineEntries >= totalLineEntries) {
+		return { entries, totalLineEntries, processedLineEntries: totalLineEntries };
+	}
+	const limited: ParsedDiffEntry[] = [];
+	let processedLineEntries = 0;
+	for (const entry of entries) {
+		if (entry.kind === "line") {
+			if (processedLineEntries >= maxLineEntries) break;
+			processedLineEntries++;
+		}
+		limited.push(entry);
+	}
+	return { entries: limited, totalLineEntries, processedLineEntries };
+}
+
+function takeSplitRowsForBudget(
+	rows: SplitDiffRow[],
+	maxRows: number,
+): { rows: SplitDiffRow[]; totalRows: number; processedRows: number } {
+	const totalRows = rows.length;
+	if (!Number.isFinite(maxRows) || maxRows >= totalRows) {
+		return { rows, totalRows, processedRows: totalRows };
+	}
+	const limited = rows.slice(0, maxRows);
+	return { rows: limited, totalRows, processedRows: limited.length };
+}
+
 function applyLineLimit(
 	rows: RenderedRow[],
 	width: number,
@@ -2156,20 +2232,23 @@ function applyLineLimit(
 	maxExpandedLines: number,
 	totalHunks: number,
 	theme: DiffTheme,
+	/**
+	 * When the caller only rendered a prefix of the full diff, pass the unprocessed
+	 * remainder so the collapse hint still reflects total hidden content.
+	 */
+	unprocessedLogicalRows = 0,
 ): string[] {
-	const expandedLimit = Number.isFinite(maxExpandedLines)
-		? maxExpandedLines
-		: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines;
-	const collapsedLimit = Number.isFinite(maxCollapsedLines)
-		? maxCollapsedLines
-		: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines;
-	const limit = expanded ? Math.max(0, expandedLimit) : Math.max(1, collapsedLimit);
-	if (limit === 0 || rows.length <= limit) {
+	const limit = resolveDiffDisplayLimit(expanded, maxCollapsedLines, maxExpandedLines);
+	const safeUnprocessed = Math.max(0, unprocessedLogicalRows);
+	if (limit === 0 || (rows.length <= limit && safeUnprocessed === 0)) {
 		return rows.map((row) => clampDiffLineToWidth(row.text, width));
 	}
 
-	const shown = rows.slice(0, limit);
-	const remaining = rows.length - shown.length;
+	const shown = rows.length <= limit ? rows : rows.slice(0, limit);
+	const remaining = Math.max(0, rows.length - shown.length) + safeUnprocessed;
+	if (remaining === 0) {
+		return shown.map((row) => clampDiffLineToWidth(row.text, width));
+	}
 	const visibleHunks = new Set(
 		shown
 			.map((row) => row.hunkIndex)
@@ -2371,51 +2450,38 @@ export function renderEditDiffResult(
 			}
 
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
-			const inlineHighlights = buildInlineHighlightMap(splitRows);
+			const displayLimit = resolveDiffDisplayLimit(
+				options.expanded,
+				config.diffCollapsedLines,
+				config.expandedPreviewMaxLines,
+			);
+			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
+			// Only highlight/render a prefix that can fill the display limit; full-diff
+			// LCS + syntax highlight on thousands of hidden lines is pure waste when collapsed.
+			const entryBudget = takeEntriesForLineBudget(parsed.entries, processBudget);
+			const splitBudget = takeSplitRowsForBudget(splitRows, processBudget);
+			const inlineHighlights = buildInlineHighlightMap(splitBudget.rows);
+			const renderCtx: DiffRenderContext = {
+				width: safeWidth,
+				theme,
+				inlineHighlights,
+				palette,
+				highlightLine,
+				containerBgAnsi,
+				wordWrap,
+				indicatorMode,
+				showHashlineAnchors,
+			};
 			const bodyRows =
 				mode === "split"
-					? renderSplit(
-							splitRows,
-							{
-								width: safeWidth,
-								theme,
-								inlineHighlights,
-								palette,
-								highlightLine,
-								containerBgAnsi,
-								wordWrap,
-								indicatorMode,
-								showHashlineAnchors,
-							},
-							lineNumberWidth,
-						)
+					? renderSplit(splitBudget.rows, renderCtx, lineNumberWidth)
 					: mode === "compact"
-						? renderCompact(parsed.entries, {
-								width: safeWidth,
-								theme,
-								inlineHighlights,
-								palette,
-								highlightLine,
-								containerBgAnsi,
-								wordWrap,
-								indicatorMode,
-								showHashlineAnchors,
-							})
-						: renderUnified(
-								parsed.entries,
-								{
-									width: safeWidth,
-									theme,
-									inlineHighlights,
-									palette,
-									highlightLine,
-									containerBgAnsi,
-									wordWrap,
-									indicatorMode,
-									showHashlineAnchors,
-								},
-								lineNumberWidth,
-							);
+						? renderCompact(entryBudget.entries, renderCtx)
+						: renderUnified(entryBudget.entries, renderCtx, lineNumberWidth);
+			const unprocessedLogicalRows =
+				mode === "split"
+					? Math.max(0, splitBudget.totalRows - splitBudget.processedRows)
+					: Math.max(0, entryBudget.totalLineEntries - entryBudget.processedLineEntries);
 			const bodyWithLimit = applyLineLimit(
 				bodyRows,
 				safeWidth,
@@ -2424,6 +2490,7 @@ export function renderEditDiffResult(
 				config.expandedPreviewMaxLines,
 				parsed.stats.hunks,
 				theme,
+				unprocessedLogicalRows,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
@@ -2593,6 +2660,8 @@ interface WriteOverwriteGuard {
 
 const MAX_WRITE_OVERWRITE_DIFF_LINES = 4000;
 const MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS = 1_000_000;
+/** Collapsed overwrite previews refuse larger LCS matrices to avoid TUI freezes. */
+const MAX_COLLAPSED_WRITE_OVERWRITE_DIFF_MATRIX_CELLS = 200_000;
 
 function buildApproximateWriteStats(
 	lineCount: number,
@@ -2631,6 +2700,7 @@ function buildWriteDiffData(entries: ParsedDiffEntry[]): WriteDiffData {
 function resolveWriteOverwriteGuard(
 	previousLines: string[],
 	nextLines: string[],
+	expanded = true,
 ): WriteOverwriteGuard | undefined {
 	const previousLineCount = previousLines.length;
 	const nextLineCount = nextLines.length;
@@ -2643,7 +2713,10 @@ function resolveWriteOverwriteGuard(
 	if (previousLineCount === 0 || nextLineCount === 0) {
 		return undefined;
 	}
-	return previousLineCount * nextLineCount > MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS
+	const cellLimit = expanded
+		? MAX_WRITE_OVERWRITE_DIFF_MATRIX_CELLS
+		: MAX_COLLAPSED_WRITE_OVERWRITE_DIFF_MATRIX_CELLS;
+	return previousLineCount * nextLineCount > cellLimit
 		? { previousLineCount, nextLineCount }
 		: undefined;
 }
@@ -2704,9 +2777,6 @@ export function renderWriteDiffResult(
 		previousLines.length,
 		hasComparablePrevious,
 	);
-	const overwriteGuard = hasComparablePrevious
-		? resolveWriteOverwriteGuard(previousLines, lines)
-		: undefined;
 	const palette = resolveDiffPalette(theme);
 	// Keep the panel transparent; changed rows and inline spans retain their own highlights.
 	const containerBgAnsi = undefined;
@@ -2753,6 +2823,10 @@ export function renderWriteDiffResult(
 				theme,
 				options.headerLabel,
 			);
+			// Guard depends on expanded: collapsed previews use a stricter LCS cell budget.
+			const overwriteGuard = hasComparablePrevious
+				? resolveWriteOverwriteGuard(previousLines, lines, options.expanded)
+				: undefined;
 			if (overwriteGuard) {
 				return cache.set(
 					safeWidth,
@@ -2787,10 +2861,22 @@ export function renderWriteDiffResult(
 			}
 
 			const data = getDetailedData();
+			const displayLimit = resolveDiffDisplayLimit(
+				options.expanded,
+				config.diffCollapsedLines,
+				config.expandedPreviewMaxLines,
+			);
+			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
+			const entryBudget = takeEntriesForLineBudget(data.entries, processBudget);
+			const splitBudget = takeSplitRowsForBudget(data.splitRows, processBudget);
+			const inlineHighlights =
+				splitBudget.processedRows < splitBudget.totalRows
+					? buildInlineHighlightMap(splitBudget.rows)
+					: data.inlineHighlights;
 			const renderCtx: DiffRenderContext = {
 				width: safeWidth,
 				theme,
-				inlineHighlights: data.inlineHighlights,
+				inlineHighlights,
 				palette,
 				highlightLine,
 				containerBgAnsi,
@@ -2799,13 +2885,17 @@ export function renderWriteDiffResult(
 				showHashlineAnchors: false,
 			};
 			const bodyRows: RenderedRow[] =
-				data.entries.length === 0
+				entryBudget.entries.length === 0
 					? [{ text: theme.fg("muted", "(empty file)"), hunkIndex: null }]
 					: mode === "split"
-						? renderSplit(data.splitRows, renderCtx, data.lineNumberWidth)
+						? renderSplit(splitBudget.rows, renderCtx, data.lineNumberWidth)
 						: mode === "compact"
-							? renderCompact(data.entries, renderCtx)
-							: renderUnified(data.entries, renderCtx, data.lineNumberWidth);
+							? renderCompact(entryBudget.entries, renderCtx)
+							: renderUnified(entryBudget.entries, renderCtx, data.lineNumberWidth);
+			const unprocessedLogicalRows =
+				mode === "split"
+					? Math.max(0, splitBudget.totalRows - splitBudget.processedRows)
+					: Math.max(0, entryBudget.totalLineEntries - entryBudget.processedLineEntries);
 
 			const bodyWithLimit = applyLineLimit(
 				bodyRows,
@@ -2815,6 +2905,7 @@ export function renderWriteDiffResult(
 				config.expandedPreviewMaxLines,
 				data.hunkCount,
 				theme,
+				unprocessedLogicalRows,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =

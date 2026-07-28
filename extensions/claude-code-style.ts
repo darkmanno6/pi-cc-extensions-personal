@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-	DynamicBorder,
 	getSettingsListTheme,
 	keyHint,
 	ToolExecutionComponent,
@@ -10,14 +9,18 @@ import {
 	type CompactStyleHooks,
 	type CompactStyleMode,
 } from "./compact-style.ts";
+import { showTextPreview } from "./context.ts";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 import {
+	DEFAULT_TOOL_DISPLAY_CONFIG,
 	installWriteOverride,
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
+	type DiffIndicatorMode,
+	type DiffViewMode,
+	type ToolDisplayConfig,
 } from "./tool-diff/index.ts";
 import {
-	Container,
 	SettingsList,
 	Text,
 	matchesKey,
@@ -40,9 +43,74 @@ export type Config = {
 	mode: CompactStyleMode;
 	excludeRenderers: string[];
 	fixedEditorFeatures: boolean;
+	diffViewMode: DiffViewMode;
+	diffIndicatorMode: DiffIndicatorMode;
+	diffSplitMinWidth: number;
+	diffCollapsedLines: number;
+	diffWordWrap: boolean;
+	expandedPreviewMaxLines: number;
 };
 
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "claude-code-style.json");
+
+const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
+const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
+const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
+const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"];
+/** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
+const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
+/** Tools commonly toggled in excludeRenderers via the settings panel. */
+const EXCLUDE_RENDERER_CANDIDATES = [
+	"bash",
+	"read",
+	"edit",
+	"write",
+	"grep",
+	"find",
+	"ls",
+	"webfetch",
+	"wait",
+];
+
+export const DEFAULT_CONFIG: Config = {
+	mode: "on",
+	excludeRenderers: [],
+	fixedEditorFeatures: true,
+	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
+	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
+	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
+	diffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines,
+	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
+	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
+};
+
+function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+	return typeof value === "string" && (allowed as readonly string[]).includes(value)
+		? (value as T)
+		: fallback;
+}
+
+function pickPositiveInt(value: unknown, fallback: number, min = 1, max = 100_000): number {
+	const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+	if (!Number.isFinite(n)) return fallback;
+	return Math.min(max, Math.max(min, Math.floor(n)));
+}
+
+function nearestPreset(value: number, presets: readonly string[]): string {
+	const numeric = presets.map((p) => Number(p));
+	let best = presets[0] ?? String(value);
+	let bestDist = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < numeric.length; i++) {
+		const dist = Math.abs((numeric[i] ?? 0) - value);
+		if (dist < bestDist) {
+			bestDist = dist;
+			best = presets[i] ?? best;
+		}
+	}
+	// Prefer exact match when value is already a preset.
+	const exact = presets.find((p) => Number(p) === value);
+	return exact ?? best;
+}
 
 export function normalizeConfig(input: unknown): Config {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
@@ -65,7 +133,65 @@ export function normalizeConfig(input: unknown): Config {
 			]
 		: [];
 	const fixedEditorFeatures = source.fixedEditorFeatures !== false;
-	return { mode: migratedMode, excludeRenderers, fixedEditorFeatures };
+	return {
+		mode: migratedMode,
+		excludeRenderers,
+		fixedEditorFeatures,
+		diffViewMode: pickEnum(source.diffViewMode, DIFF_VIEW_MODES, DEFAULT_CONFIG.diffViewMode),
+		diffIndicatorMode: pickEnum(
+			source.diffIndicatorMode,
+			DIFF_INDICATOR_MODES,
+			DEFAULT_CONFIG.diffIndicatorMode,
+		),
+		diffSplitMinWidth: pickPositiveInt(
+			source.diffSplitMinWidth,
+			DEFAULT_CONFIG.diffSplitMinWidth,
+			40,
+			300,
+		),
+		diffCollapsedLines: pickPositiveInt(
+			source.diffCollapsedLines,
+			DEFAULT_CONFIG.diffCollapsedLines,
+			1,
+			500,
+		),
+		diffWordWrap: source.diffWordWrap !== false,
+		expandedPreviewMaxLines: pickPositiveInt(
+			source.expandedPreviewMaxLines,
+			DEFAULT_CONFIG.expandedPreviewMaxLines,
+			10,
+			50_000,
+		),
+	};
+}
+
+export function getToolDisplayConfig(source: Config = config): ToolDisplayConfig {
+	return {
+		diffViewMode: source.diffViewMode,
+		diffIndicatorMode: source.diffIndicatorMode,
+		diffSplitMinWidth: source.diffSplitMinWidth,
+		diffCollapsedLines: source.diffCollapsedLines,
+		diffWordWrap: source.diffWordWrap,
+		expandedPreviewMaxLines: source.expandedPreviewMaxLines,
+	};
+}
+
+function formatExcludeRenderers(names: readonly string[]): string {
+	return names.length === 0 ? "none" : names.join(", ");
+}
+
+export function formatConfigStatus(source: Config = config): string {
+	return [
+		`mode=${source.mode}`,
+		`fixedEditor=${source.fixedEditorFeatures ? "on" : "off"}`,
+		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
+		`diffView=${source.diffViewMode}`,
+		`diffIndicator=${source.diffIndicatorMode}`,
+		`diffSplitMin=${source.diffSplitMinWidth}`,
+		`diffCollapsed=${source.diffCollapsedLines}`,
+		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
+		`expandedMax=${source.expandedPreviewMaxLines}`,
+	].join(" · ");
 }
 
 let config: Config = loadConfig();
@@ -95,7 +221,7 @@ function loadConfig(): Config {
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}
-	return { mode: "on", excludeRenderers: [], fixedEditorFeatures: true };
+	return { ...DEFAULT_CONFIG };
 }
 
 function saveConfig() {
@@ -111,7 +237,8 @@ function oneLine(value: unknown, max = 72): string {
 
 function textFromResult(result: any): string {
 	const item = result?.content?.find?.((c: any) => c.type === "text");
-	return item?.type === "text" ? sanitizeToolResultText(item.text ?? "") : "";
+	// Compact previews only need line counts / short text; bound sanitize work.
+	return item?.type === "text" ? sanitizeToolResultText(item.text ?? "", 16_384) : "";
 }
 
 function countLines(text: string): number {
@@ -283,8 +410,331 @@ export class ExpandedToolResultText {
 	}
 }
 
+/** Affordance next to truncated Input/Output headers — click opens full preview. */
+export const SHOW_MORE_LABEL = "[show more]";
+
+export type ToolIoSection = "input" | "output";
+
+/**
+ * Expanded tool body with clear Input / Output sections (Grok Build–style).
+ *
+ * Visual frame:
+ *   ┌ Input  [show more]
+ *   │ path: src/a.ts
+ *   │
+ *   └ Output  [show more]
+ *     result line…
+ *
+ * Reused across re-renders via context.lastComponent when possible.
+ */
+export class ExpandedToolIoView {
+	private inputBody: string;
+	private outputBody: string;
+	private isError: boolean;
+	private theme: any;
+	private maxOutputLines: number;
+	private maxInputLines: number;
+	private cachedWidth: number | undefined;
+	private cachedLines: string[] | undefined;
+	/** Which sections currently show the [show more] affordance (after last render). */
+	private truncated: { input: boolean; output: boolean } = { input: false, output: false };
+
+	constructor(
+		theme: any,
+		inputBody: string,
+		outputBody: string,
+		isError: boolean,
+		maxOutputLines = config.expandedPreviewMaxLines,
+		maxInputLines = config.expandedPreviewMaxLines,
+	) {
+		this.theme = theme;
+		this.inputBody = inputBody;
+		this.outputBody = outputBody;
+		this.isError = isError;
+		this.maxOutputLines = Math.max(1, maxOutputLines);
+		this.maxInputLines = Math.max(1, maxInputLines);
+	}
+
+	setContent(
+		inputBody: string,
+		outputBody: string,
+		isError: boolean,
+		maxOutputLines?: number,
+		maxInputLines?: number,
+	): void {
+		const nextOut =
+			maxOutputLines !== undefined ? Math.max(1, maxOutputLines) : this.maxOutputLines;
+		const nextIn = maxInputLines !== undefined ? Math.max(1, maxInputLines) : this.maxInputLines;
+		if (
+			this.inputBody === inputBody &&
+			this.outputBody === outputBody &&
+			this.isError === isError &&
+			this.maxOutputLines === nextOut &&
+			this.maxInputLines === nextIn
+		) {
+			return;
+		}
+		this.inputBody = inputBody;
+		this.outputBody = outputBody;
+		this.isError = isError;
+		this.maxOutputLines = nextOut;
+		this.maxInputLines = nextIn;
+		this.invalidate();
+	}
+
+	getInputBody(): string {
+		return this.inputBody;
+	}
+
+	getOutputBody(): string {
+		return this.outputBody.trim() ? this.outputBody : "Done";
+	}
+
+	/** True when the plain header line is a truncated section with [show more]. */
+	matchShowMoreLine(plainLine: string): ToolIoSection | null {
+		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
+		if (!line.includes(SHOW_MORE_LABEL)) return null;
+		if (/\bInput\b/.test(line) && this.truncated.input) return "input";
+		if (/\bOutput\b/.test(line) && this.truncated.output) return "output";
+		return null;
+	}
+
+	/** Column range (1-based, visible cells) of [show more] on a rendered header, if present. */
+	showMoreHitbox(plainLine: string): { startCol: number; endCol: number } | null {
+		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
+		const idx = line.indexOf(SHOW_MORE_LABEL);
+		if (idx < 0) return null;
+		const before = line.slice(0, idx);
+		const startCol = visibleWidth(before) + 1;
+		const endCol = startCol + visibleWidth(SHOW_MORE_LABEL) - 1;
+		return { startCol, endCol };
+	}
+
+	render(width: number): string[] {
+		if (this.cachedLines !== undefined && this.cachedWidth === width) return this.cachedLines;
+
+		const theme = this.theme;
+		const safeWidth = Math.max(1, Math.floor(width));
+		const rail = "  │ ";
+		const railWidth = visibleWidth(rail);
+		const contentWidth = Math.max(1, safeWidth - railWidth);
+		const bodyColor = this.isError ? "error" : "toolOutput";
+		const lines: string[] = [];
+		this.truncated = { input: false, output: false };
+
+		const pushHeader = (corner: "┌" | "└", label: string, showMore: boolean) => {
+			const mark = theme.fg("dim", `  ${corner} `);
+			const title = theme.fg(
+				"accent",
+				typeof theme.bold === "function" ? theme.bold(label) : label,
+			);
+			const more = showMore ? theme.fg("dim", ` ${SHOW_MORE_LABEL}`) : "";
+			lines.push(truncateToWidth(mark + title + more, safeWidth, ""));
+		};
+
+		const pushRailLine = (styledContent: string) => {
+			lines.push(truncateToWidth(theme.fg("dim", rail) + styledContent, safeWidth, ""));
+		};
+
+		const pushBlankRail = () => {
+			lines.push(truncateToWidth(theme.fg("dim", "  │"), safeWidth, ""));
+		};
+
+		/** Style `key: value` input rows — dim keys, readable values. */
+		const styleInputLine = (rawLine: string): string => {
+			const match = rawLine.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
+			if (!match) return theme.fg("muted", rawLine);
+			const [, key, sep, rest] = match;
+			return theme.fg("dim", key + sep) + theme.fg("text", rest ?? "");
+		};
+
+		const pushBody = (
+			body: string,
+			opts: { input?: boolean; limit: number },
+		): boolean /* truncated */ => {
+			const raw = body.replace(/\t/g, "   ").replace(/\n+$/, "");
+			if (!raw.trim()) {
+				pushRailLine(theme.fg("dim", "(empty)"));
+				return false;
+			}
+			const sourceLines = raw.split("\n");
+			const wrapped: string[] = [];
+			for (const source of sourceLines) {
+				const styled = opts.input ? styleInputLine(source) : theme.fg(bodyColor, source);
+				const parts = wrapTextWithAnsi(styled, contentWidth);
+				if (parts.length === 0) wrapped.push(styled);
+				else wrapped.push(...parts);
+			}
+			// Prefer source-line count so plain multi-line dumps always cap, even when
+			// theme/wrap measurements disagree slightly.
+			const truncated = wrapped.length > opts.limit || sourceLines.length > opts.limit;
+			const visible = truncated ? wrapped.slice(0, Math.min(opts.limit, wrapped.length)) : wrapped;
+			for (const line of visible) pushRailLine(line);
+			if (truncated) {
+				const hidden = Math.max(0, wrapped.length - visible.length);
+				if (hidden > 0) {
+					pushRailLine(theme.fg("dim", `… +${hidden} more lines`));
+				}
+			}
+			return truncated;
+		};
+
+		const hasInput = this.inputBody.trim().length > 0;
+		const outputText = this.getOutputBody();
+
+		// Decide [show more] from the same truncation rules as pushBody.
+		const inputWouldTruncate =
+			hasInput &&
+			bodyExceedsLineLimit(this.inputBody, this.maxInputLines, contentWidth, true, theme);
+		const outputWouldTruncate = bodyExceedsLineLimit(
+			outputText,
+			this.maxOutputLines,
+			contentWidth,
+			false,
+			theme,
+			bodyColor,
+		);
+
+		if (hasInput) {
+			this.truncated.input = inputWouldTruncate;
+			pushHeader("┌", "Input", inputWouldTruncate);
+			pushBody(this.inputBody, { input: true, limit: this.maxInputLines });
+			pushBlankRail();
+			this.truncated.output = outputWouldTruncate;
+			pushHeader("└", "Output", outputWouldTruncate);
+			pushBody(outputText, { limit: this.maxOutputLines });
+		} else {
+			this.truncated.output = outputWouldTruncate;
+			pushHeader("┌", "Output", outputWouldTruncate);
+			pushBody(outputText, { limit: this.maxOutputLines });
+		}
+
+		this.cachedWidth = width;
+		this.cachedLines = lines;
+		return lines;
+	}
+
+	invalidate(): void {
+		this.cachedWidth = undefined;
+		this.cachedLines = undefined;
+	}
+}
+
+/** True when body needs truncation at the given line limit (source lines or wrapped rows). */
+function bodyExceedsLineLimit(
+	body: string,
+	limit: number,
+	contentWidth: number,
+	asInput: boolean,
+	theme: any,
+	bodyColor = "toolOutput",
+): boolean {
+	const raw = body.replace(/\t/g, "   ").replace(/\n+$/, "");
+	if (!raw.trim()) return false;
+	const sourceLines = raw.split("\n");
+	if (sourceLines.length > limit) return true;
+	let total = 0;
+	for (const source of sourceLines) {
+		let styled: string;
+		if (asInput) {
+			const match = source.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
+			styled = match
+				? theme.fg("dim", match[1] + match[2]) + theme.fg("text", match[3] ?? "")
+				: theme.fg("muted", source);
+		} else {
+			styled = theme.fg(bodyColor, source);
+		}
+		const parts = wrapTextWithAnsi(styled, contentWidth);
+		total += Math.max(1, parts.length);
+		if (total > limit) return true;
+	}
+	return false;
+}
+
 export function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
 	return `  ↳ ${body}${collapsedHint}`;
+}
+
+/** Pretty-print tool call args for the expanded Input section. */
+export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
+	if (args === undefined || args === null) return "";
+	if (typeof args !== "object") {
+		const text = String(args);
+		return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+	}
+	if (Array.isArray(args)) {
+		try {
+			const json = JSON.stringify(args, null, 2);
+			return json.length > maxChars ? `${json.slice(0, maxChars)}…` : json;
+		} catch {
+			return String(args);
+		}
+	}
+
+	const entries = Object.entries(args as Record<string, unknown>).filter(
+		([, value]) => value !== undefined,
+	);
+	if (entries.length === 0) return "";
+
+	// Stable, human-first field order for common tools.
+	const preferred = [
+		"path",
+		"file_path",
+		"command",
+		"query",
+		"pattern",
+		"url",
+		"name",
+		"message",
+		"content",
+		"old_string",
+		"new_string",
+	];
+	entries.sort(([left], [right]) => {
+		const li = preferred.indexOf(left);
+		const ri = preferred.indexOf(right);
+		if (li === -1 && ri === -1) return left.localeCompare(right);
+		if (li === -1) return 1;
+		if (ri === -1) return -1;
+		return li - ri;
+	});
+
+	const lines: string[] = [];
+	for (const [key, value] of entries) {
+		if (typeof value === "string") {
+			if (value.includes("\n")) {
+				lines.push(`${key}:`);
+				for (const line of value.replace(/\t/g, "   ").split("\n")) {
+					lines.push(`  ${line}`);
+				}
+			} else {
+				lines.push(`${key}: ${value}`);
+			}
+			continue;
+		}
+		if (typeof value === "number" || typeof value === "boolean" || value === null) {
+			lines.push(`${key}: ${String(value)}`);
+			continue;
+		}
+		try {
+			const json = JSON.stringify(value, null, 2);
+			if (json.includes("\n")) {
+				lines.push(`${key}:`);
+				for (const line of json.split("\n")) lines.push(`  ${line}`);
+			} else {
+				lines.push(`${key}: ${json}`);
+			}
+		} catch {
+			lines.push(`${key}: [unserializable]`);
+		}
+	}
+	const text = lines.join("\n");
+	return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+}
+
+function hasExpandableDetail(outputText: string, args: unknown): boolean {
+	if (hasExpandableResult(outputText)) return true;
+	return formatToolInputArgs(args).trim().length > 0;
 }
 
 function renderExpandedToolResult(
@@ -292,20 +742,29 @@ function renderExpandedToolResult(
 	theme: any,
 	isError: boolean,
 	lastComponent?: unknown,
-): ExpandedToolResultText | Text {
-	const color = isError ? "error" : "muted";
-	if (!body.trim()) {
-		return new Text(theme.fg(color, renderCollapsedToolResult("Done")), 0, 0);
+	args?: unknown,
+	context?: any,
+): ExpandedToolIoView | ExpandedToolResultText | Text {
+	const inputBody = formatToolInputArgs(args);
+	const outputBody = body;
+	const maxLines = config.expandedPreviewMaxLines;
+
+	// Prefer structured Input/Output when we have args or non-empty output.
+	if (inputBody.trim() || outputBody.trim()) {
+		let view: ExpandedToolIoView;
+		if (lastComponent instanceof ExpandedToolIoView) {
+			lastComponent.setContent(inputBody, outputBody, isError, maxLines, maxLines);
+			view = lastComponent;
+		} else {
+			view = new ExpandedToolIoView(theme, inputBody, outputBody, isError, maxLines, maxLines);
+		}
+		if (context) rememberIoView(context, view);
+		return view;
 	}
 
-	const text = theme.fg(color, body);
-	const prefix = theme.fg(color, "  │ ");
-	if (lastComponent instanceof ExpandedToolResultText) {
-		lastComponent.setText(text);
-		lastComponent.setPrefix(prefix);
-		return lastComponent;
-	}
-	return new ExpandedToolResultText(text, prefix);
+	if (context?.state) context.state.ccstyleIoView = undefined;
+	const color = isError ? "error" : "muted";
+	return new Text(theme.fg(color, renderCollapsedToolResult("Done")), 0, 0);
 }
 
 function expandHint(theme: any): string {
@@ -473,6 +932,11 @@ function fixedEditorContextScore(
 	return score;
 }
 
+/** Collapsed tool rows expose "expand / click"; expanded body clicks do not. */
+const COLLAPSED_TOOL_CLICK_HINT = /(?:expand|\/ click)/i;
+/** fixedEditorContextScore max ≈ 100 + 2*(5+4+3+2); stop once we hit a near-perfect match. */
+const TOOL_CLICK_EARLY_EXIT_SCORE = 120;
+
 function findToolAtFixedEditorRow(
 	tui: any,
 	visibleRow: number,
@@ -486,10 +950,12 @@ function findToolAtFixedEditorRow(
 
 	const tools: any[] = [];
 	collectToolComponents(tui, tools);
+	// Expand-hint → only collapsed tools; body click → only expanded (collapse-any-line).
+	// Skips re-rendering the opposite half of the transcript tools.
+	const wantExpanded = !COLLAPSED_TOOL_CLICK_HINT.test(clickedLine);
 	let best: { hit: ToolRenderHit; score: number } | null = null;
 	for (const component of tools) {
-		const expanded = Boolean(component.expanded);
-		if (!expanded && !/(?:expand|\/ click)/i.test(clickedLine)) continue;
+		if (Boolean(component.expanded) !== wantExpanded) continue;
 		const renderedLines = renderComponentTree(component, width).map((line) =>
 			stripTerminalSequences(String(line)),
 		);
@@ -501,6 +967,7 @@ function findToolAtFixedEditorRow(
 					hit: { component, start: visibleRow, end: visibleRow + renderedLines.length },
 					score,
 				};
+				if (score >= TOOL_CLICK_EARLY_EXIT_SCORE) return best.hit;
 			}
 		}
 	}
@@ -525,13 +992,12 @@ function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null 
 	collectToolRenderHits(tui, 0, width, hits, cache, new Set<object>());
 
 	const clickedLine = stripTerminalSequences(String(previousLines[bufferRow] ?? ""));
+	const wantExpanded = !COLLAPSED_TOOL_CLICK_HINT.test(clickedLine);
 	for (const hit of hits) {
 		if (bufferRow < hit.start || bufferRow >= hit.end) continue;
-		const component = hit.component;
-		const expanded = Boolean(component.expanded);
-		// Match Pi's old click contract: collapsed results expose a click hint;
-		// expanded results can be collapsed by clicking any rendered line.
-		if (!expanded && !/(?:expand|\/ click)/i.test(clickedLine)) continue;
+		// Same分流 as fixed-editor: hint clicks expand collapsed rows; body clicks
+		// collapse expanded rows. Avoids accidental toggles on the wrong set.
+		if (Boolean(hit.component.expanded) !== wantExpanded) continue;
 		return hit;
 	}
 	return null;
@@ -613,14 +1079,36 @@ function directRenderLines(component: any, width: number): string[] {
 	}
 }
 
-/** Render only the transcript portion that fixed-editor leaves scrollable. */
-function renderFixedScrollableRoot(tui: any, width: number): string[] {
+/** Index just before the fixed editor cluster in the TUI child list. */
+function fixedScrollableRootEnd(tui: any): number {
 	const children = Array.isArray(tui?.children) ? tui.children : [];
 	const editorIndex = children.findIndex((child: any) =>
 		containsEditorLike(child, tui.focusedComponent),
 	);
-	const end = editorIndex >= 2 ? editorIndex - 2 : children.length;
-	return children.slice(0, end).flatMap((child: any) => directRenderLines(child, width));
+	return editorIndex >= 2 ? editorIndex - 2 : children.length;
+}
+
+/**
+ * Last N stripped lines of the scrollable root (after trimming trailing blanks).
+ * Walks children backwards and stops once the tail is fully determined, so long
+ * transcripts with many sibling nodes do not re-render the whole tree on scroll.
+ */
+function renderFixedScrollableRootTail(tui: any, width: number, matchLength: number): string[] {
+	const children = Array.isArray(tui?.children) ? tui.children : [];
+	const end = fixedScrollableRootEnd(tui);
+	const collected: string[] = [];
+	for (let index = end - 1; index >= 0; index--) {
+		const lines = directRenderLines(children[index], width).map((line) =>
+			stripTerminalSequences(String(line)),
+		);
+		collected.unshift(...lines);
+		let meaningful = collected.length;
+		while (meaningful > 0 && collected[meaningful - 1] === "") meaningful--;
+		if (meaningful >= matchLength) break;
+	}
+	while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
+	if (collected.length === 0) return [];
+	return collected.slice(-Math.min(matchLength, collected.length));
 }
 
 function isFixedEditorAtBottom(tui: any): boolean {
@@ -628,18 +1116,14 @@ function isFixedEditorAtBottom(tui: any): boolean {
 	const visibleLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
 	if (visibleLines.length === 0) return true;
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
-	const rootLines = renderFixedScrollableRoot(tui, width).map((line) =>
-		stripTerminalSequences(String(line)),
-	);
-	while (rootLines.length > 0 && rootLines[rootLines.length - 1] === "") rootLines.pop();
-	if (rootLines.length === 0) return true;
+	const expected = renderFixedScrollableRootTail(tui, width, 3);
+	if (expected.length === 0) return true;
 
 	// previousLines contains both the scrollable root and Zentui's fixed cluster.
 	// Locate the root tail within that full frame instead of requiring it to be
 	// the frame suffix; otherwise status/editor/footer rows keep the button alive.
 	const visible = visibleLines.map((line: unknown) => stripTerminalSequences(String(line)));
-	const matchLength = Math.min(3, rootLines.length);
-	const expected = rootLines.slice(-matchLength);
+	const matchLength = expected.length;
 	for (let end = matchLength; end <= visible.length; end++) {
 		if (expected.every((line, index) => line === visible[end - matchLength + index])) return true;
 	}
@@ -879,9 +1363,87 @@ function scheduleCollapseViewportCompensation(
 	});
 }
 
+/** toolCallId → latest expanded IO view (survives context/state identity quirks). */
+const ioViewsByToolCallId = new Map<string, ExpandedToolIoView>();
+
+function rememberIoView(context: any, view: ExpandedToolIoView): void {
+	if (!context || typeof context !== "object") return;
+	if (!context.state || typeof context.state !== "object") context.state = {};
+	const state = context.state as Record<string, unknown>;
+	state.ccstyleIoView = view;
+	const id =
+		(typeof context?.toolCallId === "string" && context.toolCallId) ||
+		(typeof context?.id === "string" && context.id) ||
+		(typeof state?.toolCallId === "string" && state.toolCallId) ||
+		undefined;
+	if (id) {
+		ioViewsByToolCallId.set(id, view);
+		// Bound growth in long sessions.
+		if (ioViewsByToolCallId.size > 200) {
+			const oldest = ioViewsByToolCallId.keys().next().value;
+			if (oldest !== undefined) ioViewsByToolCallId.delete(oldest);
+		}
+	}
+}
+
+function resolveIoViewFromTool(component: any): ExpandedToolIoView | null {
+	const fromState = component?.state?.ccstyleIoView;
+	if (fromState instanceof ExpandedToolIoView) return fromState;
+	const id =
+		(typeof component?.toolCallId === "string" && component.toolCallId) ||
+		(typeof component?.state?.toolCallId === "string" && component.state.toolCallId) ||
+		undefined;
+	if (id) {
+		const mapped = ioViewsByToolCallId.get(id);
+		if (mapped) return mapped;
+	}
+	// Some hosts keep the last result component on the tool instance.
+	const last = component?.lastComponent ?? component?.resultComponent ?? component?.content;
+	if (last instanceof ExpandedToolIoView) return last;
+	return null;
+}
+
+/**
+ * If the click lands on a truncated section's [show more], open the /context-style
+ * full-text preview instead of toggling expand/collapse.
+ */
+function tryOpenToolIoShowMore(tui: any, packet: SgrMousePacket, hit: ToolRenderHit): boolean {
+	if (!Boolean(hit.component.expanded)) return false;
+	const ioView = resolveIoViewFromTool(hit.component);
+	if (!ioView) return false;
+
+	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
+	const visibleRow = useFixedEditorFeatures(tui)
+		? packet.row - 1
+		: (Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0) + packet.row - 1;
+	if (visibleRow < 0 || visibleRow >= previousLines.length) return false;
+
+	const plain = stripTerminalSequences(String(previousLines[visibleRow] ?? ""));
+	const section = ioView.matchShowMoreLine(plain);
+	if (!section) return false;
+
+	// Prefer the [show more] cells; allow a little slack so imprecise clicks still work.
+	const box = ioView.showMoreHitbox(plain);
+	if (box && packet.col > 0 && packet.col < box.startCol - 4) return false;
+
+	const ui = toolMouseUi;
+	if (!ui || typeof ui.custom !== "function") {
+		ui?.notify?.("Full preview requires TUI custom UI", "warning");
+		return true;
+	}
+
+	const title = section === "input" ? "Tool Input" : "Tool Output";
+	const content = section === "input" ? ioView.getInputBody() : ioView.getOutputBody();
+	// Fire-and-forget overlay; click is still consumed.
+	void showTextPreview({ ui }, title, content || "(empty)");
+	return true;
+}
+
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const hit = findToolAtScreenRow(tui, packet.row);
 	if (!hit) return false;
+
+	if (tryOpenToolIoShowMore(tui, packet, hit)) return true;
 
 	const wasExpanded = Boolean(hit.component.expanded);
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
@@ -1106,18 +1668,123 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, compactStyle: CompactS
 
 function modeSettingDescription(mode: CompactStyleMode): string {
 	if (mode === "compact") {
-		return "Compact transcript summaries are enabled. Fixed editor interaction is configured separately below.";
+		return "Compact transcript summaries. Fixed editor and diff options below still apply independently.";
 	}
 	if (mode === "off") {
-		return "Pi native tool rendering is enabled. Fixed editor interaction is configured separately below.";
+		return "Pi native tool rendering. Fixed editor and diff options below still apply independently.";
 	}
-	return "Claude Code style and rich edit/write diffs are enabled. Fixed editor interaction is configured separately below.";
+	return "Claude Code style with rich edit/write diffs. Tune fixed editor and diff options below.";
 }
 
 function fixedEditorSettingDescription(enabled: boolean): string {
 	return enabled
-		? "Enables mouse capture, 5-row wheel scrolling, tool click expansion with collapse anchoring, fixed viewport mapping, the back-to-bottom button, message count, and Ctrl+End."
-		: "Uses terminal-native wheel scrolling; disables mouse capture, tool clicks, fixed viewport mapping, button, and message count. Ctrl+End remains enabled.";
+		? "Mouse capture, 5-row wheel, tool click expand/collapse, viewport mapping, back-to-bottom button, message count, Ctrl+End."
+		: "Terminal-native wheel; mouse capture, tool clicks, viewport mapping, and button off. Ctrl+End remains enabled.";
+}
+
+function excludeRenderersDescription(names: readonly string[]): string {
+	return names.length === 0
+		? "No tools excluded. Agent always keeps its dedicated renderer. Enter to toggle common tools."
+		: `Native renderer for: ${names.join(", ")}. Agent is always native. Enter to toggle.`;
+}
+
+function diffViewModeDescription(mode: DiffViewMode): string {
+	if (mode === "split") return "Force side-by-side diff when width allows; otherwise unified.";
+	if (mode === "unified") return "Always render a single unified diff column.";
+	return "Auto: split when terminal is wide enough, otherwise unified.";
+}
+
+function diffIndicatorDescription(mode: DiffIndicatorMode): string {
+	if (mode === "classic") return "Classic +/- gutters on changed lines.";
+	if (mode === "none") return "No change indicators; rely on color alone.";
+	return "Vertical bar indicators on changed lines (default).";
+}
+
+function buildExcludeRenderersSubmenu(
+	onClose: () => void,
+	onLiveChange: () => void,
+): {
+	render: (width: number) => string[];
+	invalidate: () => void;
+	handleInput: (data: string) => void;
+} {
+	const candidates = [
+		...new Set([...EXCLUDE_RENDERER_CANDIDATES, ...config.excludeRenderers]),
+	].sort((a, b) => a.localeCompare(b));
+	const items = candidates.map((name) => ({
+		id: name,
+		label: name,
+		description:
+			name === "Agent"
+				? "Agent always uses its dedicated renderer and cannot be forced through ccstyle."
+				: `Use Pi native renderer for ${name} instead of Claude Code / compact styling.`,
+		currentValue: config.excludeRenderers.includes(name) ? "exclude" : "style",
+		values: ["style", "exclude"],
+	}));
+	const list = new SettingsList(
+		items,
+		Math.min(8, Math.max(4, items.length)),
+		getSettingsListTheme(),
+		(id: string, value: string) => {
+			const excluded = new Set(config.excludeRenderers);
+			if (value === "exclude") excluded.add(id);
+			else excluded.delete(id);
+			config.excludeRenderers = [...excluded].sort((a, b) => a.localeCompare(b));
+			saveConfig();
+			onLiveChange();
+		},
+		() => onClose(),
+		{ enableSearch: candidates.length > 8 },
+	);
+	return {
+		render: (width: number) => [
+			...list.render(width),
+			"",
+			// Extra hint: Esc returns to the Style section list.
+			truncateToWidth("  Esc back to Style settings", width),
+		],
+		invalidate: () => list.invalidate(),
+		handleInput: (data: string) => list.handleInput(data),
+	};
+}
+
+/** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
+type CcstyleSection = {
+	id: "style" | "editor" | "diff";
+	label: string;
+	items: any[];
+};
+
+function isForwardTabKey(data: string): boolean {
+	return data === "\t" || matchesKey(data, "tab");
+}
+
+function isBackTabKey(data: string): boolean {
+	// CSI Z is the common terminal encoding for Shift+Tab.
+	return data === "\x1b[Z" || matchesKey(data, "shift+tab");
+}
+
+function renderPanelRule(theme: any, width: number): string {
+	return theme.fg("dim", "─".repeat(Math.max(0, width)));
+}
+
+function renderSectionTabBar(
+	theme: any,
+	sections: readonly { label: string }[],
+	activeIndex: number,
+	width: number,
+): string {
+	const pieces: string[] = [];
+	for (let i = 0; i < sections.length; i++) {
+		if (i > 0) pieces.push(theme.fg("dim", " / "));
+		const label = sections[i]?.label ?? "";
+		pieces.push(
+			i === activeIndex
+				? theme.fg("text", typeof theme.bold === "function" ? theme.bold(label) : label)
+				: theme.fg("dim", label),
+		);
+	}
+	return truncateToWidth(pieces.join(""), Math.max(0, width));
 }
 
 async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Promise<void> {
@@ -1127,9 +1794,6 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 	}
 
 	await ctx.ui.custom((tui: any, theme: any, _keybindings: any, done: () => void) => {
-		const container = new Container();
-		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
-		container.addChild(new Text(theme.fg("accent", theme.bold("Claude Code Style")), 1, 0));
 		const modeSetting = {
 			id: "mode",
 			label: "Mode",
@@ -1139,22 +1803,92 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 		};
 		const fixedEditorSetting = {
 			id: "fixedEditorFeatures",
-			label: "Fixed editor feature",
+			label: "Fixed editor",
 			description: fixedEditorSettingDescription(config.fixedEditorFeatures),
 			currentValue: config.fixedEditorFeatures ? "on" : "off",
 			values: ["on", "off"],
 		};
-		const settingsList = new SettingsList(
-			[modeSetting, fixedEditorSetting],
-			4,
-			getSettingsListTheme(),
-			(id: string, value: string) => {
-				if (id === "mode") {
+		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
+		// only at the top level (mirrors Zentui settings: Tab = switch sections).
+		let excludeSubmenuOpen = false;
+		const excludeSetting = {
+			id: "excludeRenderers",
+			label: "Exclude tools",
+			description: excludeRenderersDescription(config.excludeRenderers),
+			currentValue: formatExcludeRenderers(config.excludeRenderers),
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
+				excludeSubmenuOpen = true;
+				return buildExcludeRenderersSubmenu(
+					() => {
+						excludeSubmenuOpen = false;
+						excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
+						excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
+						closeSubmenu();
+					},
+					() => {
+						excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
+						excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
+						refreshCurrentTranscript(compactStyle, ctx);
+					},
+				);
+			},
+		};
+		const diffViewSetting = {
+			id: "diffViewMode",
+			label: "Diff layout",
+			description: diffViewModeDescription(config.diffViewMode),
+			currentValue: config.diffViewMode,
+			values: [...DIFF_VIEW_MODES],
+		};
+		const diffIndicatorSetting = {
+			id: "diffIndicatorMode",
+			label: "Diff indicator",
+			description: diffIndicatorDescription(config.diffIndicatorMode),
+			currentValue: config.diffIndicatorMode,
+			values: [...DIFF_INDICATOR_MODES],
+		};
+		const diffSplitSetting = {
+			id: "diffSplitMinWidth",
+			label: "Split min width",
+			description: "Minimum terminal width before auto/split layout uses side-by-side columns.",
+			currentValue: nearestPreset(config.diffSplitMinWidth, DIFF_SPLIT_MIN_WIDTH_VALUES),
+			values: [...DIFF_SPLIT_MIN_WIDTH_VALUES],
+		};
+		const diffCollapsedSetting = {
+			id: "diffCollapsedLines",
+			label: "Collapsed lines",
+			description: "How many diff body lines to show before the expand hint (Ctrl+O / click).",
+			currentValue: nearestPreset(config.diffCollapsedLines, DIFF_COLLAPSED_LINES_VALUES),
+			values: [...DIFF_COLLAPSED_LINES_VALUES],
+		};
+		const diffWordWrapSetting = {
+			id: "diffWordWrap",
+			label: "Diff word wrap",
+			description: config.diffWordWrap
+				? "Long diff lines wrap within the panel width."
+				: "Long diff lines are truncated to the panel width.",
+			currentValue: config.diffWordWrap ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const expandedMaxSetting = {
+			id: "expandedPreviewMaxLines",
+			label: "Expanded max lines",
+			description:
+				"Max Output/diff body lines when expanded. Default 40 keeps the TUI compact; raise for large dumps.",
+			currentValue: nearestPreset(
+				config.expandedPreviewMaxLines,
+				EXPANDED_PREVIEW_MAX_LINES_VALUES,
+			),
+			values: [...EXPANDED_PREVIEW_MAX_LINES_VALUES],
+		};
+
+		const onSettingChange = (id: string, value: string) => {
+			switch (id) {
+				case "mode":
 					modeSetting.description = modeSettingDescription(value as CompactStyleMode);
 					applyStyleMode(value as CompactStyleMode, ctx, compactStyle);
 					return;
-				}
-				if (id === "fixedEditorFeatures") {
+				case "fixedEditorFeatures":
 					config.fixedEditorFeatures = value === "on";
 					fixedEditorSetting.description = fixedEditorSettingDescription(
 						config.fixedEditorFeatures,
@@ -1162,22 +1896,151 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 					saveConfig();
 					installToolMouseInteraction(ctx);
 					refreshCurrentTranscript(compactStyle, ctx);
-					ctx.ui.notify(`Fixed editor feature: ${value}`, "info");
-				}
+					ctx.ui.notify(`Fixed editor: ${value}`, "info");
+					return;
+				case "excludeRenderers":
+					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
+					excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
+					return;
+				case "diffViewMode":
+					config.diffViewMode = value as DiffViewMode;
+					diffViewSetting.description = diffViewModeDescription(config.diffViewMode);
+					break;
+				case "diffIndicatorMode":
+					config.diffIndicatorMode = value as DiffIndicatorMode;
+					diffIndicatorSetting.description = diffIndicatorDescription(config.diffIndicatorMode);
+					break;
+				case "diffSplitMinWidth":
+					config.diffSplitMinWidth = pickPositiveInt(
+						value,
+						DEFAULT_CONFIG.diffSplitMinWidth,
+						40,
+						300,
+					);
+					break;
+				case "diffCollapsedLines":
+					config.diffCollapsedLines = pickPositiveInt(
+						value,
+						DEFAULT_CONFIG.diffCollapsedLines,
+						1,
+						500,
+					);
+					break;
+				case "diffWordWrap":
+					config.diffWordWrap = value === "on";
+					diffWordWrapSetting.description = config.diffWordWrap
+						? "Long diff lines wrap within the panel width."
+						: "Long diff lines are truncated to the panel width.";
+					break;
+				case "expandedPreviewMaxLines":
+					config.expandedPreviewMaxLines = pickPositiveInt(
+						value,
+						DEFAULT_CONFIG.expandedPreviewMaxLines,
+						10,
+						50_000,
+					);
+					break;
+				default:
+					return;
+			}
+			saveConfig();
+			refreshCurrentTranscript(compactStyle, ctx);
+			ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+		};
+
+		const sections: CcstyleSection[] = [
+			{
+				id: "style",
+				label: "Style",
+				items: [modeSetting, excludeSetting],
 			},
-			() => done(),
-			{ enableSearch: false },
+			{
+				id: "editor",
+				label: "Editor",
+				items: [fixedEditorSetting],
+			},
+			{
+				id: "diff",
+				label: "Diff",
+				items: [
+					diffViewSetting,
+					diffIndicatorSetting,
+					diffSplitSetting,
+					diffCollapsedSetting,
+					diffWordWrapSetting,
+					expandedMaxSetting,
+				],
+			},
+		];
+
+		let activeSection = 0;
+		const settingsTheme = getSettingsListTheme();
+		const lists = sections.map(
+			(section) =>
+				new SettingsList(
+					section.items,
+					Math.min(8, Math.max(section.items.length, 1)),
+					settingsTheme,
+					onSettingChange,
+					() => done(),
+					{ enableSearch: false },
+				),
 		);
-		container.addChild(settingsList);
-		container.addChild(
-			new Text(theme.fg("dim", "↑↓ navigate · enter/space change · esc close"), 1, 0),
-		);
-		container.addChild(new DynamicBorder((text: string) => theme.fg("accent", text)));
+
+		const activeList = () => lists[activeSection]!;
+
+		const switchSection = (delta: number) => {
+			if (excludeSubmenuOpen) return;
+			activeSection = (activeSection + delta + sections.length) % sections.length;
+		};
+
 		return {
-			render: (width: number) => container.render(width),
-			invalidate: () => container.invalidate(),
+			render(width: number): string[] {
+				const safeWidth = Math.max(0, Math.floor(width));
+				const rule = renderPanelRule(theme, safeWidth);
+				const body = activeList().render(safeWidth);
+				// Drop SettingsList's built-in hint — the panel footer below is the single source.
+				while (body.length > 0 && body[body.length - 1] === "") body.pop();
+				const listHintIndex = body.findIndex(
+					(line) =>
+						typeof line === "string" &&
+						(line.includes("Enter/Space to change") || line.includes("Esc to cancel")),
+				);
+				const listBody = listHintIndex >= 0 ? body.slice(0, listHintIndex) : body;
+				while (listBody.length > 0 && listBody[listBody.length - 1] === "") listBody.pop();
+
+				// Frame: top rule · tabs · mid rule · settings · mid rule · footer · bottom rule
+				return [
+					rule,
+					renderSectionTabBar(theme, sections, activeSection, safeWidth),
+					rule,
+					...listBody,
+					rule,
+					truncateToWidth(
+						theme.fg(
+							"dim",
+							"  Enter/Space to change · Tab/Shift+Tab to switch sections · Esc to close",
+						),
+						safeWidth,
+					),
+					rule,
+				];
+			},
+			invalidate() {
+				for (const list of lists) list.invalidate();
+			},
 			handleInput(data: string) {
-				settingsList.handleInput?.(data);
+				if (!excludeSubmenuOpen && isForwardTabKey(data)) {
+					switchSection(1);
+					tui.requestRender();
+					return;
+				}
+				if (!excludeSubmenuOpen && isBackTabKey(data)) {
+					switchSection(-1);
+					tui.requestRender();
+					return;
+				}
+				activeList().handleInput?.(data);
 				tui.requestRender();
 			},
 		};
@@ -1282,16 +2145,27 @@ function createCcstyleTool(
 					theme,
 					context,
 					writeExecutionMetadata,
+					getToolDisplayConfig(),
 				);
 				if (richResult) return richResult;
 			}
 
 			const text = textFromResult(result);
+			const args = context?.args;
 			const rendered = !expanded ? (text ? oneLine(text, 96) : "Done") : text;
 
-			const hint = !expanded && hasExpandableResult(text) ? expandHint(theme) : "";
-			if (expanded)
-				return renderExpandedToolResult(rendered, theme, isError, context?.lastComponent);
+			const hint = !expanded && hasExpandableDetail(text, args) ? expandHint(theme) : "";
+			if (expanded) {
+				return renderExpandedToolResult(
+					text || "",
+					theme,
+					Boolean(isError),
+					context?.lastComponent,
+					args,
+					context,
+				);
+			}
+			if (context?.state) context.state.ccstyleIoView = undefined;
 			return new Text(
 				theme.fg(isError ? "error" : "muted", renderCollapsedToolResult(rendered, hint)),
 				0,
@@ -1637,19 +2511,20 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	});
 
 	pi.registerCommand("ccstyle", {
-		description: "Configure Claude Code style",
+		description: "Configure Claude Code style, fixed editor, and rich diff options",
 		getArgumentCompletions: (prefix) => {
 			const topLevel = [
 				{ value: "on", label: "on", description: "Enable Claude Code style" },
 				{ value: "off", label: "off", description: "Use Pi's native renderer" },
 				{ value: "compact", label: "compact", description: "Use compact transcript rendering" },
-				{ value: "status", label: "status", description: "Show current state" },
+				{ value: "status", label: "status", description: "Show full configuration" },
+				{ value: "panel", label: "panel", description: "Open interactive settings panel" },
 			];
 			return topLevel.filter((item) => item.value.startsWith(prefix));
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (!arg) {
+			if (!arg || arg === "panel") {
 				await showCcstylePanel(ctx, compactStyle);
 				return;
 			}
@@ -1658,10 +2533,10 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 				return;
 			}
 			if (arg === "status") {
-				ctx.ui.notify(`Claude Code style: ${config.mode}`, "info");
+				ctx.ui.notify(`Claude Code style: ${formatConfigStatus(config)}`, "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /ccstyle [on|off|compact|status]", "warning");
+			ctx.ui.notify("Usage: /ccstyle [on|off|compact|status|panel]", "warning");
 		},
 	});
 

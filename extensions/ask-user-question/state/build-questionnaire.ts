@@ -188,8 +188,20 @@ class QuestionnaireBuilder {
 		const questions = this.questions;
 		const itemsByTab = this.itemsByTab;
 		const tabsDescriptor = questions.map((q) => ({ multiSelect: q.multiSelect }));
-		const globalLeftWidth = (paneWidth: number): number =>
-			crossTabLeftWidthWithDonation(tabsDescriptor, itemsByTab, questions, paneWidth);
+		// Memoize by paneWidth — preview/naturalHeight call this many times per keystroke.
+		let cachedPaneWidth: number | undefined;
+		let cachedLeftWidth = 0;
+		const globalLeftWidth = (paneWidth: number): number => {
+			if (cachedPaneWidth === paneWidth) return cachedLeftWidth;
+			cachedLeftWidth = crossTabLeftWidthWithDonation(
+				tabsDescriptor,
+				itemsByTab,
+				questions,
+				paneWidth,
+			);
+			cachedPaneWidth = paneWidth;
+			return cachedLeftWidth;
+		};
 		for (const tab of tabs) {
 			tab.preview.setGlobalLeftWidth(globalLeftWidth);
 		}

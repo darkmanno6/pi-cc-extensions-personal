@@ -6,9 +6,16 @@ const UNSAFE_TERMINAL_ESCAPE = new RegExp(
 	"g",
 );
 
-/** Prevent captured terminal control responses from being replayed by tool renderers. */
-export function sanitizeToolResultText(value: string): string {
-	return value
+/**
+ * Prevent captured terminal control responses from being replayed by tool renderers.
+ * Optional `maxChars` trims the input first so preview/one-line paths never scan multi-MB outputs.
+ */
+export function sanitizeToolResultText(value: string, maxChars?: number): string {
+	const source =
+		typeof maxChars === "number" && maxChars >= 0 && value.length > maxChars
+			? value.slice(0, maxChars)
+			: value;
+	return source
 		.replace(UNSAFE_TERMINAL_ESCAPE, "")
 		.replace(/\x1B/g, "")
 		.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "")

@@ -192,7 +192,8 @@ function shortenPath(path: unknown): string {
 }
 
 function oneLine(value: unknown): string {
-	return sanitizeToolResultText(String(value ?? ""))
+	// Preview paths only need a short prefix; skip scanning multi-MB tool outputs.
+	return sanitizeToolResultText(String(value ?? ""), 4_096)
 		.replace(/\s+/g, " ")
 		.trim();
 }
@@ -298,7 +299,8 @@ export function resultPreview(result: any, isPartial = false): string {
 		? result.content.find((c: any) => c?.type === "text" && typeof c.text === "string")?.text
 		: undefined;
 	if (!text) return isPartial ? "running" : "";
-	const lines = sanitizeToolResultText(text)
+	// Only the first non-empty line / line count is used; bound the scan window.
+	const lines = sanitizeToolResultText(text, 8_192)
 		.trim()
 		.split("\n")
 		.filter((line) => line.trim().length > 0);

@@ -213,19 +213,53 @@ export function formatTokens(tokens: number): string {
 	return `${Math.round(tokens / 1_000)}k`;
 }
 
-function collectParts(ctx: ExtensionCommandContext): ContextPart[] {
-	const options = ctx.getSystemPromptOptions();
+type SystemPromptOptions = {
+	contextFiles?: Array<{ path: string; content: string }>;
+	skills?: Array<{
+		name: string;
+		description?: string;
+		filePath?: string;
+		disableModelInvocation?: boolean;
+	}>;
+	selectedTools?: string[];
+	toolSnippets?: Record<string, string>;
+	promptGuidelines?: string[];
+};
+
+type ContextBreakdown = {
+	parts: ContextPart[];
+	options: SystemPromptOptions;
+	systemPrompt: string;
+};
+
+/**
+ * Single pass over prompt options + session entries. Returns options/systemPrompt
+ * so the /context UI does not re-fetch or re-stringify the same sources.
+ */
+function collectContextBreakdown(ctx: ExtensionCommandContext): ContextBreakdown {
+	const options = (ctx.getSystemPromptOptions?.() ?? {}) as SystemPromptOptions;
+	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : "";
+
 	const contextFileTokens = (options.contextFiles ?? []).reduce(
 		(sum, file) => sum + tokenEstimate(file.content),
 		0,
 	);
-	const skillTokens = (options.skills ?? []).reduce((sum, skill) => sum + tokenEstimate(skill), 0);
+	// Prefer field-level estimates over JSON.stringify(whole skill).
+	const skillTokens = (options.skills ?? []).reduce((sum, skill) => {
+		if (!skill || typeof skill !== "object") return sum + tokenEstimate(skill);
+		return (
+			sum +
+			tokenEstimate(skill.name) +
+			tokenEstimate(skill.description) +
+			tokenEstimate(skill.filePath)
+		);
+	}, 0);
 	const tools = options.selectedTools ?? [];
-	const toolTokens =
-		tools.reduce(
-			(sum, name) => sum + tokenEstimate(name) + tokenEstimate(options.toolSnippets?.[name]),
-			0,
-		) + tokenEstimate(options.promptGuidelines);
+	const snippets = options.toolSnippets;
+	let toolTokens = tokenEstimate(options.promptGuidelines);
+	for (const name of tools) {
+		toolTokens += tokenEstimate(name) + tokenEstimate(snippets?.[name]);
+	}
 
 	let user = 0;
 	let assistant = 0;
@@ -242,7 +276,7 @@ function collectParts(ctx: ExtensionCommandContext): ContextPart[] {
 		}
 	}
 
-	const systemTotal = tokenEstimate(ctx.getSystemPrompt());
+	const systemTotal = tokenEstimate(systemPrompt);
 	const baseSystem = Math.max(0, systemTotal - contextFileTokens - skillTokens - toolTokens);
 	const parts: ContextPart[] = [
 		{ label: "System prompt", tokens: baseSystem, color: "accent" },
@@ -254,7 +288,11 @@ function collectParts(ctx: ExtensionCommandContext): ContextPart[] {
 		{ label: "Tool results", tokens: toolResults, color: "dim" },
 		{ label: "Compaction summaries", tokens: summaries, color: "success" },
 	];
-	return parts.filter((part) => part.tokens > 0);
+	return {
+		parts: parts.filter((part) => part.tokens > 0),
+		options,
+		systemPrompt,
+	};
 }
 
 export default function contextUsageExtension(pi: ExtensionAPI) {
@@ -263,8 +301,9 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const usage = ctx.getContextUsage();
 			const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-			const used = usage?.tokens ?? collectParts(ctx).reduce((sum, part) => sum + part.tokens, 0);
-			const parts = scaleParts(collectParts(ctx), used);
+			const breakdown = collectContextBreakdown(ctx);
+			const used = usage?.tokens ?? breakdown.parts.reduce((sum, part) => sum + part.tokens, 0);
+			const parts = scaleParts(breakdown.parts, used);
 			const free = Math.max(0, contextWindow - used);
 			const allParts = [...parts, { label: "Free space", tokens: free, color: "dim" as const }];
 
@@ -274,7 +313,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const options = ctx.getSystemPromptOptions();
+			const options = breakdown.options;
 			const toolByName = new Map<string, ToolPreviewInfo>(
 				(pi.getAllTools() as ToolPreviewInfo[]).map((tool) => [tool.name, tool] as const),
 			);
@@ -313,7 +352,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 					key: "systemPrompt",
 					label: "System prompt",
 					title: "System Prompt",
-					content: ctx.getSystemPrompt(),
+					content: breakdown.systemPrompt,
 				},
 				{
 					key: "tools",

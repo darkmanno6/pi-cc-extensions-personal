@@ -104,7 +104,13 @@ export function crossTabMaxLeftWidth(
  *
  * Pure function — O(total chars) per question; no Markdown invocation, no cache interaction.
  */
+/** Per-question widest preview line; questions are immutable for a dialog lifetime. */
+const previewSourceWidthCache = new WeakMap<QuestionData, number>();
+
 export function previewSourceWidth(question: QuestionData): number {
+	const cached = previewSourceWidthCache.get(question);
+	if (cached !== undefined) return cached;
+
 	let max = 0;
 	for (const option of question.options) {
 		const text = option.preview;
@@ -114,6 +120,7 @@ export function previewSourceWidth(question: QuestionData): number {
 			if (w > max) max = w;
 		}
 	}
+	previewSourceWidthCache.set(question, max);
 	return max;
 }
 

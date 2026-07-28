@@ -66,6 +66,20 @@ type SubagentManager = {
 
 // Local subagent record tracking (pi-subagents does not expose a global manager).
 const liveSubagentRecords = new Map<string, SubagentLiveRecord>();
+/** Cap retained completed/live records so long-lived pi processes cannot grow unbounded. */
+const MAX_LIVE_SUBAGENT_RECORDS = 200;
+
+function pruneLiveSubagentRecords(): void {
+	while (liveSubagentRecords.size > MAX_LIVE_SUBAGENT_RECORDS) {
+		const oldest = liveSubagentRecords.keys().next().value;
+		if (oldest === undefined) break;
+		liveSubagentRecords.delete(oldest);
+	}
+}
+
+function clearLiveSubagentRecords(): void {
+	liveSubagentRecords.clear();
+}
 
 function trackSubagentFromEvent(data: unknown): void {
 	if (!data || typeof data !== "object") return;
@@ -87,6 +101,9 @@ function trackSubagentFromEvent(data: unknown): void {
 				typeof event.endedAt === "number" ? event.endedAt : event.lastUpdate
 			) as number;
 		}
+		// Refresh insertion order so completed-but-still-referenced runs stay recent.
+		liveSubagentRecords.delete(runId);
+		liveSubagentRecords.set(runId, existing);
 		return;
 	}
 	// Started event — create new record
@@ -100,6 +117,7 @@ function trackSubagentFromEvent(data: unknown): void {
 		cwd,
 		startedAt,
 	});
+	pruneLiveSubagentRecords();
 }
 
 function getSubagentManager(): SubagentManager | undefined {
@@ -134,8 +152,14 @@ function formatDate(date: Date): string {
 	}).format(date);
 }
 
+/** Stable across keystrokes while getReferences returns the same reference objects. */
+const sessionSearchTextCache = new WeakMap<SessionReference, string>();
+const sessionItemCache = new WeakMap<SessionReference, { cwd: string; item: AutocompleteItem }>();
+
 function sessionSearchText(reference: SessionReference): string {
-	return [
+	const cached = sessionSearchTextCache.get(reference);
+	if (cached !== undefined) return cached;
+	const text = [
 		reference.info.name,
 		reference.info.firstMessage,
 		reference.info.cwd,
@@ -144,19 +168,50 @@ function sessionSearchText(reference: SessionReference): string {
 	]
 		.filter(Boolean)
 		.join(" ");
+	sessionSearchTextCache.set(reference, text);
+	return text;
 }
 
 function sessionItem(reference: SessionReference, currentCwd: string): AutocompleteItem {
+	const cached = sessionItemCache.get(reference);
+	if (cached && cached.cwd === currentCwd) return cached.item;
+
 	const session = reference.info;
 	const workspace = samePath(session.cwd, currentCwd)
 		? "current workspace"
 		: session.cwd || "unknown workspace";
 	const label = reference.kind === "subagent" ? "[SubAgent]" : "[Session]";
-	return {
+	const item: AutocompleteItem = {
 		value: `${SESSION_REFERENCE_PREFIX}${reference.referenceIds[0]}`,
 		label: `${label} ${sessionTitle(session)}`,
 		description: `${workspace} · ${session.messageCount} messages · ${formatDate(session.modified)}`,
 	};
+	sessionItemCache.set(reference, { cwd: currentCwd, item });
+	return item;
+}
+
+/** Sort cache: same array + cwd reuses order (getReferences returns a stable ordered array). */
+const orderedReferencesCache = new WeakMap<
+	SessionReference[],
+	{ cwd: string; ordered: SessionReference[] }
+>();
+
+function orderSessionReferences(
+	references: SessionReference[],
+	currentCwd: string,
+): SessionReference[] {
+	const cached = orderedReferencesCache.get(references);
+	if (cached && cached.cwd === currentCwd) return cached.ordered;
+
+	const ordered = [...references].sort((left, right) => {
+		const leftLocal = samePath(left.info.cwd, currentCwd) ? 1 : 0;
+		const rightLocal = samePath(right.info.cwd, currentCwd) ? 1 : 0;
+		return rightLocal - leftLocal || right.info.modified.getTime() - left.info.modified.getTime();
+	});
+	orderedReferencesCache.set(references, { cwd: currentCwd, ordered });
+	// Point the ordered array at itself so subsequent keystrokes skip re-sorting.
+	orderedReferencesCache.set(ordered, { cwd: currentCwd, ordered });
+	return ordered;
 }
 
 function filterSessions(
@@ -166,12 +221,12 @@ function filterSessions(
 ): AutocompleteItem[] {
 	if (query.startsWith("session:")) return [];
 
-	const ordered = [...references].sort((left, right) => {
-		const leftLocal = samePath(left.info.cwd, currentCwd) ? 1 : 0;
-		const rightLocal = samePath(right.info.cwd, currentCwd) ? 1 : 0;
-		return rightLocal - leftLocal || right.info.modified.getTime() - left.info.modified.getTime();
-	});
-	const matches = query.trim() ? fuzzyFilter(ordered, query, sessionSearchText) : ordered;
+	const ordered = orderSessionReferences(references, currentCwd);
+	const trimmed = query.trim();
+	// Empty query: top-N already sorted — no fuzzy scan over the full list.
+	const matches = trimmed
+		? fuzzyFilter(ordered, trimmed, sessionSearchText)
+		: ordered.slice(0, MAX_SESSION_SUGGESTIONS);
 	return matches
 		.slice(0, MAX_SESSION_SUGGESTIONS)
 		.map((reference) => sessionItem(reference, currentCwd));
@@ -341,6 +396,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", (_event, ctx) => {
 		const generation = ++sessionGeneration;
 		subagentIds.clear();
+		clearLiveSubagentRecords();
 		let loadErrorShown = false;
 		const currentSessionId = ctx.sessionManager.getSessionId();
 		const currentSessionFile = ctx.sessionManager.getSessionFile();
@@ -365,8 +421,27 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 			return sessionsPromise;
 		};
 
-		const getReferences = async (): Promise<SessionReference[]> =>
-			mergeReferences(await getSessions(), liveSubagentReferences(subagentIds, currentSessionId));
+		// Pre-sort once per (sessions list, subagent id set) so @ keystrokes only fuzzy-filter.
+		let referencesCache:
+			| { sessions: SessionInfo[]; subagentKey: string; ordered: SessionReference[] }
+			| undefined;
+		const getReferences = async (): Promise<SessionReference[]> => {
+			const sessions = await getSessions();
+			const subagentKey = [...subagentIds].join("\0");
+			if (
+				referencesCache &&
+				referencesCache.sessions === sessions &&
+				referencesCache.subagentKey === subagentKey
+			) {
+				return referencesCache.ordered;
+			}
+			const ordered = orderSessionReferences(
+				mergeReferences(sessions, liveSubagentReferences(subagentIds, currentSessionId)),
+				ctx.cwd,
+			);
+			referencesCache = { sessions, subagentKey, ordered };
+			return ordered;
+		};
 
 		getAvailableReferences = getReferences;
 		if (ctx.mode === "tui") {
@@ -463,6 +538,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_before_switch", () => {
 		subagentIds.clear();
+		clearLiveSubagentRecords();
 		getAvailableReferences = undefined;
 	});
 
@@ -470,6 +546,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 		sessionGeneration++;
 		for (const unsubscribe of unsubscribeSubagentEvents) unsubscribe();
 		subagentIds.clear();
+		clearLiveSubagentRecords();
 		getAvailableReferences = undefined;
 	});
 }

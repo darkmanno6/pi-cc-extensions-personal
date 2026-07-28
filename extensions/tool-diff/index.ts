@@ -1,7 +1,7 @@
 import { createWriteToolDefinition, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { renderEditDiffResult, renderWriteDiffResult } from "./diff-renderer.ts";
-import { DEFAULT_TOOL_DISPLAY_CONFIG } from "./types.ts";
+import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "./types.ts";
 import { executeWriteWithMetadata, WriteExecutionMetadataStore } from "./write-execution.ts";
 
 function resultText(result: any): string {
@@ -34,6 +34,7 @@ export function renderRichToolResult(
 	theme: any,
 	context: any,
 	writeMetadata: WriteExecutionMetadataStore,
+	displayConfig: ToolDisplayConfig = DEFAULT_TOOL_DISPLAY_CONFIG,
 ): any | undefined {
 	if (options?.isPartial || options?.isError || context?.isError) return undefined;
 	const expanded = options?.expanded === true || context?.expanded === true;
@@ -42,7 +43,7 @@ export function renderRichToolResult(
 		return renderEditDiffResult(
 			result?.details,
 			{ expanded, filePath },
-			DEFAULT_TOOL_DISPLAY_CONFIG,
+			displayConfig,
 			theme,
 			resultText(result),
 		);
@@ -64,7 +65,7 @@ export function renderRichToolResult(
 			previousContent: metadata.previousContent,
 			fileExistedBeforeWrite: metadata.fileExistedBeforeWrite,
 		},
-		DEFAULT_TOOL_DISPLAY_CONFIG,
+		displayConfig,
 		theme,
 		resultText(result),
 	);
@@ -103,4 +104,10 @@ export function installWriteOverride(
 	return store;
 }
 
-export { DEFAULT_TOOL_DISPLAY_CONFIG, WriteExecutionMetadataStore };
+export {
+	DEFAULT_TOOL_DISPLAY_CONFIG,
+	type ToolDisplayConfig,
+	type DiffViewMode,
+	type DiffIndicatorMode,
+} from "./types.ts";
+export { WriteExecutionMetadataStore } from "./write-execution.ts";

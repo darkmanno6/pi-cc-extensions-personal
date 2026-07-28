@@ -59,18 +59,28 @@ function textResult(text: string, isError = false) {
 }
 
 test("normalizeConfig migrates enabled configs and accepts all three modes", () => {
+	const displayDefaults = {
+		diffViewMode: "auto" as const,
+		diffIndicatorMode: "bars" as const,
+		diffSplitMinWidth: 120,
+		diffCollapsedLines: 24,
+		diffWordWrap: true,
+		expandedPreviewMaxLines: 40,
+	};
 	assert.deepEqual(
 		normalizeConfig({ enabled: false, excludeRenderers: ["edit", "edit", "", 42] }),
 		{
 			mode: "off",
 			excludeRenderers: ["edit"],
 			fixedEditorFeatures: true,
+			...displayDefaults,
 		},
 	);
 	assert.deepEqual(normalizeConfig({ enabled: true }), {
 		mode: "on",
 		excludeRenderers: [],
 		fixedEditorFeatures: true,
+		...displayDefaults,
 	});
 	assert.deepEqual(
 		normalizeConfig({ mode: "compact", enabled: false, excludeRenderers: ["Agent", "Agent"] }),
@@ -78,18 +88,45 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 			mode: "compact",
 			excludeRenderers: ["Agent"],
 			fixedEditorFeatures: true,
+			...displayDefaults,
 		},
 	);
 	assert.deepEqual(normalizeConfig({ mode: "off", fixedEditorFeatures: false }), {
 		mode: "off",
 		excludeRenderers: [],
 		fixedEditorFeatures: false,
+		...displayDefaults,
 	});
 	assert.deepEqual(normalizeConfig({ mode: "unknown" }), {
 		mode: "on",
 		excludeRenderers: [],
 		fixedEditorFeatures: true,
+		...displayDefaults,
 	});
+	assert.deepEqual(
+		normalizeConfig({
+			mode: "on",
+			diffViewMode: "split",
+			diffIndicatorMode: "classic",
+			diffSplitMinWidth: 140,
+			diffCollapsedLines: 48,
+			diffWordWrap: false,
+			expandedPreviewMaxLines: 1000,
+		}),
+		{
+			mode: "on",
+			excludeRenderers: [],
+			fixedEditorFeatures: true,
+			diffViewMode: "split",
+			diffIndicatorMode: "classic",
+			diffSplitMinWidth: 140,
+			diffCollapsedLines: 48,
+			diffWordWrap: false,
+			expandedPreviewMaxLines: 1000,
+		},
+	);
+	// 40 must survive normalize (previously clamped to min 50, which hid [show more]).
+	assert.equal(normalizeConfig({ expandedPreviewMaxLines: 40 }).expandedPreviewMaxLines, 40);
 });
 
 test("rendererRoute keeps Agent and exclusions native in every mode", () => {
@@ -860,7 +897,7 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	const command = commands.get("ccstyle");
 	assert.deepEqual(
 		command.getArgumentCompletions("").map((item: any) => item.value),
-		["on", "off", "compact", "status"],
+		["on", "off", "compact", "status", "panel"],
 	);
 	assert.deepEqual(shortcuts, []);
 
@@ -879,17 +916,41 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 		},
 	});
 	let panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	// Section tabs (Style / Editor / Diff); default Style shows Mode + Exclude tools.
+	assert.ok(
+		panelLines.some(
+			(line: string) => /Style/.test(line) && /Editor/.test(line) && /Diff/.test(line),
+		),
+	);
 	assert.ok(panelLines.some((line: string) => line.includes("Mode") && line.includes("on")));
 	assert.ok(panelLines.some((line: string) => line.includes("rich edit/write diffs")));
-	assert.ok(
-		panelLines.some((line: string) => line.includes("Fixed editor feature") && line.includes("on")),
-	);
-	panel.handleInput("\x1b[B");
+	assert.ok(panelLines.some((line: string) => line.includes("Exclude tools")));
+	assert.ok(panelLines.some((line: string) => line.includes("Tab/Shift+Tab")));
+	// Fixed editor lives on the Editor tab — not on Style.
+	assert.ok(!panelLines.some((line: string) => line.includes("Fixed editor")));
+	// Tab → Editor section
+	panel.handleInput("\t");
 	panelLines = panel.render(80).map((line: string) => line.trimEnd());
-	assert.ok(panelLines.some((line: string) => line.includes("mouse capture")));
+	assert.ok(
+		panelLines.some((line: string) => line.includes("Fixed editor") && line.includes("on")),
+	);
+	assert.ok(panelLines.some((line: string) => line.includes("Mouse capture")));
 	assert.ok(panelLines.some((line: string) => line.includes("Ctrl+End")));
-	assert.match(panelLines[0]!, /─|━/, "panel has a top divider");
-	assert.match(panelLines.at(-1)!, /─|━/, "panel has a bottom divider");
+	// Tab → Diff section
+	panel.handleInput("\t");
+	panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	assert.ok(panelLines.some((line: string) => line.includes("Diff layout")));
+	assert.ok(panelLines.some((line: string) => line.includes("Collapsed lines")));
+	const plain = (line: string) => line.replace(/\x1b\[[0-9;]*m/g, "").trim();
+	const ruleCount = panelLines.filter((line: string) => /^─+$/.test(plain(line))).length;
+	// top + under-tabs + above-footer + bottom
+	assert.ok(ruleCount >= 4, `expected framed rules, got ${ruleCount}`);
+	assert.match(plain(panelLines[0]!), /^─+$/, "top rule");
+	assert.match(plain(panelLines.at(-1)!), /^─+$/, "bottom rule");
+	// Shift+Tab back to Editor
+	panel.handleInput("\x1b[Z");
+	panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	assert.ok(panelLines.some((line: string) => line.includes("Fixed editor")));
 
 	for (const name of [
 		"session_start",

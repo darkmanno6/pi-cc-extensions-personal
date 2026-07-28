@@ -5,6 +5,8 @@ import test from "node:test";
 test("package manifest only lists extension factory entry points", () => {
 	const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 	assert.deepEqual(manifest.pi.extensions, [
+		"./extensions/pi-aliases.ts",
+		"./extensions/pi-startup-header.ts",
 		"./extensions/claude-code-style.ts",
 		"./extensions/context.ts",
 		"./extensions/session-reference.ts",

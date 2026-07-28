@@ -81,7 +81,6 @@ The `ask_user_question` tool is registered automatically.
 | Structured questionnaires | Single choice, multiple choice, custom answers, Markdown previews, and RPC / ACP fallback        | `ask_user_question` |
 | Context inspection        | Usage breakdown and previews for the system prompt, tools, skills, and messages                  | `/context`          |
 | Session references        | Search and inject effective context from previous Sessions or existing SubAgents                 | `@session:`         |
-| Agent completion          | Complete and delegate custom Agents from`~/.pi/agent/agents/*.md`                                | `@agent-name`       |
 | Theme                     | Includes the GitHub Dark Default theme                                                           | `/theme`            |
 
 ### Output modes
@@ -165,10 +164,11 @@ Run `/reload` after changing extensions. Changes under `extensions/ask-user-ques
 | `npm:pi-theme-picker`         | Theme search and live preview                                |
 | `npm:@ayulab/pi-rewind`       | Checkpoint-based code or conversation rollback               |
 | `npm:pi-compact-thinking`     | Compact rendering for hidden thinking blocks                 |
-| `npm:pi-startup-header`       | Theme-aware startup header                                   |
 
 ## Credits
 
 - Compact transcript behavior is based on [`avhagedorn/pi-compact-transcript`](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2 (MIT).
 - Structured questionnaires are based on [`@juicesharp/rpiv-ask-user-question`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question) v2.1.0 (MIT).
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md).
+- Startup header based on [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header) (MIT).
+- Command aliases based on [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases) (MIT).

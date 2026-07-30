@@ -943,9 +943,10 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	assert.ok(panelLines.some((line: string) => line.includes("Collapsed lines")));
 	const plain = (line: string) => line.replace(/\x1b\[[0-9;]*m/g, "").trim();
 	const ruleCount = panelLines.filter((line: string) => /^─+$/.test(plain(line))).length;
-	// top + under-tabs + above-footer + bottom
-	assert.ok(ruleCount >= 4, `expected framed rules, got ${ruleCount}`);
-	assert.match(plain(panelLines[0]!), /^─+$/, "top rule");
+	// closable top + under-tabs + above-footer + bottom
+	assert.ok(ruleCount >= 3, `expected framed rules, got ${ruleCount}`);
+	assert.match(plain(panelLines[0]!), /^╭─+╮$/, "top border");
+	assert.match(plain(panelLines[1]!), /CC Style.*\[ × \]/, "title row with close button");
 	assert.match(plain(panelLines.at(-1)!), /^─+$/, "bottom rule");
 	// Shift+Tab back to Editor
 	panel.handleInput("\x1b[Z");

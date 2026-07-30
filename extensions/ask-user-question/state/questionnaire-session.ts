@@ -1,4 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import { bottomDialogBounds, isDialogCloseClick } from "../../closable-dialog.ts";
 import { getKeybindings, type Input } from "@earendil-works/pi-tui";
 import type { QuestionData, QuestionnaireResult, QuestionParams } from "../tool/types.js";
 import type { WrappingSelectItem } from "../view/components/wrapping-select.js";
@@ -93,10 +94,26 @@ export class QuestionnaireSession {
 		// so the transcript regains space while Ctrl+] can still expand the questionnaire.
 		const collapsedRender = (_width: number): string[] => [theme.fg("dim", ` ${COLLAPSED_HINT} `)];
 
+		let lastWidth = 0;
+		let lastHeight = 0;
 		this.component = {
-			render: (width) => (this.state.collapsed ? collapsedRender(width) : built.render(width)),
+			render: (width) => {
+				const lines = this.state.collapsed ? collapsedRender(width) : built.render(width);
+				lastWidth = width;
+				lastHeight = lines.length;
+				return lines;
+			},
 			invalidate: built.invalidate,
-			handleInput: (data) => this.dispatch(data),
+			handleInput: (data) => {
+				if (
+					!this.state.collapsed &&
+					isDialogCloseClick(data, bottomDialogBounds(this.tui.terminal, lastWidth, lastHeight))
+				) {
+					this.dispatch("\x1b");
+					return;
+				}
+				this.dispatch(data);
+			},
 		};
 
 		this.viewAdapter.apply(this.state);

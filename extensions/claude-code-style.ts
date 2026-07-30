@@ -29,6 +29,12 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	bottomDialogBounds,
+	isDialogCloseClick,
+	renderDialogHeader,
+	renderDialogTopBorder,
+} from "./closable-dialog.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -1974,6 +1980,8 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 		];
 
 		let activeSection = 0;
+		let lastWidth = 0;
+		let lastHeight = 0;
 		const settingsTheme = getSettingsListTheme();
 		const lists = sections.map(
 			(section) =>
@@ -2010,8 +2018,15 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 				while (listBody.length > 0 && listBody[listBody.length - 1] === "") listBody.pop();
 
 				// Frame: top rule · tabs · mid rule · settings · mid rule · footer · bottom rule
-				return [
-					rule,
+				const lines = [
+					renderDialogTopBorder(safeWidth, (text) => theme.fg("border", text)),
+					renderDialogHeader(
+						" CC Style",
+						safeWidth,
+						(text) => theme.fg("border", text),
+						(text) => theme.fg("toolTitle", text),
+						(text) => theme.fg("muted", text),
+					),
 					renderSectionTabBar(theme, sections, activeSection, safeWidth),
 					rule,
 					...listBody,
@@ -2025,11 +2040,22 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 					),
 					rule,
 				];
+				lastWidth = safeWidth;
+				lastHeight = lines.length;
+				return lines;
 			},
 			invalidate() {
 				for (const list of lists) list.invalidate();
 			},
 			handleInput(data: string) {
+				if (
+					!excludeSubmenuOpen &&
+					tui.terminal &&
+					isDialogCloseClick(data, bottomDialogBounds(tui.terminal, lastWidth, lastHeight))
+				) {
+					done();
+					return;
+				}
 				if (!excludeSubmenuOpen && isForwardTabKey(data)) {
 					switchSection(1);
 					tui.requestRender();
@@ -2056,28 +2082,39 @@ function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any
 	return new Text(fallback, 0, 0);
 }
 
-/**
- * Generate a descriptive label for an unknown tool from its args.
- * Uses the tool label + first stringable arg value.
- */
-function toolCallLabel(toolName: string, toolLabel: string, args: any): string {
-	if (!args) return toolLabel;
+function singleLine(text: string) {
+	return {
+		render: (width: number) => [truncateToWidth(text, width, "…")],
+		invalidate() {},
+	};
+}
+
+/** Return the most useful scalar argument without semantically truncating it. */
+function toolCallArgument(args: any): { key: string; value: string } | undefined {
+	if (!args) return undefined;
 	const keys = Object.keys(args);
-	if (keys.length === 0) return toolLabel;
-	// Prefer "query" or "question" args, then fall back to the first stringable value
+	if (keys.length === 0) return undefined;
 	const preferred = ["query", "question", "command", "pattern", "name", "path", "url", "message"];
-	for (const key of preferred) {
-		const val = args[key];
-		if (val !== undefined && val !== null && typeof val !== "object") {
-			return `${toolLabel}(${oneLine(val, 60)})`;
-		}
+	const key = preferred.find((candidate) => {
+		const val = args[candidate];
+		return val !== undefined && val !== null && typeof val !== "object";
+	});
+	const selected = key ?? keys[0];
+	const value = args[selected];
+	return value !== undefined && value !== null && typeof value !== "object"
+		? { key: selected, value: oneLine(value, Infinity) }
+		: undefined;
+}
+
+function tailToWidth(text: string, width: number): string {
+	if (visibleWidth(text) <= width) return text;
+	if (width <= 1) return "…";
+	let tail = "";
+	for (const char of Array.from(text).reverse()) {
+		if (visibleWidth(`…${char}${tail}`) > width) break;
+		tail = char + tail;
 	}
-	const firstKey = keys[0];
-	const firstVal = args[firstKey];
-	if (firstVal !== undefined && firstVal !== null && typeof firstVal !== "object") {
-		return `${toolLabel}(${oneLine(firstVal, 60)})`;
-	}
-	return toolLabel;
+	return `…${tail}`;
 }
 
 export function shouldRenderRichDiff(
@@ -2117,8 +2154,20 @@ function createCcstyleTool(
 					? `${BRIGHT_GREEN}${rawIcon}${ANSI_RESET}`
 					: theme.fg(toolIconColor(context), rawIcon);
 
-			const title = `${icon} ${theme.fg("toolTitle", toolCallLabel(toolName, label, args))}`;
-			return new Text(title, 0, 0);
+			const argument = toolCallArgument(args);
+			return {
+				render(width: number) {
+					const argumentWidth = Math.max(1, width - visibleWidth(`${rawIcon} ${label}()`));
+					const shown = argument
+						? argument.key === "path"
+							? tailToWidth(argument.value, argumentWidth)
+							: truncateToWidth(argument.value, argumentWidth, "…")
+						: undefined;
+					const call = shown === undefined ? label : `${label}(${shown})`;
+					return [truncateToWidth(`${icon} ${theme.fg("toolTitle", call)}`, width, "…")];
+				},
+				invalidate() {},
+			};
 		},
 		renderResult(result: any, options: any, theme: any, context: any) {
 			if (config.mode !== "on") {
@@ -2168,10 +2217,8 @@ function createCcstyleTool(
 				);
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
-			return new Text(
+			return singleLine(
 				theme.fg(isError ? "error" : "muted", renderCollapsedToolResult(rendered, hint)),
-				0,
-				0,
 			);
 		},
 	};

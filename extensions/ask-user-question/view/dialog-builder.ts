@@ -1,4 +1,5 @@
 import { DynamicBorder, type Theme } from "@earendil-works/pi-coding-agent";
+import { renderDialogHeader, renderDialogTopBorder } from "../../closable-dialog.ts";
 import { type Component, Container, type Input, Spacer } from "@earendil-works/pi-tui";
 import type { QuestionnaireState } from "../state/state.js";
 import type { QuestionData } from "../tool/types.js";
@@ -133,10 +134,24 @@ export class DialogView implements StatefulView<DialogProps> {
 		// Render only the active tab's natural content; blank height equalization would
 		// unnecessarily consume transcript rows above this full-width editor component.
 		const natural = this.buildContainerFromStrategy(strategy, headingRowCache).render(width);
+		if (natural.length > 0) {
+			natural[0] = renderDialogTopBorder(width, (text) => this.config.theme.fg("accent", text));
+			natural.splice(
+				1,
+				0,
+				renderDialogHeader(
+					" Questions",
+					width,
+					(text) => this.config.theme.fg("accent", text),
+					(text) => this.config.theme.fg("toolTitle", text),
+					(text) => this.config.theme.fg("muted", text),
+				),
+			);
+		}
 
 		// Fixed region sizes (deterministic from structure).
 		// TabBar.render() returns [tabLine, ""] — always 2 rows.
-		const topFixed = 1 + (this.config.isMulti && this.config.tabBar ? 2 : 0) + 1;
+		const topFixed = 2 + (this.config.isMulti && this.config.tabBar ? 2 : 0) + 1;
 		const bottomFixed = 1 + strategy.footerRowCount;
 		const middleRows = natural.length - topFixed - bottomFixed;
 

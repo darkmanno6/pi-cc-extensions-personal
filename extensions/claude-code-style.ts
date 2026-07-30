@@ -2164,7 +2164,9 @@ function createCcstyleTool(
 							: truncateToWidth(argument.value, argumentWidth, "…")
 						: undefined;
 					const call = shown === undefined ? label : `${label}(${shown})`;
-					const callWidth = Math.max(0, width - visibleWidth(icon) - 1);
+					// Leave one cell unused so the host shell never performs a second,
+					// unthemed truncation after this renderer has applied toolTitle.
+					const callWidth = Math.max(0, width - visibleWidth(icon) - 2);
 					return [`${icon} ${theme.fg("toolTitle", truncateToWidth(call, callWidth, "…"))}`];
 				},
 				invalidate() {},

@@ -2164,7 +2164,8 @@ function createCcstyleTool(
 							: truncateToWidth(argument.value, argumentWidth, "…")
 						: undefined;
 					const call = shown === undefined ? label : `${label}(${shown})`;
-					return [truncateToWidth(`${icon} ${theme.fg("toolTitle", call)}`, width, "…")];
+					const callWidth = Math.max(0, width - visibleWidth(icon) - 1);
+					return [`${icon} ${theme.fg("toolTitle", truncateToWidth(call, callWidth, "…"))}`];
 				},
 				invalidate() {},
 			};

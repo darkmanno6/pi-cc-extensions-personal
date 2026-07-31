@@ -10,12 +10,6 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import {
-	centeredDialogBounds,
-	isDialogCloseClick,
-	renderDialogHeader,
-	renderDialogTopBorder,
-} from "./closable-dialog.ts";
 
 export type ContextPart = {
 	label: string;
@@ -71,8 +65,6 @@ export async function showTextPreview(
 			let scrollOffset = 0;
 			let pageSize = 1;
 			let totalLines = 1;
-			let lastWidth = 0;
-			let lastHeight = 0;
 			const wrappedContent = createWrappedTextCache(content);
 
 			const scrollTo = (nextOffset: number): void => {
@@ -85,10 +77,6 @@ export async function showTextPreview(
 					wrappedContent.invalidate();
 				},
 				handleInput(data: string) {
-					if (isDialogCloseClick(data, centeredDialogBounds(tui.terminal, lastWidth, lastHeight))) {
-						done(undefined);
-						return;
-					}
 					if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 						done(undefined);
 						return;
@@ -150,24 +138,15 @@ export async function showTextPreview(
 					const end = Math.min(totalLines, scrollOffset + pageSize);
 					const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · Esc close`;
 
-					const lines = [
-						renderDialogTopBorder(width, border),
-						renderDialogHeader(
-							` ${title}`,
-							width,
-							border,
-							(text) => theme.bold(theme.fg("accent", text)),
-							(text) => theme.fg("muted", text),
-						),
+					return [
+						border(`╭${"─".repeat(inner)}╮`),
+						`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", title))}`)}${border("│")}`,
 						`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 						...bodyRows,
 						`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 						`${border("│")}${padLine(theme.fg("dim", ` ${status}`))}${border("│")}`,
 						border(`╰${"─".repeat(inner)}╯`),
 					];
-					lastWidth = width;
-					lastHeight = lines.length;
-					return lines;
 				},
 			};
 		},

@@ -29,12 +29,6 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import {
-	bottomDialogBounds,
-	isDialogCloseClick,
-	renderDialogHeader,
-	renderDialogTopBorder,
-} from "./closable-dialog.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -1992,8 +1986,6 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 		];
 
 		let activeSection = 0;
-		let lastWidth = 0;
-		let lastHeight = 0;
 		const settingsTheme = getSettingsListTheme();
 		const lists = sections.map(
 			(section) =>
@@ -2030,15 +2022,8 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 				while (listBody.length > 0 && listBody[listBody.length - 1] === "") listBody.pop();
 
 				// Frame: top rule · tabs · mid rule · settings · mid rule · footer · bottom rule
-				const lines = [
-					renderDialogTopBorder(safeWidth, (text) => theme.fg("border", text)),
-					renderDialogHeader(
-						" CC Style",
-						safeWidth,
-						(text) => theme.fg("border", text),
-						(text) => theme.fg("toolTitle", text),
-						(text) => theme.fg("muted", text),
-					),
+				return [
+					rule,
 					renderSectionTabBar(theme, sections, activeSection, safeWidth),
 					rule,
 					...listBody,
@@ -2052,22 +2037,11 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 					),
 					rule,
 				];
-				lastWidth = safeWidth;
-				lastHeight = lines.length;
-				return lines;
 			},
 			invalidate() {
 				for (const list of lists) list.invalidate();
 			},
 			handleInput(data: string) {
-				if (
-					!excludeSubmenuOpen &&
-					tui.terminal &&
-					isDialogCloseClick(data, bottomDialogBounds(tui.terminal, lastWidth, lastHeight))
-				) {
-					done();
-					return;
-				}
 				if (!excludeSubmenuOpen && isForwardTabKey(data)) {
 					switchSection(1);
 					tui.requestRender();
@@ -2118,15 +2092,22 @@ function toolCallArgument(args: any): { key: string; value: string } | undefined
 		: undefined;
 }
 
-function tailToWidth(text: string, width: number): string {
+export function middleTruncateToWidth(text: string, width: number): string {
 	if (visibleWidth(text) <= width) return text;
 	if (width <= 1) return "…";
-	let tail = "";
-	for (const char of Array.from(text).reverse()) {
-		if (visibleWidth(`…${char}${tail}`) > width) break;
-		tail = char + tail;
+	const chars = Array.from(text);
+	const leftWidth = Math.ceil((width - 1) / 2);
+	let left = "";
+	let right = "";
+	for (const char of chars) {
+		if (visibleWidth(left + char) > leftWidth) break;
+		left += char;
 	}
-	return `…${tail}`;
+	for (const char of chars.reverse()) {
+		if (visibleWidth(left + "…" + char + right) > width) break;
+		right = char + right;
+	}
+	return `${left}…${right}`;
 }
 
 export function shouldRenderRichDiff(
@@ -2170,11 +2151,7 @@ function createCcstyleTool(
 			return {
 				render(width: number) {
 					const argumentWidth = Math.max(1, width - visibleWidth(`${rawIcon} ${label}()`));
-					const shown = argument
-						? argument.key === "path"
-							? tailToWidth(argument.value, argumentWidth)
-							: truncateToWidth(argument.value, argumentWidth, "…")
-						: undefined;
+					const shown = argument ? middleTruncateToWidth(argument.value, argumentWidth) : undefined;
 					const call = shown === undefined ? label : `${label}(${shown})`;
 					// Leave one cell unused so the host shell never performs a second,
 					// unthemed truncation after this renderer has applied toolTitle.

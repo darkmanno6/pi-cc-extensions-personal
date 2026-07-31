@@ -794,7 +794,6 @@ type ToolRenderHit = {
 
 const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
 const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1003h\x1b[?1006h";
-const TOOL_MOUSE_HOVER_ENABLE = "\x1b[?1003h\x1b[?1006h";
 const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
@@ -817,7 +816,6 @@ let pendingScrollMessages = 0;
 let assistantMessageActive = false;
 let scrollButtonSyncScheduled = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
-let hoveredToolSummaryRow: number | null = null;
 let hoveredToolCallId: string | null = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
@@ -1448,19 +1446,10 @@ function tryOpenToolIoShowMore(tui: any, packet: SgrMousePacket, hit: ToolRender
 
 function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	if ((packet.code & 32) === 0 || packet.final !== "M") return;
-	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
-	const lineIndex = useFixedEditorFeatures(tui)
-		? packet.row - 1
-		: (Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0) + packet.row - 1;
-	const line = stripTerminalSequences(String(previousLines[lineIndex] ?? ""));
-	const hit = COLLAPSED_TOOL_SUMMARY.test(line) ? findToolAtScreenRow(tui, packet.row) : null;
-	const nextRow = hit && !hit.component.expanded ? packet.row : null;
-	const nextToolCallId = nextRow ? (hit?.component?.toolCallId ?? null) : null;
-	if (nextRow === hoveredToolSummaryRow && nextToolCallId === hoveredToolCallId) return;
-	hoveredToolSummaryRow = nextRow;
+	const hit = findToolAtScreenRow(tui, packet.row);
+	const nextToolCallId = hit && !hit.component.expanded ? hit.component.toolCallId : null;
+	if (nextToolCallId === hoveredToolCallId) return;
 	hoveredToolCallId = nextToolCallId;
-	// Collapsed result components read hoveredToolCallId during render. Keeping
-	// hover in the render path avoids an async TUI repaint overwriting raw ANSI.
 	tui.requestRender?.();
 }
 
@@ -1612,7 +1601,6 @@ function teardownToolMouseInteraction(): void {
 	}
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
-	hoveredToolSummaryRow = null;
 	hoveredToolCallId = null;
 	try {
 		toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
@@ -1653,7 +1641,7 @@ export function installToolMouseInteraction(
 		toolMouseTui = tui;
 		if (fixedEditorFeatures) patchToolMouseInputCapture(tui);
 		// Motion reporting is required for hover in both native and fixed-editor layouts.
-		tui?.terminal?.write?.(fixedEditorFeatures ? TOOL_MOUSE_ENABLE : TOOL_MOUSE_HOVER_ENABLE);
+		tui?.terminal?.write?.(fixedEditorFeatures ? TOOL_MOUSE_ENABLE : "\x1b[?1003h\x1b[?1006h");
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),
 			invalidate() {},
@@ -2244,8 +2232,7 @@ function createCcstyleTool(
 				);
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
-			const toolCallId =
-				context?.toolCallId ?? context?.id ?? context?.state?.toolCallId ?? context?.state?.id;
+			const toolCallId = context?.toolCallId;
 			const summary = theme.fg(
 				isError ? "error" : "muted",
 				renderCollapsedToolResult(rendered, hint),
@@ -2254,8 +2241,10 @@ function createCcstyleTool(
 				render(width: number) {
 					const line = truncateToWidth(summary, width, "…");
 					if (!toolCallId || hoveredToolCallId !== toolCallId) return [line];
-					const padding = " ".repeat(Math.max(0, width - visibleWidth(line)));
-					return [theme.bg("selectedBg", `${line}${padding}`)];
+					const highlighted = line.replace(/\x1b\[0m/g, "\x1b[0;7m");
+					return [
+						`\x1b[7m${highlighted}${" ".repeat(Math.max(0, width - visibleWidth(line)))}\x1b[0m`,
+					];
 				},
 				invalidate() {},
 			};

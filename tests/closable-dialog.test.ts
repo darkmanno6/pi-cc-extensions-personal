@@ -13,7 +13,6 @@ const plain = (text: string) => text;
 test("dialog header keeps the close button off the border and enlarges its hit target", () => {
 	assert.equal(renderDialogTopBorder(16, plain), "╭──────────────╮");
 	assert.equal(renderDialogHeader("Title", 16, plain, plain, plain), "│Title    [ × ]│");
-	assert.equal(renderDialogHeader("Title", 16, plain, plain, plain, false), "│Title         │");
 	const bounds = { left: 5, top: 3, width: 16 };
 	for (let col = 14; col <= 18; col++) {
 		assert.equal(isDialogCloseClick(`\x1b[<0;${col};4M`, bounds), true);

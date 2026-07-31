@@ -245,7 +245,7 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 
 	inputHandler?.("\x1b[<35;20;2M");
 	await new Promise<void>((resolve) => process.nextTick(resolve));
-	assert.equal(renderRequests, 1, "hover invalidates the dynamic summary renderer");
+	assert.equal(renderRequests, 1, "hover invalidates the summary renderer");
 	assert.deepEqual(inputHandler?.("\x1b[<0;35;2M"), { consume: true });
 	assert.equal(tool.expanded, true);
 

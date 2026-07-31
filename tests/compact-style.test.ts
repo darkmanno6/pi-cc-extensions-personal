@@ -17,16 +17,25 @@ import {
 	type CompactStyleMode,
 } from "../extensions/compact-style.ts";
 import claudeCodeStyleExtension, {
+	formatExpandHint,
 	middleTruncateToWidth,
 	normalizeConfig,
+	outputLineCount,
 	renderCollapsedToolResult,
+	renderCollapsedToolResultToWidth,
 } from "../extensions/claude-code-style.ts";
 
 initTheme("dark");
 
-test("tool input truncation preserves both ends", () => {
+test("tool input and output truncation preserves both ends", () => {
 	assert.equal(middleTruncateToWidth("abcdefghijklmnop", 9), "abcd…mnop");
 	assert.equal(middleTruncateToWidth("短文本", 9), "短文本");
+	const output = renderCollapsedToolResultToWidth(
+		"abcdefghijklmnopqrstuvwxyz",
+		" (10 more lines / click)",
+		40,
+	);
+	assert.equal(output, "  ↳ abcdef…vwxyz (10 more lines / click)");
 });
 
 const theme = {
@@ -146,6 +155,11 @@ test("rendererRoute keeps Agent and exclusions native in every mode", () => {
 
 test("compact duration, previews, and summaries stay concise", () => {
 	assert.equal(renderCollapsedToolResult("Done"), "  ↳ Done");
+	assert.equal(formatExpandHint(100), " (100 more lines / click)");
+	assert.equal(formatExpandHint(1), " (1 more line / click)");
+	const actualLines = Array.from({ length: 100 }, (_, index) => `${index}:${"x".repeat(200)}`);
+	actualLines[50] = "";
+	assert.equal(outputLineCount(textResult(actualLines.join("\n") + "\n")), 100);
 	assert.equal(formatDuration(999), "");
 	assert.equal(formatDuration(1000), "1s");
 	assert.equal(formatDuration(61_000), "1m1s");

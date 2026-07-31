@@ -1,9 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	getSettingsListTheme,
-	keyHint,
-	ToolExecutionComponent,
-} from "@earendil-works/pi-coding-agent";
+import { getSettingsListTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import {
 	installCompactStyle,
 	type CompactStyleHooks,
@@ -235,10 +231,19 @@ function oneLine(value: unknown, max = 72): string {
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function textFromResult(result: any): string {
+function rawTextFromResult(result: any): string {
 	const item = result?.content?.find?.((c: any) => c.type === "text");
-	// Compact previews only need line counts / short text; bound sanitize work.
-	return item?.type === "text" ? sanitizeToolResultText(item.text ?? "", 16_384) : "";
+	return item?.type === "text" ? String(item.text ?? "") : "";
+}
+
+function textFromResult(result: any): string {
+	// Compact previews only need short text; bound sanitize work.
+	return sanitizeToolResultText(rawTextFromResult(result), 16_384);
+}
+
+export function outputLineCount(result: any): number {
+	const text = rawTextFromResult(result).replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+	return text ? text.split("\n").length : 0;
 }
 
 function countLines(text: string): number {
@@ -415,6 +420,10 @@ export const SHOW_MORE_LABEL = "[show more]";
 
 export type ToolIoSection = "input" | "output";
 
+// Module-local token: /reload creates a fresh token, so stale view instances are
+// replaced instead of retaining their old render implementation.
+const EXPANDED_TOOL_IO_VIEW_GENERATION = Symbol("ccstyle-expanded-tool-io-view");
+
 /**
  * Expanded tool body with clear Input / Output sections (Grok Build–style).
  *
@@ -428,6 +437,7 @@ export type ToolIoSection = "input" | "output";
  * Reused across re-renders via context.lastComponent when possible.
  */
 export class ExpandedToolIoView {
+	readonly [EXPANDED_TOOL_IO_VIEW_GENERATION] = true;
 	private inputBody: string;
 	private outputBody: string;
 	private isError: boolean;
@@ -436,6 +446,7 @@ export class ExpandedToolIoView {
 	private maxInputLines: number;
 	private cachedWidth: number | undefined;
 	private cachedLines: string[] | undefined;
+	private hoveredSection: ToolIoSection | null = null;
 	/** Which sections currently show the [show more] affordance (after last render). */
 	private truncated: { input: boolean; output: boolean } = { input: false, output: false };
 
@@ -490,6 +501,12 @@ export class ExpandedToolIoView {
 		return this.outputBody.trim() ? this.outputBody : "Done";
 	}
 
+	setHoveredSection(section: ToolIoSection | null): void {
+		if (this.hoveredSection === section) return;
+		this.hoveredSection = section;
+		this.invalidate();
+	}
+
 	/** True when the plain header line is a truncated section with [show more]. */
 	matchShowMoreLine(plainLine: string): ToolIoSection | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
@@ -517,18 +534,26 @@ export class ExpandedToolIoView {
 		const safeWidth = Math.max(1, Math.floor(width));
 		const rail = "  │ ";
 		const railWidth = visibleWidth(rail);
-		const contentWidth = Math.max(1, safeWidth - railWidth);
+		const bodyWidth = Math.max(1, Math.floor(safeWidth * 0.8));
+		const contentWidth = Math.max(1, bodyWidth - railWidth);
 		const bodyColor = this.isError ? "error" : "toolOutput";
 		const lines: string[] = [];
 		this.truncated = { input: false, output: false };
 
-		const pushHeader = (corner: "┌" | "└", label: string, showMore: boolean) => {
+		const pushHeader = (
+			corner: "┌" | "└",
+			label: string,
+			section: ToolIoSection,
+			showMore: boolean,
+		) => {
 			const mark = theme.fg("dim", `  ${corner} `);
 			const title = theme.fg(
 				"accent",
 				typeof theme.bold === "function" ? theme.bold(label) : label,
 			);
-			const more = showMore ? theme.fg("dim", ` ${SHOW_MORE_LABEL}`) : "";
+			const more = showMore
+				? theme.fg(this.hoveredSection === section ? "text" : "dim", ` ${SHOW_MORE_LABEL}`)
+				: "";
 			lines.push(truncateToWidth(mark + title + more, safeWidth, ""));
 		};
 
@@ -597,15 +622,15 @@ export class ExpandedToolIoView {
 
 		if (hasInput) {
 			this.truncated.input = inputWouldTruncate;
-			pushHeader("┌", "Input", inputWouldTruncate);
+			pushHeader("┌", "Input", "input", inputWouldTruncate);
 			pushBody(this.inputBody, { input: true, limit: this.maxInputLines });
 			pushBlankRail();
 			this.truncated.output = outputWouldTruncate;
-			pushHeader("└", "Output", outputWouldTruncate);
+			pushHeader("└", "Output", "output", outputWouldTruncate);
 			pushBody(outputText, { limit: this.maxOutputLines });
 		} else {
 			this.truncated.output = outputWouldTruncate;
-			pushHeader("┌", "Output", outputWouldTruncate);
+			pushHeader("┌", "Output", "output", outputWouldTruncate);
 			pushBody(outputText, { limit: this.maxOutputLines });
 		}
 
@@ -618,6 +643,18 @@ export class ExpandedToolIoView {
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
 	}
+}
+
+function isExpandedToolIoView(value: unknown): value is ExpandedToolIoView {
+	return Boolean(
+		value &&
+			typeof value === "object" &&
+			(value as ExpandedToolIoView)[EXPANDED_TOOL_IO_VIEW_GENERATION] === true &&
+			typeof (value as ExpandedToolIoView).getInputBody === "function" &&
+			typeof (value as ExpandedToolIoView).getOutputBody === "function" &&
+			typeof (value as ExpandedToolIoView).setHoveredSection === "function" &&
+			typeof (value as ExpandedToolIoView).render === "function",
+	);
 }
 
 /** True when body needs truncation at the given line limit (source lines or wrapped rows). */
@@ -653,6 +690,20 @@ function bodyExceedsLineLimit(
 
 export function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
 	return `  ↳ ${body}${collapsedHint}`;
+}
+
+export function renderCollapsedToolResultToWidth(
+	body: string,
+	collapsedHint: string,
+	width: number,
+): string {
+	const prefix = "  ↳ ";
+	const bodyWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(collapsedHint));
+	return truncateToWidth(
+		prefix + middleTruncateToWidth(body, bodyWidth) + collapsedHint,
+		width,
+		"",
+	);
 }
 
 /** Pretty-print tool call args for the expanded Input section. */
@@ -752,7 +803,7 @@ function renderExpandedToolResult(
 	// Prefer structured Input/Output when we have args or non-empty output.
 	if (inputBody.trim() || outputBody.trim()) {
 		let view: ExpandedToolIoView;
-		if (lastComponent instanceof ExpandedToolIoView) {
+		if (isExpandedToolIoView(lastComponent)) {
 			lastComponent.setContent(inputBody, outputBody, isError, maxLines, maxLines);
 			view = lastComponent;
 		} else {
@@ -767,10 +818,14 @@ function renderExpandedToolResult(
 	return new Text(theme.fg(color, renderCollapsedToolResult("Done")), 0, 0);
 }
 
-function expandHint(theme: any): string {
+export function formatExpandHint(lineCount: number): string {
+	return ` (${lineCount} more line${lineCount === 1 ? "" : "s"} / click)`;
+}
+
+function expandHint(theme: any, lineCount: number, hovered = false): string {
 	// Keep interaction guidance neutral; it should not inherit success/error
 	// coloring from the tool result surrounding it.
-	return `${theme.fg("muted", " (")}${keyHint("app.tools.expand", "expand")}${theme.fg("muted", " / click)")}`;
+	return theme.fg(hovered ? "text" : "muted", formatExpandHint(lineCount));
 }
 
 type SgrMousePacket = {
@@ -784,10 +839,12 @@ type ToolRenderHit = {
 	component: any;
 	start: number;
 	end: number;
+	row: number;
 };
 
 const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
 const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1003h\x1b[?1006h";
+const TOOL_MOUSE_MOTION_ENABLE = "\x1b[?1003h\x1b[?1006h";
 const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
@@ -804,6 +861,10 @@ let toolMouseInputUnsubscribe: (() => void) | null = null;
 let toolMouseInputPatchTui: any = null;
 let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
 let toolMouseInputPatchWrapper: ((...args: any[]) => any) | null = null;
+let toolMouseRenderPatchTui: any = null;
+let toolMouseRenderPatchOriginal: ((...args: any[]) => any) | null = null;
+let toolMouseRenderPatchWrapper: ((...args: any[]) => any) | null = null;
+let toolMouseRawWrite: ((data: string) => unknown) | null = null;
 let scrollButtonVisible = false;
 let scrollButtonWidget: any = null;
 let pendingScrollMessages = 0;
@@ -836,12 +897,14 @@ function isSgrLeftPress(packet: SgrMousePacket): boolean {
 	return packet.final === "M" && baseButton === 0 && (packet.code & 32) === 0;
 }
 
-function stripTerminalSequences(value: string): string {
+function stripTerminalSequencesPreservingLayout(value: string): string {
 	return value
 		.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
-		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-		.replace(/\s+/g, " ")
-		.trim();
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function stripTerminalSequences(value: string): string {
+	return stripTerminalSequencesPreservingLayout(value).replace(/\s+/g, " ").trim();
 }
 
 function isToolExecutionComponent(value: any): boolean {
@@ -883,7 +946,7 @@ function collectToolRenderHits(
 
 	const count = renderedLineCount(component, width, cache);
 	if (isToolExecutionComponent(component)) {
-		if (count > 0) hits.push({ component, start, end: start + count });
+		if (count > 0) hits.push({ component, start, end: start + count, row: 0 });
 		return start + count;
 	}
 
@@ -946,8 +1009,10 @@ function findToolAtFixedEditorRow(
 ): ToolRenderHit | null {
 	if (visibleRow < 0 || visibleRow >= previousLines.length) return null;
 	const visibleLines = previousLines.map((line) => stripTerminalSequences(String(line)));
+	const rawClickedLine = String(previousLines[visibleRow] ?? "");
 	const clickedLine = visibleLines[visibleRow] ?? "";
-	if (!clickedLine) return null;
+	const hasBackground = /\x1b\[(?:4[0-8]|10[0-7])(?:;[0-9;:]*)?m/.test(rawClickedLine);
+	if (!clickedLine && !hasBackground) return null;
 
 	const tools: any[] = [];
 	collectToolComponents(tui, tools);
@@ -964,7 +1029,12 @@ function findToolAtFixedEditorRow(
 			const score = fixedEditorContextScore(renderedLines, renderedRow, visibleLines, visibleRow);
 			if (!best || score > best.score) {
 				best = {
-					hit: { component, start: visibleRow, end: visibleRow + renderedLines.length },
+					hit: {
+						component,
+						start: visibleRow,
+						end: visibleRow + renderedLines.length,
+						row: renderedRow,
+					},
 					score,
 				};
 				if (score >= TOOL_CLICK_EARLY_EXIT_SCORE) return best.hit;
@@ -997,7 +1067,7 @@ function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null 
 		// The stable summary marker keeps the whole row clickable even when the
 		// trailing keyboard/click hint was truncated (common for subagent output).
 		if (!hit.component.expanded && !COLLAPSED_TOOL_SUMMARY.test(clickedLine)) continue;
-		return hit;
+		return { ...hit, row: bufferRow - hit.start };
 	}
 	return null;
 }
@@ -1364,6 +1434,8 @@ function scheduleCollapseViewportCompensation(
 
 /** toolCallId → latest expanded IO view (survives context/state identity quirks). */
 const ioViewsByToolCallId = new Map<string, ExpandedToolIoView>();
+let hoveredToolIoView: ExpandedToolIoView | null = null;
+let hoveredToolIoSection: ToolIoSection | null = null;
 
 function rememberIoView(context: any, view: ExpandedToolIoView): void {
 	if (!context || typeof context !== "object") return;
@@ -1387,7 +1459,7 @@ function rememberIoView(context: any, view: ExpandedToolIoView): void {
 
 function resolveIoViewFromTool(component: any): ExpandedToolIoView | null {
 	const fromState = component?.state?.ccstyleIoView;
-	if (fromState instanceof ExpandedToolIoView) return fromState;
+	if (isExpandedToolIoView(fromState)) return fromState;
 	const id =
 		(typeof component?.toolCallId === "string" && component.toolCallId) ||
 		(typeof component?.state?.toolCallId === "string" && component.state.toolCallId) ||
@@ -1398,7 +1470,7 @@ function resolveIoViewFromTool(component: any): ExpandedToolIoView | null {
 	}
 	// Some hosts keep the last result component on the tool instance.
 	const last = component?.lastComponent ?? component?.resultComponent ?? component?.content;
-	if (last instanceof ExpandedToolIoView) return last;
+	if (isExpandedToolIoView(last)) return last;
 	return null;
 }
 
@@ -1406,6 +1478,25 @@ function resolveIoViewFromTool(component: any): ExpandedToolIoView | null {
  * If the click lands on a truncated section's [show more], open the /context-style
  * full-text preview instead of toggling expand/collapse.
  */
+function visibleMouseLine(tui: any, packet: SgrMousePacket): string {
+	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
+	const viewportTop = useFixedEditorFeatures(tui)
+		? 0
+		: Number.isFinite(tui?.previousViewportTop)
+			? tui.previousViewportTop
+			: 0;
+	return stripTerminalSequencesPreservingLayout(
+		String(previousLines[viewportTop + packet.row - 1] ?? ""),
+	);
+}
+
+function isCollapsedHintAtColumn(line: string, col: number): boolean {
+	const match = /(\([^()\n]* \/ click\))\s*$/.exec(line);
+	if (!match?.[1] || col <= 0) return false;
+	const start = visibleWidth(line.slice(0, match.index)) + 1;
+	return col >= start && col < start + visibleWidth(match[1]);
+}
+
 function tryOpenToolIoShowMore(tui: any, packet: SgrMousePacket, hit: ToolRenderHit): boolean {
 	if (!Boolean(hit.component.expanded)) return false;
 	const ioView = resolveIoViewFromTool(hit.component);
@@ -1417,13 +1508,12 @@ function tryOpenToolIoShowMore(tui: any, packet: SgrMousePacket, hit: ToolRender
 		: (Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0) + packet.row - 1;
 	if (visibleRow < 0 || visibleRow >= previousLines.length) return false;
 
-	const plain = stripTerminalSequences(String(previousLines[visibleRow] ?? ""));
+	const plain = stripTerminalSequencesPreservingLayout(String(previousLines[visibleRow] ?? ""));
 	const section = ioView.matchShowMoreLine(plain);
 	if (!section) return false;
 
-	// Prefer the [show more] cells; allow a little slack so imprecise clicks still work.
 	const box = ioView.showMoreHitbox(plain);
-	if (box && packet.col > 0 && packet.col < box.startCol - 4) return false;
+	if (!box || packet.col < box.startCol || packet.col > box.endCol) return false;
 
 	const ui = toolMouseUi;
 	if (!ui || typeof ui.custom !== "function") {
@@ -1438,31 +1528,85 @@ function tryOpenToolIoShowMore(tui: any, packet: SgrMousePacket, hit: ToolRender
 	return true;
 }
 
+function setHoveredToolIo(view: ExpandedToolIoView | null, section: ToolIoSection | null): boolean {
+	if (view === hoveredToolIoView && section === hoveredToolIoSection) return false;
+	hoveredToolIoView?.setHoveredSection(null);
+	hoveredToolIoView = view;
+	hoveredToolIoSection = section;
+	view?.setHoveredSection(section);
+	return true;
+}
+
 function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	if ((packet.code & 32) === 0 || packet.final !== "M") return;
-	const hit = findToolAtScreenRow(tui, packet.row);
-	const nextToolCallId = hit && !hit.component.expanded ? hit.component.toolCallId : null;
-	if (nextToolCallId === hoveredToolCallId) return;
+	const visibleLine = visibleMouseLine(tui, packet);
+	let nextToolCallId: string | null = null;
+	let nextIoView: ExpandedToolIoView | null = null;
+	let nextIoSection: ToolIoSection | null = null;
+
+	if (
+		COLLAPSED_TOOL_SUMMARY.test(visibleLine) &&
+		isCollapsedHintAtColumn(visibleLine, packet.col)
+	) {
+		const hit = findToolAtScreenRow(tui, packet.row);
+		nextToolCallId = hit && !hit.component.expanded ? hit.component.toolCallId : null;
+	} else if (visibleLine.includes(SHOW_MORE_LABEL)) {
+		const hit = findToolAtScreenRow(tui, packet.row);
+		const view = hit && hit.component.expanded ? resolveIoViewFromTool(hit.component) : null;
+		const section = view?.matchShowMoreLine(visibleLine) ?? null;
+		const box = view?.showMoreHitbox(visibleLine);
+		if (view && section && box && packet.col >= box.startCol && packet.col <= box.endCol) {
+			nextIoView = view;
+			nextIoSection = section;
+		}
+	}
+
+	const changed = nextToolCallId !== hoveredToolCallId;
 	hoveredToolCallId = nextToolCallId;
-	tui.requestRender?.();
+	if (setHoveredToolIo(nextIoView, nextIoSection) || changed) tui.requestRender?.();
+}
+
+function isExpandedToolCardHit(hit: ToolRenderHit, width: number): boolean {
+	if (!Boolean(hit.component.expanded)) return false;
+	const box = hit.component.contentBox;
+	if (!box || !Array.isArray(hit.component.children) || !hit.component.children.includes(box)) {
+		return false;
+	}
+	const boxLines = box.render?.(width);
+	const componentLines = renderComponentTree(hit.component, width);
+	if (!Array.isArray(boxLines) || boxLines.length === 0) return false;
+	const cardStart = componentLines.length - boxLines.length;
+	return hit.row >= cardStart && hit.row < componentLines.length;
 }
 
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
+	const line = visibleMouseLine(tui, packet);
+	const collapsedHint = isCollapsedHintAtColumn(line, packet.col);
+	const hasShowMore = line.includes(SHOW_MORE_LABEL);
+
 	const hit = findToolAtScreenRow(tui, packet.row);
 	if (!hit) return false;
-
-	if (tryOpenToolIoShowMore(tui, packet, hit)) return true;
-
-	const wasExpanded = Boolean(hit.component.expanded);
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
-	const previousHeight = wasExpanded ? renderComponentTree(hit.component, width).length : 0;
-	hit.component.setExpanded(!wasExpanded);
-	hit.component.invalidate?.();
-	const nextHeight = wasExpanded ? renderComponentTree(hit.component, width).length : 0;
-	tui.requestRender?.();
-	if (wasExpanded) {
+	if (Boolean(hit.component.expanded)) {
+		if (hasShowMore && tryOpenToolIoShowMore(tui, packet, hit)) return true;
+		if (!isExpandedToolCardHit(hit, width)) return false;
+		const previousHeight = renderComponentTree(hit.component, width).length;
+		hit.component.setExpanded(false);
+		hoveredToolCallId = null;
+		setHoveredToolIo(null, null);
+		hit.component.invalidate?.();
+		const nextHeight = renderComponentTree(hit.component, width).length;
+		tui.requestRender?.();
 		scheduleCollapseViewportCompensation(tui, previousHeight - nextHeight, packet);
+		return true;
 	}
+	if (!collapsedHint) return false;
+
+	hit.component.setExpanded(true);
+	hoveredToolCallId = null;
+	setHoveredToolIo(null, null);
+	hit.component.invalidate?.();
+	tui.requestRender?.();
 	return true;
 }
 
@@ -1548,8 +1692,59 @@ function restoreToolMouseInputCapture(): void {
 	toolMouseInputPatchWrapper = null;
 }
 
+function restoreToolMouseRenderPatch(): void {
+	if (
+		toolMouseRenderPatchTui &&
+		toolMouseRenderPatchOriginal &&
+		toolMouseRenderPatchTui.doRender === toolMouseRenderPatchWrapper
+	) {
+		toolMouseRenderPatchTui.doRender = toolMouseRenderPatchOriginal;
+	}
+	toolMouseRenderPatchTui = null;
+	toolMouseRenderPatchOriginal = null;
+	toolMouseRenderPatchWrapper = null;
+	toolMouseRawWrite = null;
+}
+
+function patchToolMouseMotionAfterRender(tui: any): void {
+	if (!useFixedEditorFeatures(tui) || toolMouseRenderPatchTui === tui) return;
+	restoreToolMouseRenderPatch();
+	const original = tui?.doRender;
+	const terminal = tui?.terminal;
+	let prototype = terminal && Object.getPrototypeOf(terminal);
+	let rawWrite: ((...args: any[]) => unknown) | undefined;
+	while (prototype && !rawWrite) {
+		const candidate = Object.getOwnPropertyDescriptor(prototype, "write")?.value;
+		if (typeof candidate === "function") rawWrite = candidate;
+		prototype = Object.getPrototypeOf(prototype);
+	}
+	if (typeof original !== "function" || !rawWrite) return;
+
+	toolMouseRawWrite = (data) => Reflect.apply(rawWrite, terminal, [data]);
+	const wrapper = function (this: any, ...args: any[]) {
+		const result = Reflect.apply(original, this, args);
+		toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
+		return result;
+	};
+	try {
+		tui.doRender = wrapper;
+	} catch {
+		toolMouseRawWrite = null;
+		return;
+	}
+	toolMouseRenderPatchTui = tui;
+	toolMouseRenderPatchOriginal = original;
+	toolMouseRenderPatchWrapper = wrapper;
+	toolMouseRawWrite(TOOL_MOUSE_MOTION_ENABLE);
+}
+
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!toolMouseTui) return undefined;
+	if (
+		toolMouseInputPatchTui === toolMouseTui &&
+		toolMouseTui.handleInput === toolMouseInputPatchWrapper
+	)
+		return undefined;
 	updateScrollButtonFromInput(toolMouseTui, data);
 	if (isScrollBottomInput(data)) {
 		if (useFixedEditorFeatures(toolMouseTui) && jumpToBottomWithoutSubmit(toolMouseTui)) {
@@ -1596,6 +1791,7 @@ function teardownToolMouseInteraction(): void {
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
 	hoveredToolCallId = null;
+	setHoveredToolIo(null, null);
 	try {
 		toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 	} catch {
@@ -1607,6 +1803,7 @@ function teardownToolMouseInteraction(): void {
 		// The UI context may already have been reset during /reload.
 	}
 	restoreToolMouseInputCapture();
+	restoreToolMouseRenderPatch();
 	scrollButtonVisible = false;
 	scrollButtonWidget = null;
 	pendingScrollMessages = 0;
@@ -1635,7 +1832,7 @@ export function installToolMouseInteraction(
 		toolMouseTui = tui;
 		if (fixedEditorFeatures) patchToolMouseInputCapture(tui);
 		// Motion reporting is required for hover in both native and fixed-editor layouts.
-		tui?.terminal?.write?.(fixedEditorFeatures ? TOOL_MOUSE_ENABLE : "\x1b[?1003h\x1b[?1006h");
+		tui?.terminal?.write?.(fixedEditorFeatures ? TOOL_MOUSE_ENABLE : TOOL_MOUSE_MOTION_ENABLE);
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),
 			invalidate() {},
@@ -1644,6 +1841,12 @@ export function installToolMouseInteraction(
 		return widget;
 	});
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
+}
+
+function refreshToolRendererComponents(tui: any): void {
+	const tools: any[] = [];
+	collectToolComponents(tui, tools);
+	for (const tool of tools) tool.invalidate?.();
 }
 
 function scheduleSessionRender(refresh?: () => void): void {
@@ -1656,6 +1859,8 @@ function scheduleSessionRender(refresh?: () => void): void {
 	sessionRenderTimer = setTimeout(() => {
 		sessionRenderTimer = null;
 		if (toolMouseTui !== tui) return;
+		patchToolMouseMotionAfterRender(tui);
+		refreshToolRendererComponents(tui);
 		refresh?.();
 		tui.requestRender(true);
 	}, 0);
@@ -1663,7 +1868,7 @@ function scheduleSessionRender(refresh?: () => void): void {
 
 // Bright green for success icon (truecolor ANSI escape)
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
-const ANSI_RESET = "\x1b[0m";
+const ANSI_FG_RESET = "\x1b[39m";
 
 function refreshCurrentTranscript(compactStyle: CompactStyleHooks, ctx?: any): void {
 	compactStyle.refresh();
@@ -2144,19 +2349,22 @@ function createCcstyleTool(
 			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
 			const icon =
 				visualState === "success"
-					? `${BRIGHT_GREEN}${rawIcon}${ANSI_RESET}`
+					? `${BRIGHT_GREEN}${rawIcon}${ANSI_FG_RESET}`
 					: theme.fg(toolIconColor(context), rawIcon);
 
 			const argument = toolCallArgument(args);
+			let cachedWidth: number | undefined;
+			let cachedLine: string | undefined;
 			return {
 				render(width: number) {
-					const argumentWidth = Math.max(1, width - visibleWidth(`${rawIcon} ${label}()`));
+					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
+					const callWidth = Math.max(0, width - visibleWidth(icon) - 1);
+					const argumentWidth = Math.max(1, callWidth - visibleWidth(`${label}()`));
 					const shown = argument ? middleTruncateToWidth(argument.value, argumentWidth) : undefined;
 					const call = shown === undefined ? label : `${label}(${shown})`;
-					// Leave one cell unused so the host shell never performs a second,
-					// unthemed truncation after this renderer has applied toolTitle.
-					const callWidth = Math.max(0, width - visibleWidth(icon) - 2);
-					return [`${icon} ${theme.fg("toolTitle", truncateToWidth(call, callWidth, "…"))}`];
+					cachedWidth = width;
+					cachedLine = `${icon} ${theme.fg("toolTitle", truncateToWidth(call, callWidth, ""))}`;
+					return [cachedLine];
 				},
 				invalidate() {},
 			};
@@ -2195,9 +2403,12 @@ function createCcstyleTool(
 
 			const text = textFromResult(result);
 			const args = context?.args;
-			const rendered = !expanded ? (text ? oneLine(text, 96) : "Done") : text;
+			const rendered = !expanded ? (text ? oneLine(text, Infinity) : "Done") : text;
 
-			const hint = !expanded && hasExpandableDetail(text, args) ? expandHint(theme) : "";
+			const detailLineCount = outputLineCount(result) || countLines(formatToolInputArgs(args));
+			const hint =
+				!expanded && hasExpandableDetail(text, args) ? expandHint(theme, detailLineCount) : "";
+			const hoveredHint = hint ? expandHint(theme, detailLineCount, true) : "";
 			if (expanded) {
 				return renderExpandedToolResult(
 					text || "",
@@ -2210,18 +2421,23 @@ function createCcstyleTool(
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
 			const toolCallId = context?.toolCallId;
-			const summary = theme.fg(
-				isError ? "error" : "muted",
-				renderCollapsedToolResult(rendered, hint),
-			);
+			let cachedWidth: number | undefined;
+			let cachedLine: string | undefined;
+			let cachedHoveredLine: string | undefined;
 			return {
 				render(width: number) {
-					const line = truncateToWidth(summary, width, "…");
-					if (!toolCallId || hoveredToolCallId !== toolCallId) return [line];
-					const highlighted = line.replace(/\x1b\[0m/g, "\x1b[0;7m");
-					return [
-						`\x1b[7m${highlighted}${" ".repeat(Math.max(0, width - visibleWidth(line)))}\x1b[0m`,
-					];
+					if (cachedLine === undefined || cachedWidth !== width) {
+						cachedWidth = width;
+						cachedLine = theme.fg(
+							isError ? "error" : "muted",
+							renderCollapsedToolResultToWidth(rendered, hint, width),
+						);
+						cachedHoveredLine = theme.fg(
+							isError ? "error" : "muted",
+							renderCollapsedToolResultToWidth(rendered, hoveredHint, width),
+						);
+					}
+					return [toolCallId && hoveredToolCallId === toolCallId ? cachedHoveredLine! : cachedLine];
 				},
 				invalidate() {},
 			};
@@ -2480,10 +2696,14 @@ function installGlobalToolRendering(
 		},
 		getRenderShell: function (this: any, ...args: any[]) {
 			if (!patch.active) return patch.downstream.getRenderShell.apply(this, args);
+			const useSelfShell = shouldUseSelfShell(this, patch);
+			const useCcstyle = shouldGloballyStyleTool(this, patch);
 			const shell =
-				shouldUseSelfShell(this, patch) || shouldGloballyStyleTool(this, patch)
+				useSelfShell || (useCcstyle && !this.expanded)
 					? "self"
-					: patch.downstream.getRenderShell.apply(this, args);
+					: useCcstyle
+						? "default"
+						: patch.downstream.getRenderShell.apply(this, args);
 			syncToolShell(this, shell);
 			return shell;
 		},

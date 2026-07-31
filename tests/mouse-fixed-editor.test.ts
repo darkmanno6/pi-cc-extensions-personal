@@ -23,12 +23,14 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	const createTool = (toolCallId: string, title: string) => ({
 		toolCallId,
 		expanded: false,
+		renderCalls: 0,
 		setExpanded(value: boolean) {
 			this.expanded = value;
 			if (value) expandedToolId = toolCallId;
 		},
 		invalidate() {},
 		render() {
+			this.renderCalls++;
 			return ["", title, "  └ 1 line output (ctrl+o expand / click)"];
 		},
 	});
@@ -128,6 +130,11 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 
 	claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
 	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
+	const offscreenRendersBeforeMotion = offscreenTool.renderCalls;
+	const visibleRendersBeforeMotion = visibleTool.renderCalls;
+	tui.handleInput("\x1b[<35;20;3M");
+	assert.equal(offscreenTool.renderCalls - offscreenRendersBeforeMotion, 1);
+	assert.equal(visibleTool.renderCalls - visibleRendersBeforeMotion, 1);
 	tui.handleInput("\x1b[<0;20;3M");
 	assert.equal(expandedToolId, "tool-visible");
 	assert.equal(offscreenTool.expanded, false);
@@ -204,6 +211,7 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
 	const writes: string[] = [];
 	let renderRequests = 0;
+	let toolRenderCalls = 0;
 	const tool = {
 		toolCallId: "tool-truncated",
 		expanded: false,
@@ -212,7 +220,8 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 		},
 		invalidate() {},
 		render() {
-			return ["✓ Agent(task)", "  └ 23 lines of output…"];
+			toolRenderCalls++;
+			return ["✓ Agent(task)", "  └ output (23 more lines / click)"];
 		},
 	};
 	const tui = {
@@ -243,33 +252,50 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 		false,
 	);
 
+	toolRenderCalls = 0;
 	inputHandler?.("\x1b[<35;20;2M");
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	assert.equal(renderRequests, 1, "hover invalidates the summary renderer");
-	assert.deepEqual(inputHandler?.("\x1b[<0;35;2M"), { consume: true });
+	assert.equal(toolRenderCalls, 1);
+
+	tui.previousLines = ["ordinary transcript row"];
+	inputHandler?.("\x1b[<35;20;1M");
+	assert.equal(toolRenderCalls, 1, "ordinary motion skips the tool tree");
+	assert.equal(renderRequests, 2, "ordinary motion clears the old hover");
+
+	tui.previousLines = ["✓ Agent(task)", "\x1b[31m  └ output (23 more lines / click)\x1b[0m"];
+	inputHandler?.("\x1b[<35;20;2M");
+	assert.equal(renderRequests, 3, "ANSI summary hints remain hoverable");
+	assert.equal(inputHandler?.("\x1b[<0;5;2M"), undefined);
+	assert.equal(tool.expanded, false, "summary text and row padding are not clickable");
+	assert.deepEqual(inputHandler?.("\x1b[<0;30;2M"), { consume: true });
 	assert.equal(tool.expanded, true);
 
 	installToolMouseInteraction({}, false);
 });
 
-test("collapsing a fixed-editor tool compensates removed rows", async () => {
+test("expanded native card collapses on click and preserves the viewport", async () => {
 	let wheelDownDispatches = 0;
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
 	inputListeners.add((data) => {
 		if (/^\x1b\[<65;/.test(data)) wheelDownDispatches++;
 		return undefined;
 	});
+	const cardLines = ["✓ Bash(echo ok)", "  │ one", "  │ two", "  │ three", "  │ four", "  │ five"];
+	const contentBox = { render: () => cardLines };
 	const tool = {
 		toolCallId: "tool-expanded",
 		expanded: true,
+		contentBox,
+		children: [{ render: () => [""] }, contentBox],
 		setExpanded(value: boolean) {
 			this.expanded = value;
 		},
 		invalidate() {},
 		render() {
 			return this.expanded
-				? ["", "✓ Bash(echo ok)", "  │ one", "  │ two", "  │ three", "  │ four", "  │ five"]
-				: ["", "✓ Bash(echo ok)", "  └ 5 lines (ctrl+o expand / click)"];
+				? ["", ...cardLines]
+				: ["", "✓ Bash(echo ok)", "  └ 5 lines (5 more lines / click)"];
 		},
 	};
 	const terminalPrototype = {
@@ -317,6 +343,59 @@ test("collapsing a fixed-editor tool compensates removed rows", async () => {
 	assert.equal(tool.expanded, false);
 	assert.equal(wheelDownDispatches, 1);
 	installToolMouseInteraction({}, false);
+});
+
+test("fixed editor renders reassert mouse motion reporting after Zentui button mode", async () => {
+	const writes: string[] = [];
+	const events = new Map<string, Function>();
+	const terminalPrototype = {
+		write(value: string) {
+			writes.push(value);
+		},
+		get rows() {
+			return 30;
+		},
+	};
+	const terminal = Object.assign(Object.create(terminalPrototype), { columns: 80 });
+	Object.defineProperty(terminal, "rows", { configurable: true, get: () => 25 });
+	const tui = {
+		terminal,
+		handleInput() {},
+		doRender() {
+			terminal.write("\x1b[?1002h\x1b[?1006h");
+		},
+		requestRender() {
+			this.doRender();
+		},
+	};
+	const ui = {
+		setStatus() {},
+		requestRender() {},
+		setWidget(_key: string, factory: any) {
+			if (typeof factory === "function")
+				factory(tui, { fg: (_color: string, text: string) => text });
+		},
+		onTerminalInput() {
+			return () => undefined;
+		},
+	};
+	claudeCodeStyleExtension(
+		{
+			registerCommand() {},
+			registerShortcut() {},
+			on(name: string, handler: Function) {
+				events.set(name, handler);
+			},
+		} as any,
+		{ fixedEditorFeatures: true },
+	);
+	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
+	await new Promise<void>((resolve) => setTimeout(resolve, 5));
+	writes.length = 0;
+	tui.doRender();
+	assert.ok(writes[0]?.includes("?1002h"));
+	assert.ok(writes.at(-1)?.includes("?1003h"));
+	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 });
 
 test("disabled fixed editor features release mouse reporting but retain Ctrl+End", () => {

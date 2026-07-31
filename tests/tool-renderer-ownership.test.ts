@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension, {
+	ExpandedToolIoView,
 	preservesOriginalRenderer,
 } from "../extensions/claude-code-style.ts";
 
@@ -30,6 +31,74 @@ test("claude-code-style initialization only registers the write override", async
 		["write"],
 	);
 	await events.get("session_shutdown")?.({}, { ui: { setStatus() {} } });
+});
+
+test("expanded ccstyle tools use Pi's native background card", async () => {
+	const events = new Map<string, Function>();
+	const pi = {
+		registerCommand() {},
+		registerShortcut() {},
+		on(name: string, handler: Function) {
+			events.set(name, handler);
+		},
+	};
+	claudeCodeStyleExtension(pi as any, { mode: "on" });
+	const ui = {
+		theme: { fg: (_color: string, text: string) => text },
+		setStatus() {},
+		requestRender() {},
+	};
+	const ctx = { mode: "print", hasUI: false, ui } as any;
+	try {
+		await events.get("session_start")?.({}, ctx);
+		const command =
+			`rg -n "writeMethod|replaceMethod" '${"C:/Users/example/node_modules/".repeat(5)}pi-compat.ts' ` +
+			`'C:/Users/example/node_modules/pi-zentui/extensions/zentui/fixed-editor/compositor.ts'`;
+		const component = new ToolExecutionComponent(
+			"bash",
+			"native-card",
+			{ command },
+			{},
+			undefined,
+			ui as any,
+			process.cwd(),
+		) as any;
+		component.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		assert.equal(component.children.includes(component.selfRenderContainer), true);
+		component.setExpanded(true);
+		assert.equal(component.children.includes(component.contentBox), true);
+		assert.equal(component.children.includes(component.selfRenderContainer), false);
+
+		// /reload can leave the previous module's result component attached briefly.
+		// A structurally compatible stale view must be replaced, not reused.
+		component.resultRendererComponent = {
+			getInputBody: () => "legacy input",
+			getOutputBody: () => "legacy output",
+			setHoveredSection() {},
+			setContent() {},
+			render: () => ["legacy full-width body"],
+			invalidate() {},
+		};
+		component.invalidate();
+		assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
+
+		const cardLines = component.render(60);
+		assert.ok(cardLines.some((line: string) => /\x1b\[(?:4[0-8]|10[0-7])/.test(line)));
+		const callLine = cardLines.find((line: string) => line.includes("bash("));
+		assert.ok(callLine);
+		assert.equal(
+			visibleWidth(callLine),
+			60,
+			"background card title stays within its full-width row",
+		);
+		const plainCallLine = callLine.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
+		assert.match(plainCallLine, /bash\(.*….*compositor\.ts'\)$/);
+		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
+		component.setExpanded(false);
+		assert.equal(component.children.includes(component.selfRenderContainer), true);
+	} finally {
+		await events.get("session_shutdown")?.({}, ctx);
+	}
 });
 
 test("ccstyle is the default renderer and exclusions preserve dedicated renderers", () => {

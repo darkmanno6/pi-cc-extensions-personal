@@ -104,9 +104,28 @@ test("ExpandedToolIoView labels Input and Output sections", () => {
 	assert.ok(!updated.some((line) => line.includes("line one")));
 });
 
-test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap", () => {
+test("ExpandedToolIoView wraps Input/Output at 80% of the viewport", () => {
 	const theme = {
 		fg(_color: string, text: string) {
+			return text;
+		},
+		bold(text: string) {
+			return text;
+		},
+	};
+	const body = "x".repeat(77);
+	const view = new ExpandedToolIoView(theme, `command: ${body}`, body, false, 1, 1);
+	const lines = view.render(100);
+	assert.ok(lines.filter((line) => line.includes("│")).every((line) => visibleWidth(line) <= 80));
+	assert.ok(lines.find((line) => line.includes("Input"))?.includes("[show more]"));
+	assert.ok(lines.find((line) => line.includes("Output"))?.includes("[show more]"));
+});
+
+test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap", () => {
+	const theme = {
+		fg(color: string, text: string) {
+			if (color === "text") return `\x1b[37m${text}\x1b[39m`;
+			if (color === "dim") return `\x1b[90m${text}\x1b[39m`;
 			return text;
 		},
 		bold(text: string) {
@@ -116,7 +135,8 @@ test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap
 	const longOutput = Array.from({ length: 20 }, (_, i) => `out line ${i}`).join("\n");
 	const longInput = Array.from({ length: 20 }, (_, i) => `field${i}: value${i}`).join("\n");
 	const view = new ExpandedToolIoView(theme, longInput, longOutput, false, 5, 5);
-	const lines = view.render(80).map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+	const rawLines = view.render(80);
+	const lines = rawLines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
 	const inputHeader = lines.find((line) => line.includes("Input"));
 	const outputHeader = lines.find((line) => line.includes("Output"));
 	assert.ok(inputHeader?.includes("[show more]"), "Input header shows show more");
@@ -124,4 +144,9 @@ test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap
 	assert.equal(view.matchShowMoreLine(inputHeader!), "input");
 	assert.equal(view.matchShowMoreLine(outputHeader!), "output");
 	assert.ok(lines.some((line) => /\+15 more lines/.test(line) || /\+\d+ more lines/.test(line)));
+	view.setHoveredSection("input");
+	const hoveredInput = view.render(80).find((line) => line.includes("Input"));
+	const hoveredOutput = view.render(80).find((line) => line.includes("Output"));
+	assert.match(hoveredInput!, /\x1b\[37m \[show more\]/);
+	assert.match(hoveredOutput!, /\x1b\[90m \[show more\]/);
 });

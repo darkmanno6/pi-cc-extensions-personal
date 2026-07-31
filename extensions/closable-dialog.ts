@@ -14,14 +14,17 @@ export function renderDialogHeader(
 	color: (text: string) => string,
 	titleColor: (text: string) => string,
 	closeColor: (text: string) => string,
+	showClose = true,
 ): string {
 	const safeWidth = Math.max(8, Math.floor(width));
 	const innerWidth = safeWidth - 2;
-	const button = "[ × ]";
-	const titleWidth = Math.max(0, innerWidth - visibleWidth(button) - 2);
+	const button = showClose ? "[ × ]" : "";
+	const titleWidth = Math.max(0, innerWidth - visibleWidth(button) - (showClose ? 2 : 0));
 	const shownTitle = truncateToWidth(title, titleWidth, "…");
-	const gap = " ".repeat(Math.max(1, innerWidth - visibleWidth(shownTitle) - visibleWidth(button)));
-	return `${color("│")}${titleColor(shownTitle)}${gap}${closeColor(button)}${color("│")}`;
+	const gap = " ".repeat(
+		Math.max(showClose ? 1 : 0, innerWidth - visibleWidth(shownTitle) - visibleWidth(button)),
+	);
+	return `${color("│")}${titleColor(shownTitle)}${gap}${showClose ? closeColor(button) : ""}${color("│")}`;
 }
 
 /** Match a left-button press anywhere on the [ × ] target. */

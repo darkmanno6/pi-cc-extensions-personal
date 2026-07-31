@@ -145,6 +145,7 @@ export class DialogView implements StatefulView<DialogProps> {
 					(text) => this.config.theme.fg("accent", text),
 					(text) => this.config.theme.fg("toolTitle", text),
 					(text) => this.config.theme.fg("muted", text),
+					false,
 				),
 			);
 		}

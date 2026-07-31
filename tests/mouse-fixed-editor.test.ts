@@ -200,6 +200,58 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
 });
 
+test("truncated tool summary remains clickable and highlights on hover", async () => {
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	const writes: string[] = [];
+	let renderRequests = 0;
+	const tool = {
+		toolCallId: "tool-truncated",
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return ["✓ Agent(task)", "  └ 23 lines of output…"];
+		},
+	};
+	const tui = {
+		terminal: { columns: 40, write: (value: string) => writes.push(value) },
+		children: [tool],
+		previousLines: tool.render(),
+		previousViewportTop: 0,
+		handleInput() {},
+		requestRender() {
+			renderRequests++;
+		},
+	};
+	installToolMouseInteraction(
+		{
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function")
+						factory(tui, { fg: (_c: string, text: string) => text });
+				},
+				onTerminalInput(handler: typeof inputHandler) {
+					inputHandler = handler;
+					return () => undefined;
+				},
+			},
+		},
+		false,
+	);
+
+	inputHandler?.("\x1b[<35;20;2M");
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	assert.equal(renderRequests, 1, "hover invalidates the dynamic summary renderer");
+	assert.deepEqual(inputHandler?.("\x1b[<0;35;2M"), { consume: true });
+	assert.equal(tool.expanded, true);
+
+	installToolMouseInteraction({}, false);
+});
+
 test("collapsing a fixed-editor tool compensates removed rows", async () => {
 	let wheelDownDispatches = 0;
 	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();

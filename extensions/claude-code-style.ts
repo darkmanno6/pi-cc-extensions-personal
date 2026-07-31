@@ -793,8 +793,9 @@ type ToolRenderHit = {
 };
 
 const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
-const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1006h";
-const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1000l";
+const TOOL_MOUSE_ENABLE = "\x1b[?1000h\x1b[?1003h\x1b[?1006h";
+const TOOL_MOUSE_HOVER_ENABLE = "\x1b[?1003h\x1b[?1006h";
+const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
 const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
@@ -816,6 +817,8 @@ let pendingScrollMessages = 0;
 let assistantMessageActive = false;
 let scrollButtonSyncScheduled = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
+let hoveredToolSummaryRow: number | null = null;
+let hoveredToolCallId: string | null = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
 	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -938,8 +941,8 @@ function fixedEditorContextScore(
 	return score;
 }
 
-/** Collapsed tool rows expose "expand / click"; expanded body clicks do not. */
-const COLLAPSED_TOOL_CLICK_HINT = /(?:expand|\/ click)/i;
+/** Summary markers used by Pi and ccstyle; unlike the trailing hint, these survive truncation. */
+const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿)/;
 /** fixedEditorContextScore max ≈ 100 + 2*(5+4+3+2); stop once we hit a near-perfect match. */
 const TOOL_CLICK_EARLY_EXIT_SCORE = 120;
 
@@ -956,12 +959,11 @@ function findToolAtFixedEditorRow(
 
 	const tools: any[] = [];
 	collectToolComponents(tui, tools);
-	// Expand-hint → only collapsed tools; body click → only expanded (collapse-any-line).
-	// Skips re-rendering the opposite half of the transcript tools.
-	const wantExpanded = !COLLAPSED_TOOL_CLICK_HINT.test(clickedLine);
+	const clickedCollapsedSummary = COLLAPSED_TOOL_SUMMARY.test(clickedLine);
 	let best: { hit: ToolRenderHit; score: number } | null = null;
 	for (const component of tools) {
-		if (Boolean(component.expanded) !== wantExpanded) continue;
+		// Collapsed tools open only from their summary row; expanded tools collapse from any body row.
+		if (!component.expanded && !clickedCollapsedSummary) continue;
 		const renderedLines = renderComponentTree(component, width).map((line) =>
 			stripTerminalSequences(String(line)),
 		);
@@ -998,12 +1000,11 @@ function findToolAtScreenRow(tui: any, screenRow: number): ToolRenderHit | null 
 	collectToolRenderHits(tui, 0, width, hits, cache, new Set<object>());
 
 	const clickedLine = stripTerminalSequences(String(previousLines[bufferRow] ?? ""));
-	const wantExpanded = !COLLAPSED_TOOL_CLICK_HINT.test(clickedLine);
 	for (const hit of hits) {
 		if (bufferRow < hit.start || bufferRow >= hit.end) continue;
-		// Same分流 as fixed-editor: hint clicks expand collapsed rows; body clicks
-		// collapse expanded rows. Avoids accidental toggles on the wrong set.
-		if (Boolean(hit.component.expanded) !== wantExpanded) continue;
+		// The stable summary marker keeps the whole row clickable even when the
+		// trailing keyboard/click hint was truncated (common for subagent output).
+		if (!hit.component.expanded && !COLLAPSED_TOOL_SUMMARY.test(clickedLine)) continue;
 		return hit;
 	}
 	return null;
@@ -1445,6 +1446,24 @@ function tryOpenToolIoShowMore(tui: any, packet: SgrMousePacket, hit: ToolRender
 	return true;
 }
 
+function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
+	if ((packet.code & 32) === 0 || packet.final !== "M") return;
+	const previousLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
+	const lineIndex = useFixedEditorFeatures(tui)
+		? packet.row - 1
+		: (Number.isFinite(tui?.previousViewportTop) ? tui.previousViewportTop : 0) + packet.row - 1;
+	const line = stripTerminalSequences(String(previousLines[lineIndex] ?? ""));
+	const hit = COLLAPSED_TOOL_SUMMARY.test(line) ? findToolAtScreenRow(tui, packet.row) : null;
+	const nextRow = hit && !hit.component.expanded ? packet.row : null;
+	const nextToolCallId = nextRow ? (hit?.component?.toolCallId ?? null) : null;
+	if (nextRow === hoveredToolSummaryRow && nextToolCallId === hoveredToolCallId) return;
+	hoveredToolSummaryRow = nextRow;
+	hoveredToolCallId = nextToolCallId;
+	// Collapsed result components read hoveredToolCallId during render. Keeping
+	// hover in the render path avoids an async TUI repaint overwriting raw ANSI.
+	tui.requestRender?.();
+}
+
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const hit = findToolAtScreenRow(tui, packet.row);
 	if (!hit) return false;
@@ -1504,6 +1523,9 @@ function patchToolMouseInputCapture(tui: any): void {
 			const packets = parseSgrMousePackets(data);
 			if (packets) {
 				for (const packet of packets) {
+					// Fixed-editor owners may consume motion before extension listeners run,
+					// so hover must be handled at the root input boundary too.
+					updateToolSummaryHover(this, packet);
 					if (!isSgrLeftPress(packet)) continue;
 					if (handleScrollButtonClick(this, packet) || toggleToolAtMouseClick(this, packet)) return;
 				}
@@ -1567,6 +1589,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 
 	let consumed = false;
 	for (const packet of packets) {
+		updateToolSummaryHover(toolMouseTui, packet);
 		if (!isSgrLeftPress(packet)) continue;
 		if (
 			handleScrollButtonClick(toolMouseTui, packet) ||
@@ -1589,6 +1612,8 @@ function teardownToolMouseInteraction(): void {
 	}
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
+	hoveredToolSummaryRow = null;
+	hoveredToolCallId = null;
 	try {
 		toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 	} catch {
@@ -1626,10 +1651,9 @@ export function installToolMouseInteraction(
 	toolMouseFixedFeaturesEnabled = fixedEditorFeatures;
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
-		if (fixedEditorFeatures) {
-			patchToolMouseInputCapture(tui);
-			tui?.terminal?.write?.(TOOL_MOUSE_ENABLE);
-		}
+		if (fixedEditorFeatures) patchToolMouseInputCapture(tui);
+		// Motion reporting is required for hover in both native and fixed-editor layouts.
+		tui?.terminal?.write?.(fixedEditorFeatures ? TOOL_MOUSE_ENABLE : TOOL_MOUSE_HOVER_ENABLE);
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),
 			invalidate() {},
@@ -2220,9 +2244,21 @@ function createCcstyleTool(
 				);
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
-			return singleLine(
-				theme.fg(isError ? "error" : "muted", renderCollapsedToolResult(rendered, hint)),
+			const toolCallId =
+				context?.toolCallId ?? context?.id ?? context?.state?.toolCallId ?? context?.state?.id;
+			const summary = theme.fg(
+				isError ? "error" : "muted",
+				renderCollapsedToolResult(rendered, hint),
 			);
+			return {
+				render(width: number) {
+					const line = truncateToWidth(summary, width, "…");
+					if (!toolCallId || hoveredToolCallId !== toolCallId) return [line];
+					const padding = " ".repeat(Math.max(0, width - visibleWidth(line)));
+					return [theme.bg("selectedBg", `${line}${padding}`)];
+				},
+				invalidate() {},
+			};
 		},
 	};
 }

@@ -5,7 +5,6 @@ import {
 	ExpandedToolResultText,
 	formatToolInputArgs,
 } from "../extensions/claude-code-style.ts";
-import { createWrappedTextCache } from "../extensions/context.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 function expectedExpandedLines(text: string, prefix: string, width: number): string[] {
@@ -41,28 +40,6 @@ test("ExpandedToolResultText preserves lines while caching one width", () => {
 	const changedText = "updated\tcontent\n";
 	component.setText(changedText);
 	assert.deepEqual(component.render(24), expectedExpandedLines(changedText, prefix, 24));
-});
-
-test("text preview cache returns equivalent lines and recomputes after width/invalidate", () => {
-	const content = "\x1b[36mfirst line with enough content to wrap\nsecond line";
-	const cache = createWrappedTextCache(content);
-
-	const wide = cache.get(24);
-	assert.deepEqual(wide, wrapTextWithAnsi(content, 24));
-	assert.strictEqual(cache.get(24), wide);
-
-	const narrow = cache.get(12);
-	assert.deepEqual(narrow, wrapTextWithAnsi(content, 12));
-	assert.notStrictEqual(narrow, wide);
-
-	const wideAgain = cache.get(24);
-	assert.deepEqual(wideAgain, wrapTextWithAnsi(content, 24));
-	assert.notStrictEqual(wideAgain, wide, "only the most recent width is cached");
-
-	cache.invalidate();
-	const afterInvalidate = cache.get(24);
-	assert.deepEqual(afterInvalidate, wrapTextWithAnsi(content, 24));
-	assert.notStrictEqual(afterInvalidate, wideAgain);
 });
 
 test("formatToolInputArgs pretty-prints object fields and multiline values", () => {

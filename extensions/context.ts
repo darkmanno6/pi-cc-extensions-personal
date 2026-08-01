@@ -2,14 +2,9 @@ import {
 	type ExtensionAPI,
 	type ExtensionCommandContext,
 	estimateTokens,
+	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
-import {
-	Key,
-	matchesKey,
-	truncateToWidth,
-	visibleWidth,
-	wrapTextWithAnsi,
-} from "@earendil-works/pi-tui";
+import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export type ContextPart = {
 	label: string;
@@ -33,24 +28,18 @@ function normalizePreviewText(text: string): string {
 		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
 }
 
-export function createWrappedTextCache(content: string): {
-	get(width: number): string[];
-	invalidate(): void;
-} {
-	let cachedWidth: number | undefined;
-	let cachedLines: string[] | undefined;
+export type DialogBounds = { left: number; top: number; width: number };
 
+/** 1-based terminal hitbox of the [esc] close button on the dialog title row (row 2 of the box). */
+export function escCloseHitbox(bounds: DialogBounds): {
+	row: number;
+	startCol: number;
+	endCol: number;
+} {
 	return {
-		get(width: number): string[] {
-			if (cachedLines !== undefined && cachedWidth === width) return cachedLines;
-			cachedLines = wrapTextWithAnsi(content, width);
-			cachedWidth = width;
-			return cachedLines;
-		},
-		invalidate(): void {
-			cachedWidth = undefined;
-			cachedLines = undefined;
-		},
+		row: bounds.top + 2,
+		startCol: bounds.left + bounds.width - 5,
+		endCol: bounds.left + bounds.width - 1,
 	};
 }
 
@@ -65,7 +54,8 @@ export async function showTextPreview(
 			let scrollOffset = 0;
 			let pageSize = 1;
 			let totalLines = 1;
-			const wrappedContent = createWrappedTextCache(content);
+			let escHitbox: { row: number; startCol: number; endCol: number } | undefined;
+			const markdownView = new Markdown(content, 0, 0, getMarkdownTheme());
 
 			const scrollTo = (nextOffset: number): void => {
 				scrollOffset = Math.max(0, Math.min(nextOffset, Math.max(0, totalLines - pageSize)));
@@ -74,7 +64,7 @@ export async function showTextPreview(
 
 			return {
 				invalidate() {
-					wrappedContent.invalidate();
+					markdownView.invalidate();
 				},
 				handleInput(data: string) {
 					if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
@@ -91,12 +81,24 @@ export async function showTextPreview(
 						const mouse = parseSgrMousePacket(data);
 						if (mouse?.final !== "M") return;
 						const button = mouseBaseButton(mouse.code);
+						if (button === 0 && (mouse.code & 32) === 0) {
+							if (
+								escHitbox &&
+								mouse.row === escHitbox.row &&
+								mouse.col >= escHitbox.startCol &&
+								mouse.col <= escHitbox.endCol
+							) {
+								done(undefined);
+								return;
+							}
+						}
 						if (button === 64) scrollTo(scrollOffset - 3);
 						else if (button === 65) scrollTo(scrollOffset + 3);
 					}
 				},
 				render(width: number) {
 					const inner = Math.max(1, width - 2);
+					const escWidth = visibleWidth("[esc]");
 					const bodyInner = Math.max(1, inner - 1);
 					const bodyWidth = Math.max(1, bodyInner - 1);
 					const terminalHeight = Math.max(1, tui.terminal.rows);
@@ -107,9 +109,13 @@ export async function showTextPreview(
 						availableHeight,
 					);
 					pageSize = Math.max(1, viewportHeight - 6);
-					const wrapped = wrappedContent.get(bodyWidth);
+					const wrapped = markdownView.render(bodyWidth);
 					totalLines = wrapped.length;
 					scrollOffset = Math.min(scrollOffset, Math.max(0, totalLines - pageSize));
+					// Centered overlay with margin 2: mirror TUI resolveOverlayLayout for anchor "center".
+					const overlayTop = 2 + Math.floor((availableHeight - viewportHeight) / 2);
+					const overlayLeft = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
+					escHitbox = escCloseHitbox({ left: overlayLeft, top: overlayTop, width });
 					const visible = wrapped.slice(scrollOffset, scrollOffset + pageSize);
 					const border = (text: string) => theme.fg("border", text);
 					const padLine = (text: string, lineWidth = inner): string => {
@@ -136,11 +142,11 @@ export async function showTextPreview(
 					});
 					const start = totalLines === 0 ? 0 : scrollOffset + 1;
 					const end = Math.min(totalLines, scrollOffset + pageSize);
-					const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · Esc close`;
+					const status = `${start}-${end} / ${totalLines} lines · ↑↓ PgUp/PgDn Home/End · [esc] close`;
 
 					return [
 						border(`╭${"─".repeat(inner)}╮`),
-						`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", title))}`)}${border("│")}`,
+						`${border("│")}${padLine(` ${theme.bold(theme.fg("accent", title))}`, inner - escWidth)}${theme.fg("muted", "[esc]")}${border("│")}`,
 						`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 						...bodyRows,
 						`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
@@ -392,6 +398,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							startCol: number;
 							endCol: number;
 						}> = [];
+						let escHitbox: { row: number; startCol: number; endCol: number } | undefined;
 
 						const padLine = (text: string, width: number): string => {
 							const truncated = truncateToWidth(text, width, "…");
@@ -428,6 +435,15 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									(mouse.code & 32) !== 0
 								)
 									return;
+								if (
+									escHitbox &&
+									mouse.row === escHitbox.row &&
+									mouse.col >= escHitbox.startCol &&
+									mouse.col <= escHitbox.endCol
+								) {
+									done(undefined);
+									return;
+								}
 								const hitbox = previewHitboxes.find(
 									(candidate) =>
 										mouse.row === candidate.row &&
@@ -444,6 +460,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							},
 							render(width: number) {
 								const inner = Math.max(1, width - 2);
+								const escWidth = visibleWidth("[esc]");
 								const percent = contextWindow > 0 ? (used / contextWindow) * 100 : 0;
 								const title = theme.bold(theme.fg("accent", "Context Usage"));
 								const subtitle = `${formatTokens(used)} / ${formatTokens(contextWindow)} tokens (${percent.toFixed(1)}%)`;
@@ -480,13 +497,13 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								const border = (text: string) => theme.fg("border", text);
 								const lines = [
 									border(`╭${"─".repeat(inner)}╮`),
-									`${border("│")}${padLine(` ${title}  ${theme.fg("muted", subtitle)}`, inner)}${border("│")}`,
+									`${border("│")}${padLine(` ${title}  ${theme.fg("muted", subtitle)}`, inner - escWidth)}${theme.fg("muted", "[esc]")}${border("│")}`,
 									`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 									`${border("│")}${padLine(` ${segments}`, inner)}${border("│")}`,
 									`${border("│")}${" ".repeat(inner)}${border("│")}`,
 									...partRows.map((row) => `${border("│")}${row}${border("│")}`),
 									`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-									`${border("│")}${padLine(theme.fg("dim", " ↑↓ select · Click / Enter to preview · Esc to close"), inner)}${border("│")}`,
+									`${border("│")}${padLine(theme.fg("dim", " ↑↓ select · Click / Enter to preview · [esc] close"), inner)}${border("│")}`,
 									border(`╰${"─".repeat(inner)}╯`),
 								];
 
@@ -499,6 +516,7 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								const overlayTop =
 									1 + Math.floor((Math.max(1, terminalHeight - 2) - visibleHeight) / 2);
 								const overlayLeft = Math.floor((Math.max(1, tui.terminal.columns) - width) / 2);
+								escHitbox = escCloseHitbox({ left: overlayLeft, top: overlayTop, width });
 								previewHitboxes = visiblePreviews.flatMap((preview) => {
 									const partIndex = allParts.findIndex((part) => part.label === preview.label);
 									const line = 5 + partIndex;

@@ -19,6 +19,7 @@ declare module "@earendil-works/pi-coding-agent" {
 	export function createReadToolDefinition(...args: any[]): any;
 	export function createWriteToolDefinition(...args: any[]): any;
 	export function generateDiffString(...args: any[]): any;
+	export function getMarkdownTheme(...args: any[]): any;
 	export function getSettingsListTheme(...args: any[]): any;
 	export function initTheme(...args: any[]): any;
 	export function renderDiff(...args: any[]): any;

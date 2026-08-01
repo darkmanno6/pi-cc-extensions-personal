@@ -1714,7 +1714,7 @@ function restoreToolMouseRenderPatch(): void {
 }
 
 function patchToolMouseMotionAfterRender(tui: any): void {
-	if (!useFixedEditorFeatures(tui) || toolMouseRenderPatchTui === tui) return;
+	if (!toolMouseFixedFeaturesEnabled || toolMouseRenderPatchTui === tui) return;
 	restoreToolMouseRenderPatch();
 	const original = tui?.doRender;
 	const terminal = tui?.terminal;

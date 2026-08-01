@@ -352,12 +352,8 @@ test("fixed editor renders reassert mouse motion reporting after Zentui button m
 		write(value: string) {
 			writes.push(value);
 		},
-		get rows() {
-			return 30;
-		},
 	};
-	const terminal = Object.assign(Object.create(terminalPrototype), { columns: 80 });
-	Object.defineProperty(terminal, "rows", { configurable: true, get: () => 25 });
+	const terminal = Object.assign(Object.create(terminalPrototype), { columns: 80, rows: 25 });
 	const tui = {
 		terminal,
 		handleInput() {},
@@ -391,10 +387,16 @@ test("fixed editor renders reassert mouse motion reporting after Zentui button m
 	);
 	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
 	await new Promise<void>((resolve) => setTimeout(resolve, 5));
-	writes.length = 0;
-	tui.doRender();
-	assert.ok(writes[0]?.includes("?1002h"));
-	assert.ok(writes.at(-1)?.includes("?1003h"));
+	for (const reason of ["startup", "reload"]) {
+		if (reason === "reload") {
+			await events.get("session_start")?.({ reason }, { mode: "tui", hasUI: true, ui });
+			await new Promise<void>((resolve) => setTimeout(resolve, 5));
+		}
+		writes.length = 0;
+		tui.doRender();
+		assert.ok(writes[0]?.includes("?1002h"), `${reason} allows Zentui button mode`);
+		assert.ok(writes.at(-1)?.includes("?1003h"), `${reason} restores motion reporting`);
+	}
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 });
 

@@ -224,6 +224,12 @@ function saveConfig() {
 	writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
+const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
+
+function toolViewportWidth(width: number): number {
+	return Math.max(1, Math.floor(width * TOOL_VIEWPORT_WIDTH_RATIO));
+}
+
 function oneLine(value: unknown, max = 72): string {
 	const text = String(value ?? "")
 		.replace(/\s+/g, " ")
@@ -534,7 +540,7 @@ export class ExpandedToolIoView {
 		const safeWidth = Math.max(1, Math.floor(width));
 		const rail = "  │ ";
 		const railWidth = visibleWidth(rail);
-		const bodyWidth = Math.max(1, Math.floor(safeWidth * 0.8));
+		const bodyWidth = toolViewportWidth(safeWidth);
 		const contentWidth = Math.max(1, bodyWidth - railWidth);
 		const bodyColor = this.isError ? "error" : "toolOutput";
 		const lines: string[] = [];
@@ -697,11 +703,12 @@ export function renderCollapsedToolResultToWidth(
 	collapsedHint: string,
 	width: number,
 ): string {
+	const previewWidth = toolViewportWidth(width);
 	const prefix = "  ↳ ";
-	const bodyWidth = Math.max(1, width - visibleWidth(prefix) - visibleWidth(collapsedHint));
+	const bodyWidth = Math.max(1, previewWidth - visibleWidth(prefix) - visibleWidth(collapsedHint));
 	return truncateToWidth(
 		prefix + middleTruncateToWidth(body, bodyWidth) + collapsedHint,
-		width,
+		previewWidth,
 		"",
 	);
 }
@@ -2358,7 +2365,7 @@ function createCcstyleTool(
 			return {
 				render(width: number) {
 					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
-					const callWidth = Math.max(0, width - visibleWidth(icon) - 1);
+					const callWidth = Math.max(0, toolViewportWidth(width) - visibleWidth(icon) - 1);
 					const argumentWidth = Math.max(1, callWidth - visibleWidth(`${label}()`));
 					const shown = argument ? middleTruncateToWidth(argument.value, argumentWidth) : undefined;
 					const call = shown === undefined ? label : `${label}(${shown})`;
@@ -2403,7 +2410,7 @@ function createCcstyleTool(
 
 			const text = textFromResult(result);
 			const args = context?.args;
-			const rendered = !expanded ? (text ? oneLine(text, Infinity) : "Done") : text;
+			const rendered = !expanded ? (text ? oneLine(text) : "Done") : text;
 
 			const detailLineCount = outputLineCount(result) || countLines(formatToolInputArgs(args));
 			const hint =

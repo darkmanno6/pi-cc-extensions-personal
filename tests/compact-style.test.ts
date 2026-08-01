@@ -35,7 +35,7 @@ test("tool input and output truncation preserves both ends", () => {
 		" (10 more lines / click)",
 		40,
 	);
-	assert.equal(output, "  ↳ abcdef…vwxyz (10 more lines / click)");
+	assert.equal(output, "  ↳ ab…z (10 more lines / click)");
 });
 
 const theme = {

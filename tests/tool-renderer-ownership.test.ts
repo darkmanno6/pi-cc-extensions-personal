@@ -63,8 +63,23 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			ui as any,
 			process.cwd(),
 		) as any;
-		component.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		component.updateResult({
+			content: [{ type: "text", text: "first line\nsecond line\nthird line" }],
+			isError: false,
+		});
 		assert.equal(component.children.includes(component.selfRenderContainer), true);
+		const collapsedLines = component
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+		const collapsedCall = collapsedLines.find((line: string) => line.includes("bash("));
+		const collapsedOutput = collapsedLines.filter((line: string) => line.includes("↳"));
+		assert.ok(collapsedCall);
+		assert.ok(collapsedOutput.length === 1);
+		assert.ok(visibleWidth(collapsedCall) <= 80, "collapsed input uses 80% of the viewport");
+		assert.ok(
+			collapsedOutput.every((line: string) => visibleWidth(line) <= 80),
+			"collapsed output uses 80% of the viewport",
+		);
 		component.setExpanded(true);
 		assert.equal(component.children.includes(component.contentBox), true);
 		assert.equal(component.children.includes(component.selfRenderContainer), false);

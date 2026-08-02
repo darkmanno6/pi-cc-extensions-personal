@@ -2354,8 +2354,45 @@ function singleToolCallSummary(
 ): { main: string; detail: string } {
 	const title = label === toolName ? humanizeToolLabel(label) : label;
 	if (!args || typeof args !== "object") return { main: title, detail: "" };
+	const name = toolName.toLowerCase();
+	const value = (fallback: string, ...keys: string[]) => {
+		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
+		return `${title} ${oneLine(found || fallback, Infinity)}`;
+	};
 	if (AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
 		return { main: `${title} ${oneLine(args.agent_id, Infinity)}`, detail: "" };
+	}
+	if (name === "agent" || name === "agents") {
+		return {
+			main: value(name === "agent" ? "launch agent" : "launch agents", "description", "prompt"),
+			detail: "",
+		};
+	}
+	if (name === "skill") return { main: value("run skill", "name"), detail: "" };
+	if (name === "enterplanmode" || name === "enter_plan_mode") {
+		return { main: `${title} enable read-only planning`, detail: "" };
+	}
+	if (name === "exitplanmode" || name === "exit_plan_mode") {
+		return { main: `${title} present plan`, detail: "" };
+	}
+	if (name === "taskcreate") return { main: value("create task", "subject"), detail: "" };
+	if (name === "tasklist") return { main: `${title} task list`, detail: "" };
+	if (name === "taskget" || name === "taskupdate") {
+		return { main: value("task", "taskId", "task_id"), detail: "" };
+	}
+	if (name === "taskoutput" || name === "taskstop") {
+		return { main: value("background task", "task_id", "taskId"), detail: "" };
+	}
+	if (name === "taskexecute") {
+		const ids = Array.isArray(args.task_ids)
+			? args.task_ids
+			: Array.isArray(args.taskIds)
+				? args.taskIds
+				: [];
+		const summary = ids.length
+			? `${ids[0]}${ids.length > 1 ? ` (+${ids.length - 1} tasks)` : ""}`
+			: "start tasks";
+		return { main: `${title} ${summary}`, detail: "" };
 	}
 	if (toolName === "read") {
 		const details = [
@@ -2367,7 +2404,7 @@ function singleToolCallSummary(
 			detail: details.length ? ` (${details.join(", ")})` : "",
 		};
 	}
-	const value =
+	const preferred =
 		args.path ??
 		args.file_path ??
 		args.command ??
@@ -2382,8 +2419,8 @@ function singleToolCallSummary(
 		args.message;
 	return {
 		main:
-			value !== undefined && value !== null && typeof value !== "object"
-				? `${title} ${oneLine(value, Infinity)}`
+			preferred !== undefined && preferred !== null && typeof preferred !== "object"
+				? `${title} ${oneLine(preferred, Infinity)}`
 				: title,
 		detail: "",
 	};
@@ -2413,6 +2450,74 @@ export function shouldRenderRichDiff(
 	isError: boolean,
 ): boolean {
 	return mode === "on" && !isError && (toolName === "edit" || toolName === "write");
+}
+
+type ParsedTask = { id: string; status: string; subject: string };
+
+function parseTaskList(text: string): ParsedTask[] {
+	return text
+		.split("\n")
+		.map((line) => line.match(/^#(\d+) \[([^\]]+)] (.+)$/))
+		.filter((match): match is RegExpMatchArray => Boolean(match))
+		.map((match) => ({ id: match[1]!, status: match[2]!, subject: match[3]! }));
+}
+
+function taskListSummary(tasks: ParsedTask[]): string {
+	const counts = { pending: 0, in_progress: 0, completed: 0 };
+	for (const task of tasks) {
+		if (task.status in counts) counts[task.status as keyof typeof counts]++;
+	}
+	return [
+		`${tasks.length} tasks`,
+		counts.in_progress ? `${counts.in_progress} in progress` : "",
+		counts.pending ? `${counts.pending} pending` : "",
+		counts.completed ? `${counts.completed} completed` : "",
+	]
+		.filter(Boolean)
+		.join(" • ");
+}
+
+function renderExpandedTaskResult(
+	toolName: string,
+	text: string,
+	theme: any,
+	isError: boolean,
+): any | undefined {
+	if (isError) return undefined;
+	if (toolName === "TaskList") {
+		const tasks = parseTaskList(text);
+		if (!tasks.length) return undefined;
+		const limit = Math.max(1, config.expandedPreviewMaxLines);
+		const rows = tasks.slice(0, limit).map((task) => {
+			const color =
+				task.status === "completed"
+					? "success"
+					: task.status === "in_progress"
+						? "warning"
+						: "muted";
+			return `   ${theme.fg("accent", `#${task.id}`)} ${theme.fg(color, task.status)} ${theme.fg("dim", task.subject)}`;
+		});
+		if (tasks.length > rows.length)
+			rows.push(theme.fg("muted", `   … ${tasks.length - rows.length} more tasks`));
+		return new Text(` ↳ ${theme.fg("muted", taskListSummary(tasks))}\n${rows.join("\n")}`, 0, 0);
+	}
+	const line = text.trim();
+	if (!line || line.includes("\n")) return undefined;
+	let formatted: string | undefined;
+	let match: RegExpMatchArray | null;
+	if (
+		toolName === "TaskCreate" &&
+		(match = line.match(/^Task #(\d+) created successfully: (.+)$/))
+	) {
+		formatted = `${theme.fg("success", "Created task")} ${theme.fg("accent", `#${match[1]}`)} ${theme.fg("muted", match[2])}`;
+	} else if (toolName === "TaskUpdate" && (match = line.match(/^Updated task #(\d+) (.+)$/))) {
+		formatted = `${theme.fg("success", "Updated task")} ${theme.fg("accent", `#${match[1]}`)} ${theme.fg("muted", match[2])}`;
+	} else if (toolName === "TaskExecute") {
+		formatted = `${theme.fg("success", "Started")} ${theme.fg("muted", line)}`;
+	} else if (toolName === "TaskStop") {
+		formatted = `${theme.fg("success", "Stopped")} ${theme.fg("muted", line)}`;
+	}
+	return formatted ? new Text(` ↳ ${formatted}`, 0, 0) : undefined;
 }
 
 /** Wrap an arbitrary tool definition with ccstyle call/result rendering. */
@@ -2493,17 +2598,24 @@ function createCcstyleTool(
 
 			const text = textFromResult(result, expanded);
 			const args = context?.args;
+			if (expanded) {
+				const taskResult = renderExpandedTaskResult(toolName, text, theme, Boolean(isError));
+				if (taskResult) return taskResult;
+			}
+			const tasks = !isError && toolName === "TaskList" ? parseTaskList(text) : [];
 			const outputLines = outputLineCount(result) || countLines(text);
 			const lineWord = outputLines === 1 ? "line" : "lines";
 			const action = toolName === "read" ? "loaded" : "returned";
-			const rendered = isError
-				? text
-					? oneLine(text)
-					: "Failed"
-				: outputLines
-					? `${outputLines} ${lineWord} ${action}`
-					: "Done";
-			const expandable = !expanded && hasExpandableDetail(text, args);
+			const rendered = tasks.length
+				? taskListSummary(tasks)
+				: isError
+					? text
+						? oneLine(text)
+						: "Failed"
+					: outputLines
+						? `${outputLines} ${lineWord} ${action}`
+						: "Done";
+			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
 			const hint = expandable ? theme.fg("muted", " • click to show more") : "";
 			const hoveredHint = expandable ? theme.fg("text", " • click to show more") : "";
 			if (expanded) {
@@ -2546,7 +2658,7 @@ function createCcstyleTool(
  * Apart from the write override used to capture pre-write content, renderers are
  * applied through ToolExecutionComponent. Patch its lookup once so tools use the
  * same compact fallback shell by default. Tools named in excludeRenderers keep
- * their original renderer; subagent rendering remains protected.
+ * their original renderer.
  */
 const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
 const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-render-mode");
@@ -2557,7 +2669,6 @@ const AGENT_FAMILY_TOOL_NAMES = new Set([
 	"get_subagent_result",
 	"steer_subagent",
 ]);
-const DEDICATED_SUBAGENT_TOOL_NAMES = new Set(["Agent"]);
 
 type ToolRenderMethods = {
 	hasRendererDefinition: (...args: any[]) => boolean;
@@ -2611,7 +2722,6 @@ export function preservesOriginalRenderer(
 	builtInToolDefinition?: any,
 	excludeRenderers: readonly string[] = config.excludeRenderers,
 ): boolean {
-	if (DEDICATED_SUBAGENT_TOOL_NAMES.has(toolName)) return true;
 	if (!excludeRenderers.includes(toolName)) return false;
 	return [extensionDefinition, builtInToolDefinition].some(
 		(definition) =>
@@ -2652,16 +2762,9 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 	return useCcstyle;
 }
 
-function shouldUseSelfShell(component: any, patch: GlobalToolRenderPatch): boolean {
-	const definition = component.toolDefinition ?? component.builtInToolDefinition;
-	const toolName = String(component.toolName || definition?.name || "");
-	const useSelfShell =
-		patch.enabled() &&
-		DEDICATED_SUBAGENT_TOOL_NAMES.has(toolName) &&
-		definition != null &&
-		definition.renderShell === undefined;
-	component[COMPONENT_TOOL_SELF_SHELL_MODE] = useSelfShell;
-	return useSelfShell;
+function shouldUseSelfShell(component: any, _patch: GlobalToolRenderPatch): boolean {
+	component[COMPONENT_TOOL_SELF_SHELL_MODE] = false;
+	return false;
 }
 
 function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): any {

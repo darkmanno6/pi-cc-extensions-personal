@@ -110,7 +110,55 @@ function humanizeToolName(name: string): string {
 
 function toolSummary(tool: any): { main: string; detail: string } {
 	const name = toolName(tool);
+	const lowerName = name.toLowerCase();
 	const args = tool?.args ?? {};
+	const titled = humanizeToolName(name);
+	const value = (fallback: string, ...keys: string[]) => {
+		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
+		return `${titled} ${oneLine(found || fallback)}`;
+	};
+	if (lowerName === "agent" || lowerName === "agents") {
+		return {
+			main: value(
+				lowerName === "agent" ? "launch agent" : "launch agents",
+				"description",
+				"prompt",
+			),
+			detail: "",
+		};
+	}
+	if (lowerName === "get_subagent_result" || lowerName === "steer_subagent") {
+		return {
+			main: value(lowerName === "get_subagent_result" ? "agent result" : "steer agent", "agent_id"),
+			detail: "",
+		};
+	}
+	if (lowerName === "skill") return { main: value("run skill", "name"), detail: "" };
+	if (lowerName === "enterplanmode" || lowerName === "enter_plan_mode") {
+		return { main: `${titled} enable read-only planning`, detail: "" };
+	}
+	if (lowerName === "exitplanmode" || lowerName === "exit_plan_mode") {
+		return { main: `${titled} present plan`, detail: "" };
+	}
+	if (lowerName === "taskcreate") return { main: value("create task", "subject"), detail: "" };
+	if (lowerName === "tasklist") return { main: `${titled} task list`, detail: "" };
+	if (lowerName === "taskget" || lowerName === "taskupdate") {
+		return { main: value("task", "taskId", "task_id"), detail: "" };
+	}
+	if (lowerName === "taskoutput" || lowerName === "taskstop") {
+		return { main: value("background task", "task_id", "taskId"), detail: "" };
+	}
+	if (lowerName === "taskexecute") {
+		const ids = Array.isArray(args.task_ids)
+			? args.task_ids
+			: Array.isArray(args.taskIds)
+				? args.taskIds
+				: [];
+		return {
+			main: `${titled} ${ids.length ? `${ids[0]}${ids.length > 1 ? ` (+${ids.length - 1} tasks)` : ""}` : "start tasks"}`,
+			detail: "",
+		};
+	}
 	if (name === "read") {
 		const details = [
 			args.offset !== undefined ? `offset=${args.offset}` : "",

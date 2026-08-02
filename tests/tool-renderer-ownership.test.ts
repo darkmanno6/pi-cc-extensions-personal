@@ -222,6 +222,84 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		) as any;
 		assert.match(agentResult.render(100).join("\n"), /Get Subagent Result agent-123/);
 
+		for (const [name, args, expected] of [
+			["Agents", { description: "review changes" }, "Agents review changes"],
+			["Skill", { name: "deploy" }, "Skill deploy"],
+			["EnterPlanMode", {}, "Enter Plan Mode enable read-only planning"],
+			["ExitPlanMode", {}, "Exit Plan Mode present plan"],
+			["TaskCreate", { subject: "Fix tests" }, "Task Create Fix tests"],
+			["TaskList", {}, "Task List task list"],
+			["TaskGet", { taskId: "12" }, "Task Get 12"],
+			["TaskUpdate", { task_id: "13" }, "Task Update 13"],
+			["TaskOutput", { task_id: "bg-1" }, "Task Output bg-1"],
+			["TaskStop", { taskId: "bg-2" }, "Task Stop bg-2"],
+			["TaskExecute", { task_ids: ["1", "2"] }, "Task Execute 1 (+1 tasks)"],
+		] as const) {
+			const external = new ToolExecutionComponent(
+				name,
+				`${name}-summary`,
+				args,
+				{},
+				{ name },
+				ui as any,
+				process.cwd(),
+			) as any;
+			assert.match(
+				external.render(160).join("\n"),
+				new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+			);
+		}
+
+		const taskList = new ToolExecutionComponent(
+			"TaskList",
+			"task-list-result",
+			{},
+			{},
+			{ name: "TaskList" },
+			ui as any,
+			process.cwd(),
+		) as any;
+		taskList.updateResult({
+			content: [
+				{ type: "text", text: "#1 [completed] Done\n#2 [in_progress] Working\n#3 [pending] Next" },
+			],
+			isError: false,
+		});
+		assert.match(
+			taskList.render(120).join("\n"),
+			/3 tasks • 1 in progress • 1 pending • 1 completed/,
+		);
+		taskList.setExpanded(true);
+		assert.match(
+			taskList
+				.render(120)
+				.join("\n")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
+			/#1 completed Done[\s\S]*#2 in_progress Working/,
+		);
+
+		const taskCreate = new ToolExecutionComponent(
+			"TaskCreate",
+			"task-create-result",
+			{ subject: "Fix tests" },
+			{},
+			{ name: "TaskCreate" },
+			ui as any,
+			process.cwd(),
+		) as any;
+		taskCreate.updateResult({
+			content: [{ type: "text", text: "Task #7 created successfully: Fix tests" }],
+			isError: false,
+		});
+		taskCreate.setExpanded(true);
+		assert.match(
+			taskCreate
+				.render(120)
+				.join("\n")
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""),
+			/Created task #7 Fix tests/,
+		);
+
 		const duplicate = new ToolExecutionComponent(
 			"custom",
 			"duplicate",
@@ -264,10 +342,10 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 		preservesOriginalRenderer({ name: "custom" }, "custom", undefined, ["custom"]),
 		false,
 	);
-	assert.equal(preservesOriginalRenderer(undefined, "Agent"), true);
+	assert.equal(preservesOriginalRenderer(undefined, "Agent"), false);
 });
 
-test("Agent keeps its dedicated call/result renderer and explicit shell", async () => {
+test("Agent uses the same ccstyle renderer as other external tools", async () => {
 	const events = new Map<string, Function>();
 	const pi = {
 		registerCommand() {},
@@ -294,18 +372,19 @@ test("Agent keeps its dedicated call/result renderer and explicit shell", async 
 	const component = new ToolExecutionComponent(
 		"Agent",
 		"agent-renderer",
-		{},
+		{ description: "review changes" },
 		{},
 		definition,
 		ui as any,
 		process.cwd(),
 	) as any;
 	component.updateResult({ content: [{ type: "text", text: "raw" }], isError: false });
-	assert.equal(component.children.filter((child: any) => child === component.contentBox).length, 1);
-	assert.equal(component.children.includes(component.selfRenderContainer), false);
+	assert.equal(component.children.includes(component.selfRenderContainer), true);
+	assert.equal(component.children.includes(component.contentBox), false);
 	const output = component.render(100).join("\n");
-	assert.equal(output.match(/agent dedicated call/g)?.length, 1);
-	assert.equal(output.match(/agent dedicated result/g)?.length, 1);
+	assert.match(output, /Agent review changes/);
+	assert.match(output, /1 line returned/);
+	assert.doesNotMatch(output, /agent dedicated/);
 	await events.get("session_shutdown")?.({}, ctx);
 });
 
@@ -348,7 +427,7 @@ test("global renderer reload chains external wrappers and shutdown restores them
 			prototype[name] = external[name];
 		}
 
-		claudeCodeStyleExtension(makePi(secondEvents) as any);
+		claudeCodeStyleExtension(makePi(secondEvents) as any, { excludeRenderers: ["custom"] });
 		assert.equal(firstPatch.active, false);
 		assert.equal(firstPatch.mode(), "off", "reload disconnects the old config callback");
 		for (const name of methodNames) assert.notEqual(prototype[name], external[name]);
@@ -356,8 +435,8 @@ test("global renderer reload chains external wrappers and shutdown restores them
 		const renderCall = () => new Text("call", 0, 0);
 		const renderResult = () => new Text("result", 0, 0);
 		const receiver = {
-			toolName: "Agent",
-			toolDefinition: { name: "Agent", renderShell: "default", renderCall, renderResult },
+			toolName: "custom",
+			toolDefinition: { name: "custom", renderShell: "default", renderCall, renderResult },
 			builtInToolDefinition: undefined,
 			children: [],
 		};

@@ -10,8 +10,8 @@ import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grou
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
-function tool(name: string, id: string) {
-	return new ToolExecutionComponent(name, id, {}, {}, undefined, ui, process.cwd()) as any;
+function tool(name: string, id: string, args: any = {}) {
+	return new ToolExecutionComponent(name, id, args, {}, undefined, ui, process.cwd()) as any;
 }
 
 test("mixed tools group across three empty separators while edit/write and content break groups", () => {
@@ -70,6 +70,22 @@ test("mixed tools group across three empty separators while edit/write and conte
 		parent.addChild(assistant);
 		parent.addChild(tool("bash", "after-content"));
 		assert.equal(parent.children.at(-1).toolCallId, "after-content");
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("external task, skill, and plan tools keep reference summaries in groups", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		parent.addChild(tool("TaskCreate", "task", { subject: "Fix tests" }));
+		parent.addChild(tool("Skill", "skill", { name: "deploy" }));
+		parent.addChild(tool("EnterPlanMode", "plan"));
+		const rendered = parent.children[0].render(160).join("\n");
+		assert.match(rendered, /Task Create Fix tests/);
+		assert.match(rendered, /Skill deploy/);
+		assert.match(rendered, /Enter Plan Mode enable read-only planning/);
 	} finally {
 		hooks.shutdown();
 	}

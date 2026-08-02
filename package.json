@@ -1,6 +1,6 @@
 {
 	"name": "pi-cc-extensions",
-	"version": "0.8.28",
+	"version": "0.8.29",
 	"description": "A Pi productivity suite with Claude Code-style UI, structured questionnaires, context inspection, and agent/session references",
 	"type": "module",
 	"keywords": [

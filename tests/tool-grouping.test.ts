@@ -86,6 +86,26 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 		assert.match(rendered, /Task Create Fix tests/);
 		assert.match(rendered, /Skill deploy/);
 		assert.match(rendered, /Enter Plan Mode enable read-only planning/);
+
+		const agentParent = new Container() as any;
+		const agent = tool("Agent", "agent", { description: "再次测试 tool 调用" });
+		const result = tool("get_subagent_result", "result", {
+			agent_id: "6a559462-95d0-40b",
+		});
+		agent.updateResult({ content: [], isError: false });
+		result.updateResult({ content: [], isError: false });
+		agentParent.addChild(agent);
+		agentParent.addChild(result);
+		const agentLines = agentParent.children[0]
+			.render(160)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(
+			agentLines[0],
+			/^ ✓ Multiple Tools: 2 done • Agent, get_subagent_result • click to show more$/,
+		);
+		assert.equal(agentLines[1], " ├ ● Agent 再次测试 tool 调用");
+		assert.equal(agentLines[2], " └ ● Get Subagent Result 6a559462-95d0-40b");
 	} finally {
 		hooks.shutdown();
 	}

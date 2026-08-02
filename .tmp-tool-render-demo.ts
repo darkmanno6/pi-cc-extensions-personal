@@ -206,12 +206,6 @@ await example("Agents（旧别名）", "Agents", { prompt: "并行调研" }, "3 
 
 // ── 5. 其他外部工具 ──
 await example("skill", "skill", { name: "ponytail" }, "Skill completed");
-await example(
-	"ask_user_question",
-	"ask_user_question",
-	{ question: "使用哪种方案？", options: ["A", "B"] },
-	"User selected: A",
-);
 await example("EnterPlanMode", "EnterPlanMode", {}, "Plan mode enabled");
 await example("ExitPlanMode", "ExitPlanMode", { plan: "三步重构计划" }, "Plan presented");
 await example("web_search", "web_search", { query: "pi coding agent extension" }, "1. result a\n2. result b\n3. result c");

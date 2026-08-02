@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
+import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import { createJiti } from "jiti";
 import claudeCodeStyleExtension, {
+	ExpandedToolIoView,
 	fixedEditorWheelDispatchCount,
 	installToolMouseInteraction,
+	SHOW_MORE_LABEL,
 } from "../extensions/claude-code-style.ts";
+import { getFixedEditorScrollButtonHitbox } from "../extensions/fixed-editor.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grouping.ts";
 
 initTheme("dark");
@@ -56,7 +60,12 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 		render: () => ["editor"],
 	};
 	const status = { render: () => ["status"] };
-	const above = { children: [] as any[], render: () => [] as string[] };
+	const above = {
+		children: [] as any[],
+		render(width: number) {
+			return ["", ...this.children.flatMap((child) => child.render(width))];
+		},
+	};
 	const editorContainer = { children: [editor], render: () => ["editor"] };
 	const below = { render: () => ["below"] };
 	const footer = { render: () => ["footer"] };
@@ -110,11 +119,17 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 			this.focusedComponent?.handleInput?.(data);
 		},
 	};
+	const buttonForegrounds: string[] = [];
 	const ui = {
 		setStatus() {},
 		setWidget(_key: string, factory: any) {
 			if (!factory) return;
-			scrollButton = factory(tui, { fg: (_color: string, text: string) => text });
+			scrollButton = factory(tui, {
+				fg: (color: string, text: string) => {
+					buttonForegrounds.push(color);
+					return text;
+				},
+			});
 			above.children.push(scrollButton);
 		},
 		onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
@@ -154,6 +169,45 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	assert.match(scrollButton.render(80)[0], /Ctrl\+End/);
 	assert.doesNotMatch(scrollButton.render(80)[0], /click/i);
 
+	// The Todo panel is registered after ccstyle, so it renders below the button.
+	above.children.push({
+		render: () => [" Todos (0/3)", " ├─ Todo 1", " ├─ Todo 2", " └─ Todo 3"],
+	});
+	const cluster = createJiti(import.meta.url)("@tifan/pi-fixed-editor/src/cluster.js") as {
+		renderFixedEditorCluster(input: any): unknown;
+	};
+	const renderCluster = () =>
+		cluster.renderFixedEditorCluster({
+			width: 80,
+			terminalRows: 30,
+			statusLines: ["status"],
+			aboveWidgetLines: above.render(80).filter((line) => visibleWidth(line) > 0),
+			editorLines: ["editor"],
+			belowWidgetLines: ["below"],
+			footerLines: ["footer"],
+		});
+	renderCluster();
+	const hitbox = getFixedEditorScrollButtonHitbox();
+	assert.ok(hitbox);
+	const buttonCol = Math.floor((hitbox.startCol + hitbox.endCol) / 2);
+	// Hover stays exact so the adjacent Todo row is not highlighted as the button.
+	tui.handleInput(`\x1b[<35;${buttonCol};${hitbox.row}M`);
+	scrollButton.render(80);
+	assert.equal(buttonForegrounds.at(-1), "text");
+	tui.handleInput(`\x1b[<35;${buttonCol};${hitbox.row + 1}M`);
+	scrollButton.render(80);
+	assert.equal(buttonForegrounds.at(-1), "accent");
+	// The retained hitbox keeps the visible button clickable when the Todo cluster is present.
+	const editorInputsBeforeButton = editorInputCount;
+	tui.handleInput(`\x1b[<0;${buttonCol};${hitbox.row}M`);
+	assert.deepEqual(scrollButton.render(80), []);
+	assert.equal(editorInputCount, editorInputsBeforeButton);
+
+	// Re-open the affordance so the existing PageDown path remains covered.
+	tui.handleInput("\x1b[5;9~");
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	renderCluster();
+	assert.match(scrollButton.render(80)[0], /Back to bottom/);
 	// PageDown reaching the root tail hides the button and clears the count.
 	tui.handleInput("\x1b[6~");
 	await new Promise<void>((resolve) => process.nextTick(resolve));
@@ -210,6 +264,75 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
+});
+
+test("fixed editor uses the rendered frame when dynamic Todo rows change", () => {
+	let firstTitle = "✓ Todo 1";
+	let secondTitle = "✓ Todo 3";
+	let expandedToolId: string | null = null;
+	const createTool = (toolCallId: string, getTitle: () => string) => ({
+		toolCallId,
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+			if (value) expandedToolId = toolCallId;
+		},
+		invalidate() {},
+		render() {
+			return [getTitle(), "  ↳ 1 line returned • click to show more"];
+		},
+	});
+	const first = createTool("todo-1", () => firstTitle);
+	const second = createTool("todo-3", () => secondTitle);
+	const terminalPrototype = {
+		get rows() {
+			return 30;
+		},
+		write() {},
+	};
+	const terminal = Object.assign(Object.create(terminalPrototype), { columns: 80 });
+	Object.defineProperty(terminal, "rows", { configurable: true, get: () => 25 });
+	const tui = {
+		terminal,
+		children: [first, second],
+		previousLines: [] as string[],
+		previousViewportTop: 0,
+		handleInput() {},
+		requestRender() {},
+		doRender() {
+			this.previousLines = this.children.flatMap((tool) => tool.render());
+		},
+	};
+	installToolMouseInteraction(
+		{
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					factory?.(tui, { fg: (_color: string, text: string) => text });
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		},
+		true,
+	);
+	try {
+		tui.doRender();
+		assert.equal(tui.previousLines[2], "✓ Todo 3");
+		// Dynamic Todo renderers now expose the latest state for both historical components.
+		firstTitle = "✓ Todo 3";
+		secondTitle = "✓ Todo 3";
+		const summaryRow = 4;
+		const hintCol = tui.previousLines[summaryRow - 1].indexOf("click to show more") + 1;
+		tui.handleInput(`\x1b[<0;${hintCol};${summaryRow}M`);
+		assert.equal(expandedToolId, "todo-3");
+		assert.equal(first.expanded, false);
+		assert.equal(second.expanded, true);
+	} finally {
+		installToolMouseInteraction({}, false);
+	}
 });
 
 test("tool groups expand from their hint and collapse from any expanded group row", () => {
@@ -397,6 +520,86 @@ test("parenthesized rich diff hint highlights and expands on click", async () =>
 		assert.equal(renderRequests, 1, "hover requests a repaint for white hint text");
 		assert.deepEqual(inputHandler?.("\x1b[<0;35;2M"), { consume: true });
 		assert.equal(tool.expanded, true);
+	} finally {
+		installToolMouseInteraction({}, false);
+	}
+});
+
+test("show-more hover targets the view rendered in the current frame after compact", () => {
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	const theme = {
+		fg: (color: string, text: string) => (color === "text" ? `\x1b[97m${text}\x1b[0m` : text),
+		bold: (text: string) => text,
+	};
+	const staleView = new ExpandedToolIoView(theme, "old\ninput", "old\noutput", false, 1, 1);
+	const currentView = new ExpandedToolIoView(
+		theme,
+		"current\ninput",
+		"current\noutput",
+		false,
+		1,
+		1,
+	);
+	const tool = {
+		toolCallId: "tool-after-compact",
+		expanded: true,
+		state: { ccstyleIoView: staleView },
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return ["✓ Tool", ...currentView.render(78)];
+		},
+	};
+	const terminalPrototype = {
+		get rows() {
+			return 30;
+		},
+		write() {},
+	};
+	const terminal = Object.assign(Object.create(terminalPrototype), { columns: 80 });
+	Object.defineProperty(terminal, "rows", { configurable: true, get: () => 25 });
+	const tui: any = {
+		terminal,
+		children: [tool],
+		previousLines: [] as string[],
+		previousViewportTop: 0,
+		handleInput(data: string) {
+			inputHandler?.(data);
+		},
+		requestRender() {},
+		doRender() {
+			this.previousLines = tool.render();
+		},
+	};
+	const interactionCtx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, factory: any) {
+				if (typeof factory === "function") factory(tui, theme);
+			},
+			onTerminalInput(handler: typeof inputHandler) {
+				inputHandler = handler;
+				return () => undefined;
+			},
+		},
+	};
+	installToolMouseInteraction(interactionCtx, true);
+	// fixed-editor can retain the prior doRender wrapper while compact installs a new one.
+	const retainedRender = tui.doRender;
+	tui.doRender = function (this: any, ...args: any[]) {
+		return Reflect.apply(retainedRender, this, args);
+	};
+	installToolMouseInteraction(interactionCtx, true);
+	try {
+		tui.doRender();
+		const inputHeader = tui.previousLines[1];
+		const col = inputHeader.indexOf(SHOW_MORE_LABEL) + 1;
+		tui.handleInput(`\x1b[<35;${col};2M`);
+		assert.match(currentView.render(78)[0], /\x1b\[97m/);
+		assert.doesNotMatch(staleView.render(78)[0], /\x1b\[97m/);
 	} finally {
 		installToolMouseInteraction({}, false);
 	}

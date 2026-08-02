@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  Claude Code 风格界面、结构化问卷、上下文检查，以及 Agent / Session 引用。
+  Claude Code 风格界面、固定编辑器、上下文检查，以及 Agent / Session 引用。
 </p>
 
 <p align="center">
@@ -71,10 +71,9 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 | 功能                         | 说明                                                                            | 入口                |
 | ------------------------------ | --------------------------------------------------------------------------------- | --------------------- |
-| Claude Code 风格输出         | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` / `compact` 三种模式 | `/ccstyle`          |
-| Fixed editor 交互            | 每刻度 5 行滚动、工具点击、收起位置补偿、回到底部按钮与`Ctrl+End`               | `/ccstyle`          |
-| Ask User Question 结构化问卷 | 单选、多选、自定义回答、Markdown 预览及 RPC / ACP 降级                          | `ask_user_question` |
-| 上下文检查                   | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                  | `/context`          |
+| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` / `compact` 三种模式 | `/ccstyle` |
+| Fixed editor 交互 | 基于 `@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部 | `/ccstyle` |
+| 上下文检查 | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容 | `/context` |
 | Session 引用                 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@session:`         |
 | 主题                         | 随包提供内置 GitHub Dark Default 主题                                           | `/theme`            |
 
@@ -86,20 +85,19 @@ npm run typecheck
 pi -e .
 ```
 
-修改扩展后执行 `/reload`。修改 `extensions/ask-user-question/` 或重装其依赖后，需要完整重启 Pi。
+修改扩展后执行 `/reload`。
 
 ## 兼容性
 
 - Node.js `>=22.19.0`
 - 通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载
-- `pi-zentui`、Pi 或 TUI 内部实现升级后若显示异常，先执行 `/reload`
+- `@tifan/pi-fixed-editor`、Pi 或 TUI 内部实现升级后若显示异常，先执行 `/reload`
 
 ## 推荐搭配
 
 
 | 扩展                          | 用途                                |
 | ------------------------------- | ------------------------------------- |
-| `npm:pi-zentui`               | Fixed editor、状态栏和 Git 状态     |
 | `npm:@tintinweb/pi-subagents` | 并行 SubAgent、后台任务与工作树隔离 |
 | `npm:pi-mcp-adapter`          | 按需发现 MCP 工具，减少上下文占用   |
 | `npm:pi-theme-picker`         | 主题搜索和实时预览                  |
@@ -109,7 +107,7 @@ pi -e .
 ## 致谢
 
 - Compact transcript 基于 [`avhagedorn/pi-compact-transcript`](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2（MIT）。
-- 结构化问卷基于 [`@juicesharp/rpiv-ask-user-question`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question) v2.1.0（MIT）。
+- Fixed editor 由 [`@tifan/pi-fixed-editor`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-fixed-editor) 提供（MIT）。
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md)。
 - 启动头基于 [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header)（MIT）。
 - 命令别名基于 [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases)（MIT）。

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  Claude Code-style output, structured questionnaires, context inspection, and Agent / Session references.
+  Claude Code-style output, a fixed editor, context inspection, and Agent / Session references.
 </p>
 
 <p align="center">
@@ -69,17 +69,14 @@ Run `/reload` after installation, then try:
 @              # Complete Agents, Sessions, and files
 ```
 
-The `ask_user_question` tool is registered automatically.
-
 ## Features
 
 
 | Feature                   | Description                                                                                      | Entry point         |
 | --------------------------- | -------------------------------------------------------------------------------------------------- | --------------------- |
-| Claude Code-style output  | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` / `compact` modes        | `/ccstyle`          |
-| Fixed-editor interaction  | Five-row wheel scrolling, tool clicks, collapse anchoring, back-to-bottom control, and`Ctrl+End` | `/ccstyle`          |
-| Structured questionnaires | Single choice, multiple choice, custom answers, Markdown previews, and RPC / ACP fallback        | `ask_user_question` |
-| Context inspection        | Usage breakdown and previews for the system prompt, tools, skills, and messages                  | `/context`          |
+| Claude Code-style output | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `off` / `compact` modes | `/ccstyle` |
+| Fixed-editor interaction | Powered by `@tifan/pi-fixed-editor`, with runtime toggling, five-row wheel scrolling, tool clicks, and back-to-bottom control | `/ccstyle` |
+| Context inspection | Usage breakdown and previews for the system prompt, tools, skills, and messages | `/context` |
 | Session references        | Search and inject effective context from previous Sessions or existing SubAgents                 | `@session:`         |
 | Theme                     | Includes the GitHub Dark Default theme                                                           | `/theme`            |
 
@@ -110,15 +107,9 @@ Configuration is stored in `~/.pi/agent/claude-code-style.json`:
 ```
 
 - `excludeRenderers` uses exact tool names. `Agent` always keeps its dedicated renderer.
-- `fixedEditorFeatures: true` enables fixed-editor mouse scrolling, clicks, viewport mapping, and the back-to-bottom indicator.
-- Set it to `false` to disable terminal mouse reporting and restore native terminal wheel scrolling. `Ctrl+End` remains available.
+- `fixedEditorFeatures: true` enables `@tifan/pi-fixed-editor` plus mouse scrolling, clicks, viewport mapping, and the back-to-bottom indicator.
+- Set it to `false`, or toggle **Fixed editor** in `/ccstyle`, to restore Pi's native scrolling editor immediately. `Ctrl+End` remains available.
 - Run `/reload` after editing the file manually.
-
-### Structured questionnaires
-
-Supports 1–4 questions, 2–4 options per question, single and multiple selection, custom answers, and optional Markdown previews. The TUI preserves transcript space; RPC / ACP environments fall back to native dialogs.
-
-Questionnaire configuration is stored at `~/.config/rpiv-ask-user-question/config.json`. See [`extensions/ask-user-question/README.md`](./extensions/ask-user-question/README.md) for shortcuts and detailed behavior.
 
 ### `@` references
 
@@ -145,20 +136,19 @@ npm run typecheck
 pi -e .
 ```
 
-Run `/reload` after changing extensions. Changes under `extensions/ask-user-question/`, or reinstalling its dependencies, require a full Pi restart.
+Run `/reload` after changing extensions.
 
 ## Compatibility
 
 - Node.js `>=22.19.0`
 - Loaded through `pi.extensions` and `pi.themes` in the root `package.json`
-- If a Pi, TUI, or `pi-zentui` update causes display issues, try `/reload` first
+- If a Pi, TUI, or `@tifan/pi-fixed-editor` update causes display issues, try `/reload` first
 
 ## Recommended companions
 
 
 | Extension                     | Purpose                                                      |
 | ------------------------------- | -------------------------------------------------------------- |
-| `npm:pi-zentui`               | Fixed editor, status line, and Git status                    |
 | `npm:@tintinweb/pi-subagents` | Parallel SubAgents, background tasks, and worktree isolation |
 | `npm:pi-mcp-adapter`          | On-demand MCP tool discovery with lower context usage        |
 | `npm:pi-theme-picker`         | Theme search and live preview                                |
@@ -168,7 +158,7 @@ Run `/reload` after changing extensions. Changes under `extensions/ask-user-ques
 ## Credits
 
 - Compact transcript behavior is based on [`avhagedorn/pi-compact-transcript`](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2 (MIT).
-- Structured questionnaires are based on [`@juicesharp/rpiv-ask-user-question`](https://github.com/juicesharp/rpiv-mono/tree/main/packages/rpiv-ask-user-question) v2.1.0 (MIT).
+- Fixed-editor behavior is provided by [`@tifan/pi-fixed-editor`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-fixed-editor) (MIT).
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md).
 - Startup header based on [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header) (MIT).
 - Command aliases based on [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases) (MIT).

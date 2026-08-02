@@ -86,7 +86,6 @@
 
 ```text
  ✓ Skill ponytail
- ✓ Ask User Question 使用哪种方案？
  ✓ Enter Plan Mode enable read-only planning
  ✓ Exit Plan Mode present plan
  ✓ Web Search pi coding agent extension

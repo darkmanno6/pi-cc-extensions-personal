@@ -81,6 +81,9 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 		diffCollapsedLines: 24,
 		diffWordWrap: true,
 		expandedPreviewMaxLines: 40,
+		useSummaryTitlesAsThinkingTitle: true,
+		previewLines: 3,
+		animationIntervalMs: 90,
 	};
 	assert.deepEqual(
 		normalizeConfig({ enabled: false, excludeRenderers: ["edit", "edit", "", 42] }),
@@ -127,6 +130,9 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 			diffCollapsedLines: 48,
 			diffWordWrap: false,
 			expandedPreviewMaxLines: 1000,
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 0,
+			animationIntervalMs: 1,
 		}),
 		{
 			mode: "on",
@@ -138,10 +144,23 @@ test("normalizeConfig migrates enabled configs and accepts all three modes", () 
 			diffCollapsedLines: 48,
 			diffWordWrap: false,
 			expandedPreviewMaxLines: 1000,
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 0,
+			animationIntervalMs: 1,
 		},
 	);
 	// 40 must survive normalize (previously clamped to min 50, which hid [show more]).
 	assert.equal(normalizeConfig({ expandedPreviewMaxLines: 40 }).expandedPreviewMaxLines, 40);
+	const bounded = normalizeConfig({
+		useSummaryTitlesAsThinkingTitle: "invalid",
+		previewLines: -2.8,
+		animationIntervalMs: 0,
+	});
+	assert.equal(bounded.useSummaryTitlesAsThinkingTitle, true);
+	assert.equal(bounded.previewLines, 0);
+	assert.equal(bounded.animationIntervalMs, 1);
+	assert.equal(normalizeConfig({ previewLines: 100_001 }).previewLines, 100_001);
+	assert.equal(normalizeConfig({ animationIntervalMs: 1.5 }).animationIntervalMs, 1.5);
 });
 
 test("rendererRoute keeps Agent and exclusions native in every mode", () => {
@@ -936,10 +955,11 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 		},
 	});
 	let panelLines = panel.render(80).map((line: string) => line.trimEnd());
-	// Section tabs (Style / Editor / Diff); default Style shows Mode + Exclude tools.
+	// Section tabs; default Style shows Mode + Exclude tools.
 	assert.ok(
 		panelLines.some(
-			(line: string) => /Style/.test(line) && /Editor/.test(line) && /Diff/.test(line),
+			(line: string) =>
+				/Style/.test(line) && /Editor/.test(line) && /Diff/.test(line) && /Thinking/.test(line),
 		),
 	);
 	assert.ok(panelLines.some((line: string) => line.includes("Mode") && line.includes("on")));
@@ -967,7 +987,15 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	assert.ok(ruleCount >= 4, `expected panel rules, got ${ruleCount}`);
 	assert.match(plain(panelLines[0]!), /^─+$/, "top rule");
 	assert.match(plain(panelLines.at(-1)!), /^─+$/, "bottom rule");
-	// Shift+Tab back to Editor
+	// Tab → Thinking section: exactly its three settings.
+	panel.handleInput("\t");
+	panelLines = panel.render(80).map((line: string) => line.trimEnd());
+	assert.ok(panelLines.some((line: string) => line.includes("Summary title")));
+	assert.ok(panelLines.some((line: string) => line.includes("Preview lines")));
+	assert.ok(panelLines.some((line: string) => line.includes("Animation interval ms")));
+	assert.ok(!panelLines.some((line: string) => line.includes("Diff layout")));
+	// Shift+Tab back to Diff, then Editor.
+	panel.handleInput("\x1b[Z");
 	panel.handleInput("\x1b[Z");
 	panelLines = panel.render(80).map((line: string) => line.trimEnd());
 	assert.ok(panelLines.some((line: string) => line.includes("Fixed editor")));

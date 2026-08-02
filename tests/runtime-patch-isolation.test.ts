@@ -1,0 +1,199 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+	CustomMessageComponent,
+	ToolExecutionComponent,
+	initTheme,
+} from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
+import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
+import subagentNotificationExtension from "../extensions/subagent-notification.ts";
+import { ToolGroupComponent } from "../extensions/tool-grouping.ts";
+
+initTheme("dark");
+
+function runtime() {
+	const events = new Map<string, Function>();
+	return {
+		events,
+		pi: {
+			registerCommand() {},
+			registerShortcut() {},
+			registerTool() {},
+			on(name: string, handler: Function) {
+				events.set(name, handler);
+			},
+		},
+	};
+}
+
+test("stale TUI shutdown leaves the replacement runtime active", async () => {
+	const containerPrototype = Container.prototype as any;
+	const toolPrototype = ToolExecutionComponent.prototype as any;
+	const containerMethods = ["addChild", "removeChild", "clear"] as const;
+	const toolMethods = [
+		"hasRendererDefinition",
+		"getRenderShell",
+		"getCallRenderer",
+		"getResultRenderer",
+	] as const;
+	const originalContainer = Object.fromEntries(
+		containerMethods.map((name) => [name, containerPrototype[name]]),
+	) as Record<string, Function>;
+	const originalTool = Object.fromEntries(
+		toolMethods.map((name) => [name, toolPrototype[name]]),
+	) as Record<string, Function>;
+	const runtimeA = runtime();
+	const runtimeB = runtime();
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: { theme, setStatus() {}, requestRender() {} },
+	} as any;
+
+	try {
+		claudeCodeStyleExtension(runtimeA.pi as any, { mode: "on" });
+		await runtimeA.events.get("session_start")?.({}, ctx);
+		claudeCodeStyleExtension(runtimeB.pi as any, { mode: "on" });
+		await runtimeB.events.get("session_start")?.({}, ctx);
+		const replacementContainer = Object.fromEntries(
+			containerMethods.map((name) => [name, containerPrototype[name]]),
+		) as Record<string, Function>;
+		const replacementTool = Object.fromEntries(
+			toolMethods.map((name) => [name, toolPrototype[name]]),
+		) as Record<string, Function>;
+		const patchKey = Symbol.for("pi.ccstyle.global-tool-render-patch");
+		const replacementPatch = (globalThis as any)[patchKey];
+
+		await runtimeA.events.get("session_shutdown")?.({}, ctx);
+		assert.equal((globalThis as any)[patchKey], replacementPatch);
+		assert.equal(replacementPatch.active, true);
+		for (const name of containerMethods)
+			assert.equal(containerPrototype[name], replacementContainer[name]);
+		for (const name of toolMethods) assert.equal(toolPrototype[name], replacementTool[name]);
+
+		const parent = new Container() as any;
+		for (const name of ["read", "bash"]) {
+			const tool = new ToolExecutionComponent(
+				name,
+				`${name}-replacement-runtime`,
+				{},
+				{},
+				undefined,
+				ctx.ui,
+				process.cwd(),
+			) as any;
+			tool.updateResult({ content: [], isError: false });
+			parent.addChild(tool);
+		}
+		assert.ok(parent.children[0] instanceof ToolGroupComponent);
+
+		await runtimeB.events.get("session_shutdown")?.({}, ctx);
+		for (const name of containerMethods)
+			assert.equal(containerPrototype[name], originalContainer[name]);
+		for (const name of toolMethods) assert.equal(toolPrototype[name], originalTool[name]);
+	} finally {
+		await runtimeA.events.get("session_shutdown")?.({}, ctx);
+		await runtimeB.events.get("session_shutdown")?.({}, ctx);
+		for (const name of containerMethods) containerPrototype[name] = originalContainer[name];
+		for (const name of toolMethods) toolPrototype[name] = originalTool[name];
+		delete (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
+	}
+});
+
+test("headless runtimes do not replace or shut down main TUI patches", async () => {
+	const containerPrototype = Container.prototype as any;
+	const toolPrototype = ToolExecutionComponent.prototype as any;
+	const customPrototype = CustomMessageComponent.prototype as any;
+	const originalContainerAdd = containerPrototype.addChild;
+	const originalToolCallRenderer = toolPrototype.getCallRenderer;
+	const originalCustomRender = customPrototype.render;
+	const mainStyle = runtime();
+	const mainNotification = runtime();
+	const headlessStyle = runtime();
+	const headlessNotification = runtime();
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	};
+	const tuiCtx = {
+		mode: "tui",
+		hasUI: true,
+		ui: { theme, setStatus() {}, requestRender() {} },
+	} as any;
+	const headlessCtx = {
+		mode: "print",
+		hasUI: false,
+		ui: { theme, setStatus() {}, requestRender() {} },
+	} as any;
+
+	try {
+		claudeCodeStyleExtension(mainStyle.pi as any, { mode: "on" });
+		subagentNotificationExtension(mainNotification.pi as any);
+		await mainStyle.events.get("session_start")?.({}, tuiCtx);
+		await mainNotification.events.get("session_start")?.({}, tuiCtx);
+
+		const mainContainerAdd = containerPrototype.addChild;
+		const mainToolCallRenderer = toolPrototype.getCallRenderer;
+		const mainCustomRender = customPrototype.render;
+		assert.notEqual(mainContainerAdd, originalContainerAdd);
+		assert.notEqual(mainToolCallRenderer, originalToolCallRenderer);
+		assert.notEqual(mainCustomRender, originalCustomRender);
+
+		claudeCodeStyleExtension(headlessStyle.pi as any, { mode: "on" });
+		subagentNotificationExtension(headlessNotification.pi as any);
+		await headlessStyle.events.get("session_start")?.({}, headlessCtx);
+		await headlessNotification.events.get("session_start")?.({}, headlessCtx);
+		for (const name of [
+			"session_compact",
+			"message_start",
+			"message_update",
+			"message_end",
+			"agent_start",
+			"agent_end",
+			"turn_start",
+			"tool_execution_start",
+			"tool_execution_update",
+			"tool_execution_end",
+		]) {
+			await headlessStyle.events.get(name)?.({}, headlessCtx);
+		}
+		assert.equal(containerPrototype.addChild, mainContainerAdd);
+		assert.equal(toolPrototype.getCallRenderer, mainToolCallRenderer);
+		assert.equal(customPrototype.render, mainCustomRender);
+
+		await headlessStyle.events.get("session_shutdown")?.({}, headlessCtx);
+		await headlessNotification.events.get("session_shutdown")?.({}, headlessCtx);
+		assert.equal(containerPrototype.addChild, mainContainerAdd);
+		assert.equal(toolPrototype.getCallRenderer, mainToolCallRenderer);
+		assert.equal(customPrototype.render, mainCustomRender);
+
+		const parent = new Container() as any;
+		for (const name of ["read", "bash"]) {
+			const tool = new ToolExecutionComponent(
+				name,
+				`${name}-isolation`,
+				{},
+				{},
+				undefined,
+				tuiCtx.ui,
+				process.cwd(),
+			) as any;
+			tool.updateResult({ content: [], isError: false });
+			parent.addChild(tool);
+		}
+		assert.ok(parent.children[0] instanceof ToolGroupComponent);
+		assert.match(parent.children[0].render(100).join("\n"), /<success>●<\/success>/);
+	} finally {
+		await headlessStyle.events.get("session_shutdown")?.({}, headlessCtx);
+		await headlessNotification.events.get("session_shutdown")?.({}, headlessCtx);
+		await mainStyle.events.get("session_shutdown")?.({}, tuiCtx);
+		await mainNotification.events.get("session_shutdown")?.({}, tuiCtx);
+		containerPrototype.addChild = originalContainerAdd;
+		toolPrototype.getCallRenderer = originalToolCallRenderer;
+		customPrototype.render = originalCustomRender;
+	}
+});

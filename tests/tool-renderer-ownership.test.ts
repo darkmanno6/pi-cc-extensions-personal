@@ -50,7 +50,7 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		setStatus() {},
 		requestRender() {},
 	};
-	const ctx = { mode: "print", hasUI: false, ui } as any;
+	const ctx = { mode: "tui", hasUI: true, ui } as any;
 	try {
 		await events.get("session_start")?.({}, ctx);
 		const command =
@@ -173,8 +173,9 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 		setStatus() {},
 		requestRender() {},
 	};
-	const ctx = { ui } as any;
+	const ctx = { mode: "tui", hasUI: true, ui } as any;
 	try {
+		await events.get("session_start")?.({}, ctx);
 		for (const [name, expected] of [
 			["mcp__filesystem__read_file", "Filesystem Read File"],
 			["openai_custom_search", "Openai Custom Search"],
@@ -361,7 +362,7 @@ test("Agent uses the same ccstyle renderer as other external tools", async () =>
 		setStatus() {},
 		requestRender() {},
 	};
-	const ctx = { mode: "print", hasUI: false, ui };
+	const ctx = { mode: "tui", hasUI: true, ui };
 	await events.get("session_start")?.({}, ctx);
 	const definition = {
 		name: "Agent",
@@ -408,10 +409,15 @@ test("global renderer reload chains external wrappers and shutdown restores them
 			events.set(name, handler);
 		},
 	});
-	const ctx = { ui: { setStatus() {} } } as any;
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: { theme: {}, setStatus() {}, requestRender() {} },
+	} as any;
 
 	try {
 		claudeCodeStyleExtension(makePi(firstEvents) as any);
+		await firstEvents.get("session_start")?.({}, ctx);
 		const firstPatch = (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
 		const externalCalls = Object.fromEntries(methodNames.map((name) => [name, 0])) as Record<
 			string,
@@ -428,6 +434,7 @@ test("global renderer reload chains external wrappers and shutdown restores them
 		}
 
 		claudeCodeStyleExtension(makePi(secondEvents) as any, { excludeRenderers: ["custom"] });
+		await secondEvents.get("session_start")?.({}, ctx);
 		assert.equal(firstPatch.active, false);
 		assert.equal(firstPatch.mode(), "off", "reload disconnects the old config callback");
 		for (const name of methodNames) assert.notEqual(prototype[name], external[name]);
@@ -508,7 +515,11 @@ test("global renderer migrates legacy Symbol state without retaining old wrapper
 		return legacy.originalGetResultRenderer.apply(this, args);
 	};
 	(globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")] = legacy;
-	const ctx = { ui: { setStatus() {} } } as any;
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: { theme: {}, setStatus() {}, requestRender() {} },
+	} as any;
 
 	try {
 		claudeCodeStyleExtension({
@@ -518,6 +529,7 @@ test("global renderer migrates legacy Symbol state without retaining old wrapper
 				events.set(name, handler);
 			},
 		} as any);
+		await events.get("session_start")?.({}, ctx);
 		const migrated = (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
 		for (const name of methodNames) assert.equal(migrated.downstream[name], originals[name]);
 		assert.equal(legacy.enabled(), false, "legacy callbacks are disconnected");
@@ -542,7 +554,11 @@ test("global renderer shutdown does not overwrite wrappers installed later", asy
 		methodNames.map((name) => [name, prototype[name]]),
 	) as Record<string, Function>;
 	const events = new Map<string, Function>();
-	const ctx = { ui: { setStatus() {} } } as any;
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: { theme: {}, setStatus() {}, requestRender() {} },
+	} as any;
 	try {
 		claudeCodeStyleExtension({
 			registerCommand() {},
@@ -551,6 +567,7 @@ test("global renderer shutdown does not overwrite wrappers installed later", asy
 				events.set(name, handler);
 			},
 		} as any);
+		await events.get("session_start")?.({}, ctx);
 		const later = {} as Record<string, Function>;
 		for (const name of methodNames) {
 			const downstream = prototype[name];

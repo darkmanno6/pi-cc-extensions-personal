@@ -84,31 +84,38 @@ export function formatSubagentNotificationLines(lines: string[], width: number):
 }
 
 export default function subagentNotificationExtension(pi: ExtensionAPI): void {
-	const prototype = CustomMessageComponent.prototype as any;
-	const host = globalThis as any;
-	const previous = host[PATCH_KEY] as Patch | undefined;
-	if (previous) previous.active = false;
-	const originalRender =
-		previous && prototype.render === previous.installedRender
-			? previous.originalRender
-			: prototype.render;
-	const patch = {
-		active: true,
-		prototype,
-		originalRender,
-		installedRender: undefined as any,
-	} satisfies Patch;
-	patch.installedRender = function (this: any, width: number): string[] {
-		const lines = originalRender.call(this, width);
-		if (!patch.active || this?.message?.customType !== "subagent-notification") return lines;
-		return formatSubagentNotificationLines(lines, width);
-	};
-	prototype.render = patch.installedRender;
-	host[PATCH_KEY] = patch;
+	let patch: Patch | undefined;
+
+	pi.on("session_start", async (_event, ctx) => {
+		if (patch || ctx?.mode !== "tui" || !ctx?.hasUI) return;
+		const prototype = CustomMessageComponent.prototype as any;
+		const host = globalThis as any;
+		const previous = host[PATCH_KEY] as Patch | undefined;
+		if (previous) previous.active = false;
+		const originalRender =
+			previous && prototype.render === previous.installedRender
+				? previous.originalRender
+				: prototype.render;
+		patch = {
+			active: true,
+			prototype,
+			originalRender,
+			installedRender: undefined as any,
+		};
+		const installed = patch;
+		installed.installedRender = function (this: any, width: number): string[] {
+			const lines = originalRender.call(this, width);
+			if (!installed.active || this?.message?.customType !== "subagent-notification") return lines;
+			return formatSubagentNotificationLines(lines, width);
+		};
+		prototype.render = installed.installedRender;
+		host[PATCH_KEY] = installed;
+	});
 
 	pi.on("session_shutdown", async () => {
-		if (!patch.active) return;
+		if (!patch?.active) return;
 		patch.active = false;
-		if (prototype.render === patch.installedRender) prototype.render = originalRender;
+		if (patch.prototype.render === patch.installedRender)
+			patch.prototype.render = patch.originalRender;
 	});
 }

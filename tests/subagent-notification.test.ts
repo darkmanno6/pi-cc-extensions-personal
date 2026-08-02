@@ -32,6 +32,9 @@ test("subagent notification patch is selective and reload-safe", async () => {
 				eventsB.set(name, handler);
 			},
 		} as any);
+		const ctx = { mode: "tui", hasUI: true };
+		await eventsA.get("session_start")?.({}, ctx);
+		await eventsB.get("session_start")?.({}, ctx);
 
 		const notification = Object.assign(Object.create(prototype), {
 			message: { customType: "subagent-notification" },

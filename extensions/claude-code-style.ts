@@ -3003,13 +3003,26 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	// The optional override keeps integration tests independent from the user's global config.
 	if (configOverride) config = normalizeConfig({ ...config, ...configOverride });
 	const writeExecutionMetadata = installWriteOverride(pi, new WriteExecutionMetadataStore());
-	const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
-	const toolGrouping = installToolGrouping(() => config.mode === "on");
-	deactivateLegacyCompactionRendering();
-	const compactStyle: CompactStyleHooks = installCompactStyle(pi, {
-		getMode: () => config.mode,
-		getExcludeRenderers: () => config.excludeRenderers,
-	});
+	let installation:
+		| {
+				globalToolRendering: GlobalToolRenderPatch;
+				toolGrouping: ToolGroupingHooks;
+				compactStyle: CompactStyleHooks;
+		  }
+		| undefined;
+	const ensureTuiInstallation = (ctx: any) => {
+		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
+		if (installation) return installation;
+		const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
+		const toolGrouping = installToolGrouping(() => config.mode === "on");
+		deactivateLegacyCompactionRendering();
+		const compactStyle = installCompactStyle(pi, {
+			getMode: () => config.mode,
+			getExcludeRenderers: () => config.excludeRenderers,
+		});
+		installation = { globalToolRendering, toolGrouping, compactStyle };
+		return installation;
+	};
 
 	pi.registerCommand("ccstyle", {
 		description: "Configure Claude Code style, fixed editor, and rich diff options",
@@ -3026,11 +3039,15 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
 			if (!arg || arg === "panel") {
-				await showCcstylePanel(ctx, compactStyle, toolGrouping);
+				const hooks = ensureTuiInstallation(ctx);
+				if (hooks) await showCcstylePanel(ctx, hooks.compactStyle, hooks.toolGrouping);
+				else ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 				return;
 			}
 			if (arg === "on" || arg === "off" || arg === "compact") {
-				applyStyleMode(arg, ctx, compactStyle, toolGrouping);
+				const hooks = ensureTuiInstallation(ctx);
+				if (hooks) applyStyleMode(arg, ctx, hooks.compactStyle, hooks.toolGrouping);
+				else ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 				return;
 			}
 			if (arg === "status") {
@@ -3042,69 +3059,81 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	});
 
 	pi.on("session_start", async (event, ctx) => {
-		toolGrouping.setTheme(ctx.ui.theme);
-		compactStyle?.onSessionStart(event, ctx);
+		const hooks = ensureTuiInstallation(ctx);
+		if (!hooks) return;
+		hooks.toolGrouping.setTheme(ctx.ui.theme);
+		hooks.compactStyle.onSessionStart(event, ctx);
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
 		installToolMouseInteraction(ctx);
-		scheduleSessionRender(compactStyle.refresh);
+		scheduleSessionRender(hooks.compactStyle.refresh);
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
-		toolGrouping.setTheme(ctx.ui.theme);
-		compactStyle?.onSessionCompact(event, ctx);
+		const hooks = ensureTuiInstallation(ctx);
+		if (!hooks) return;
+		hooks.toolGrouping.setTheme(ctx.ui.theme);
+		hooks.compactStyle.onSessionCompact(event, ctx);
 		// Compaction rebuilds the transcript without session_start. Rebind after
 		// other TUI extensions may have replaced the root input dispatcher.
 		installToolMouseInteraction(ctx);
-		scheduleSessionRender(compactStyle.refresh);
+		scheduleSessionRender(hooks.compactStyle.refresh);
 	});
 
 	pi.on("message_start", async (event) => {
-		notePendingScrollMessage(event?.message?.role);
+		if (installation) notePendingScrollMessage(event?.message?.role);
 	});
 
 	pi.on("message_update", async (event, ctx) => {
-		compactStyle?.onMessageUpdate(event, ctx);
-		if (event?.message?.role === "assistant") notePendingScrollMessage("assistant");
+		installation?.compactStyle.onMessageUpdate(event, ctx);
+		if (installation && event?.message?.role === "assistant") notePendingScrollMessage("assistant");
 	});
 
 	pi.on("message_end", async (event) => {
-		if (event?.message?.role === "assistant") assistantMessageActive = false;
+		if (installation && event?.message?.role === "assistant") assistantMessageActive = false;
 	});
 
 	pi.on("agent_start", async (event, ctx) => {
-		compactStyle?.onAgentStart(event, ctx);
+		installation?.compactStyle.onAgentStart(event, ctx);
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
-		compactStyle?.onAgentEnd(event, ctx);
+		installation?.compactStyle.onAgentEnd(event, ctx);
 	});
 
 	pi.on("turn_start", async (event, ctx) => {
-		compactStyle?.onTurnStart(event, ctx);
+		installation?.compactStyle.onTurnStart(event, ctx);
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
-		toolGrouping.setTheme(ctx.ui.theme);
-		compactStyle?.onToolExecutionStart(event, ctx);
+		installation?.toolGrouping.setTheme(ctx.ui.theme);
+		installation?.compactStyle.onToolExecutionStart(event, ctx);
 	});
 
 	pi.on("tool_execution_update", async (event, ctx) => {
-		compactStyle?.onToolExecutionUpdate(event, ctx);
+		installation?.compactStyle.onToolExecutionUpdate(event, ctx);
 	});
 
 	pi.on("tool_execution_end", async (event, ctx) => {
-		compactStyle?.onToolExecutionEnd(event, ctx);
+		installation?.compactStyle.onToolExecutionEnd(event, ctx);
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
-		compactStyle?.onSessionShutdown(event, ctx);
 		writeExecutionMetadata.clear();
+		const current = installation;
+		if (
+			!current ||
+			(globalThis as any)[GLOBAL_TOOL_RENDER_PATCH] !== current.globalToolRendering ||
+			!current.globalToolRendering.active
+		)
+			return;
+		current.compactStyle.onSessionShutdown(event, ctx);
 		teardownToolMouseInteraction();
-		deactivateGlobalToolRendering(globalToolRendering);
-		toolGrouping.shutdown();
+		deactivateGlobalToolRendering(current.globalToolRendering);
+		current.toolGrouping.shutdown();
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
+		installation = undefined;
 	});
 }

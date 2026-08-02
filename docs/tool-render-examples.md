@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成（`node .tmp-tool-render-demo.ts`），示例已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.29。renderer 变更后应重跑脚本并同步本文件。
+> 当前版本：ccstyle 0.8.31。renderer 变更后应重跑脚本并同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
 

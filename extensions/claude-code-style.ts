@@ -6,6 +6,12 @@ import {
 	type CompactStyleMode,
 } from "./compact-style.ts";
 import { showTextPreview } from "./context.ts";
+import {
+	installToolGrouping,
+	ToolGroupComponent,
+	type ToolGroupingHooks,
+} from "./tool-grouping.ts";
+import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "./tool-loading-icon.ts";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
@@ -27,6 +33,7 @@ import {
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { inspect } from "node:util";
 
 /**
  * Claude Code Style for pi.
@@ -238,13 +245,30 @@ function oneLine(value: unknown, max = 72): string {
 }
 
 function rawTextFromResult(result: any): string {
-	const item = result?.content?.find?.((c: any) => c.type === "text");
-	return item?.type === "text" ? String(item.text ?? "") : "";
+	return Array.isArray(result?.content)
+		? result.content
+				.filter((item: any) => item?.type === "text")
+				.map((item: any) => String(item.text ?? ""))
+				.join("\n")
+		: "";
 }
 
-function textFromResult(result: any): string {
+function detailsFromResult(result: any): string {
+	if (result?.details === undefined) return "";
+	const details =
+		typeof result.details === "string"
+			? result.details
+			: inspect(result.details, { depth: 8, breakLength: 100, compact: false });
+	return sanitizeToolResultText(details, 16_384);
+}
+
+function textFromResult(result: any, expanded = false): string {
 	// Compact previews only need short text; bound sanitize work.
-	return sanitizeToolResultText(rawTextFromResult(result), 16_384);
+	const content = sanitizeToolResultText(rawTextFromResult(result), 16_384);
+	const details = detailsFromResult(result);
+	if (!content) return details;
+	if (!expanded || !details || details === content) return content;
+	return `${content}\nDetails:\n${details}`;
 }
 
 export function outputLineCount(result: any): number {
@@ -265,23 +289,6 @@ function hasExpandableResult(text: string): boolean {
 
 function toolIcon(_name: string): string {
 	return "●";
-}
-
-// Match the braille loader shown to the left of pi's "Working..." row.
-// Every frame is one cell wide, so tool titles remain horizontally stable.
-const WORKING_LOADER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const TOOL_PENDING_FRAMES: Record<string, string[]> = {
-	read: WORKING_LOADER_FRAMES,
-	bash: WORKING_LOADER_FRAMES,
-	edit: WORKING_LOADER_FRAMES,
-	write: WORKING_LOADER_FRAMES,
-	find: WORKING_LOADER_FRAMES,
-	grep: WORKING_LOADER_FRAMES,
-	ls: WORKING_LOADER_FRAMES,
-};
-
-function animationFrame(frames: string[], intervalMs = 120): string {
-	return frames[Math.floor(Date.now() / intervalMs) % frames.length] ?? frames[0] ?? "";
 }
 
 const activeAnimationContexts = new Set<any>();
@@ -308,7 +315,7 @@ function clearAllAnimations() {
 	}
 }
 
-function scheduleAnimation(context: any, intervalMs = 80) {
+function scheduleAnimation(context: any, intervalMs = TOOL_LOADING_INTERVAL_MS) {
 	const state = (context.state ??= {});
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
@@ -326,8 +333,8 @@ function scheduleAnimation(context: any, intervalMs = 80) {
 	}
 }
 
-function pendingIcon(name: string): string {
-	return animationFrame(TOOL_PENDING_FRAMES[name] ?? [toolIcon(name)], 80);
+function pendingIcon(_name: string): string {
+	return toolLoadingIcon();
 }
 
 type ToolVisualState = "pending" | "success" | "error";
@@ -434,7 +441,7 @@ const EXPANDED_TOOL_IO_VIEW_GENERATION = Symbol("ccstyle-expanded-tool-io-view")
  * Expanded tool body with clear Input / Output sections (Grok Build–style).
  *
  * Visual frame:
- *   ┌ Input  [show more]
+ *   ├ Input  [show more]
  *   │ path: src/a.ts
  *   │
  *   └ Output  [show more]
@@ -538,7 +545,7 @@ export class ExpandedToolIoView {
 
 		const theme = this.theme;
 		const safeWidth = Math.max(1, Math.floor(width));
-		const rail = "  │ ";
+		const rail = " │ ";
 		const railWidth = visibleWidth(rail);
 		const bodyWidth = toolViewportWidth(safeWidth);
 		const contentWidth = Math.max(1, bodyWidth - railWidth);
@@ -547,12 +554,12 @@ export class ExpandedToolIoView {
 		this.truncated = { input: false, output: false };
 
 		const pushHeader = (
-			corner: "┌" | "└",
+			corner: "├" | "└",
 			label: string,
 			section: ToolIoSection,
 			showMore: boolean,
 		) => {
-			const mark = theme.fg("dim", `  ${corner} `);
+			const mark = theme.fg("dim", ` ${corner} `);
 			const title = theme.fg(
 				"accent",
 				typeof theme.bold === "function" ? theme.bold(label) : label,
@@ -563,12 +570,13 @@ export class ExpandedToolIoView {
 			lines.push(truncateToWidth(mark + title + more, safeWidth, ""));
 		};
 
-		const pushRailLine = (styledContent: string) => {
-			lines.push(truncateToWidth(theme.fg("dim", rail) + styledContent, safeWidth, ""));
+		const pushRailLine = (styledContent: string, continued = true) => {
+			const prefix = continued ? rail : "   ";
+			lines.push(truncateToWidth(theme.fg("dim", prefix) + styledContent, safeWidth, ""));
 		};
 
 		const pushBlankRail = () => {
-			lines.push(truncateToWidth(theme.fg("dim", "  │"), safeWidth, ""));
+			lines.push(truncateToWidth(theme.fg("dim", " │"), safeWidth, ""));
 		};
 
 		/** Style `key: value` input rows — dim keys, readable values. */
@@ -576,16 +584,16 @@ export class ExpandedToolIoView {
 			const match = rawLine.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
 			if (!match) return theme.fg("muted", rawLine);
 			const [, key, sep, rest] = match;
-			return theme.fg("dim", key + sep) + theme.fg("text", rest ?? "");
+			return theme.fg("dim", key + sep) + theme.fg("muted", rest ?? "");
 		};
 
 		const pushBody = (
 			body: string,
-			opts: { input?: boolean; limit: number },
+			opts: { input?: boolean; limit: number; continued?: boolean },
 		): boolean /* truncated */ => {
 			const raw = body.replace(/\t/g, "   ").replace(/\n+$/, "");
 			if (!raw.trim()) {
-				pushRailLine(theme.fg("dim", "(empty)"));
+				pushRailLine(theme.fg("dim", "(empty)"), opts.continued);
 				return false;
 			}
 			const sourceLines = raw.split("\n");
@@ -600,11 +608,11 @@ export class ExpandedToolIoView {
 			// theme/wrap measurements disagree slightly.
 			const truncated = wrapped.length > opts.limit || sourceLines.length > opts.limit;
 			const visible = truncated ? wrapped.slice(0, Math.min(opts.limit, wrapped.length)) : wrapped;
-			for (const line of visible) pushRailLine(line);
+			for (const line of visible) pushRailLine(line, opts.continued);
 			if (truncated) {
 				const hidden = Math.max(0, wrapped.length - visible.length);
 				if (hidden > 0) {
-					pushRailLine(theme.fg("dim", `… +${hidden} more lines`));
+					pushRailLine(theme.fg("dim", `… +${hidden} more lines`), opts.continued);
 				}
 			}
 			return truncated;
@@ -628,16 +636,20 @@ export class ExpandedToolIoView {
 
 		if (hasInput) {
 			this.truncated.input = inputWouldTruncate;
-			pushHeader("┌", "Input", "input", inputWouldTruncate);
-			pushBody(this.inputBody, { input: true, limit: this.maxInputLines });
+			pushHeader("├", "Input", "input", inputWouldTruncate);
+			pushBody(this.inputBody, {
+				input: true,
+				limit: this.maxInputLines,
+				continued: true,
+			});
 			pushBlankRail();
 			this.truncated.output = outputWouldTruncate;
 			pushHeader("└", "Output", "output", outputWouldTruncate);
-			pushBody(outputText, { limit: this.maxOutputLines });
+			pushBody(outputText, { limit: this.maxOutputLines, continued: false });
 		} else {
 			this.truncated.output = outputWouldTruncate;
-			pushHeader("┌", "Output", "output", outputWouldTruncate);
-			pushBody(outputText, { limit: this.maxOutputLines });
+			pushHeader("└", "Output", "output", outputWouldTruncate);
+			pushBody(outputText, { limit: this.maxOutputLines, continued: false });
 		}
 
 		this.cachedWidth = width;
@@ -682,7 +694,7 @@ function bodyExceedsLineLimit(
 		if (asInput) {
 			const match = source.match(/^([A-Za-z_][\w.-]*)(:\s*)(.*)$/);
 			styled = match
-				? theme.fg("dim", match[1] + match[2]) + theme.fg("text", match[3] ?? "")
+				? theme.fg("dim", match[1] + match[2]) + theme.fg("muted", match[3] ?? "")
 				: theme.fg("muted", source);
 		} else {
 			styled = theme.fg(bodyColor, source);
@@ -695,16 +707,16 @@ function bodyExceedsLineLimit(
 }
 
 export function renderCollapsedToolResult(body: string, collapsedHint = ""): string {
-	return `  ↳ ${body}${collapsedHint}`;
+	return `   ↳ ${body}${collapsedHint}`;
 }
 
 export function renderCollapsedToolResultToWidth(
 	body: string,
 	collapsedHint: string,
 	width: number,
+	prefix = "   ↳ ",
 ): string {
 	const previewWidth = toolViewportWidth(width);
-	const prefix = "  ↳ ";
 	const bodyWidth = Math.max(1, previewWidth - visibleWidth(prefix) - visibleWidth(collapsedHint));
 	return truncateToWidth(
 		prefix + middleTruncateToWidth(body, bodyWidth) + collapsedHint,
@@ -879,6 +891,7 @@ let assistantMessageActive = false;
 let scrollButtonSyncScheduled = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
 let hoveredToolCallId: string | null = null;
+let hoveredToolGroup: ToolGroupComponent | null = null;
 
 function parseSgrMousePackets(data: string): SgrMousePacket[] | null {
 	const pattern = /\x1b\[<(\d+);(\d+);(\d+)([Mm])/g;
@@ -1004,7 +1017,7 @@ function fixedEditorContextScore(
 }
 
 /** Summary markers used by Pi and ccstyle; unlike the trailing hint, these survive truncation. */
-const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿)/;
+const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿|●|✓|✗)/;
 /** fixedEditorContextScore max ≈ 100 + 2*(5+4+3+2); stop once we hit a near-perfect match. */
 const TOOL_CLICK_EARLY_EXIT_SCORE = 120;
 
@@ -1498,7 +1511,7 @@ function visibleMouseLine(tui: any, packet: SgrMousePacket): string {
 }
 
 function isCollapsedHintAtColumn(line: string, col: number): boolean {
-	const match = /(\([^()\n]* \/ click\))\s*$/.exec(line);
+	const match = /(\([^()\n]* \/ click\)|click to show more)\s*$/.exec(line);
 	if (!match?.[1] || col <= 0) return false;
 	const start = visibleWidth(line.slice(0, match.index)) + 1;
 	return col >= start && col < start + visibleWidth(match[1]);
@@ -1544,10 +1557,19 @@ function setHoveredToolIo(view: ExpandedToolIoView | null, section: ToolIoSectio
 	return true;
 }
 
+function setHoveredToolGroup(group: ToolGroupComponent | null): boolean {
+	if (group === hoveredToolGroup) return false;
+	hoveredToolGroup?.setHintHovered(false);
+	hoveredToolGroup = group;
+	group?.setHintHovered(true);
+	return true;
+}
+
 function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	if ((packet.code & 32) === 0 || packet.final !== "M") return;
 	const visibleLine = visibleMouseLine(tui, packet);
 	let nextToolCallId: string | null = null;
+	let nextGroup: ToolGroupComponent | null = null;
 	let nextIoView: ExpandedToolIoView | null = null;
 	let nextIoSection: ToolIoSection | null = null;
 
@@ -1557,6 +1579,7 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 	) {
 		const hit = findToolAtScreenRow(tui, packet.row);
 		nextToolCallId = hit && !hit.component.expanded ? hit.component.toolCallId : null;
+		nextGroup = hit?.component instanceof ToolGroupComponent ? hit.component : null;
 	} else if (visibleLine.includes(SHOW_MORE_LABEL)) {
 		const hit = findToolAtScreenRow(tui, packet.row);
 		const view = hit && hit.component.expanded ? resolveIoViewFromTool(hit.component) : null;
@@ -1570,11 +1593,13 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 
 	const changed = nextToolCallId !== hoveredToolCallId;
 	hoveredToolCallId = nextToolCallId;
-	if (setHoveredToolIo(nextIoView, nextIoSection) || changed) tui.requestRender?.();
+	if (setHoveredToolIo(nextIoView, nextIoSection) || setHoveredToolGroup(nextGroup) || changed)
+		tui.requestRender?.();
 }
 
 function isExpandedToolCardHit(hit: ToolRenderHit, width: number): boolean {
 	if (!Boolean(hit.component.expanded)) return false;
+	if (hit.component instanceof ToolGroupComponent) return true;
 	const box = hit.component.contentBox;
 	if (!box || !Array.isArray(hit.component.children) || !hit.component.children.includes(box)) {
 		return false;
@@ -1588,11 +1613,11 @@ function isExpandedToolCardHit(hit: ToolRenderHit, width: number): boolean {
 
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const line = visibleMouseLine(tui, packet);
-	const collapsedHint = isCollapsedHintAtColumn(line, packet.col);
 	const hasShowMore = line.includes(SHOW_MORE_LABEL);
 
 	const hit = findToolAtScreenRow(tui, packet.row);
 	if (!hit) return false;
+	const collapsedHint = isCollapsedHintAtColumn(line, packet.col);
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
 	if (Boolean(hit.component.expanded)) {
 		if (hasShowMore && tryOpenToolIoShowMore(tui, packet, hit)) return true;
@@ -1600,6 +1625,7 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 		const previousHeight = renderComponentTree(hit.component, width).length;
 		hit.component.setExpanded(false);
 		hoveredToolCallId = null;
+		setHoveredToolGroup(null);
 		setHoveredToolIo(null, null);
 		hit.component.invalidate?.();
 		const nextHeight = renderComponentTree(hit.component, width).length;
@@ -1611,6 +1637,7 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 
 	hit.component.setExpanded(true);
 	hoveredToolCallId = null;
+	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
 	hit.component.invalidate?.();
 	tui.requestRender?.();
@@ -1798,6 +1825,7 @@ function teardownToolMouseInteraction(): void {
 	toolMouseInputUnsubscribe?.();
 	toolMouseInputUnsubscribe = null;
 	hoveredToolCallId = null;
+	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
 	try {
 		toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
@@ -1877,16 +1905,26 @@ function scheduleSessionRender(refresh?: () => void): void {
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_FG_RESET = "\x1b[39m";
 
-function refreshCurrentTranscript(compactStyle: CompactStyleHooks, ctx?: any): void {
+function refreshCurrentTranscript(
+	compactStyle: CompactStyleHooks,
+	ctx?: any,
+	toolGrouping?: ToolGroupingHooks,
+): void {
+	toolGrouping?.refresh();
 	compactStyle.refresh();
 	toolMouseTui?.requestRender?.(true);
 	ctx?.ui?.requestRender?.(true);
 }
 
-function applyStyleMode(mode: CompactStyleMode, ctx: any, compactStyle: CompactStyleHooks): void {
+function applyStyleMode(
+	mode: CompactStyleMode,
+	ctx: any,
+	compactStyle: CompactStyleHooks,
+	toolGrouping?: ToolGroupingHooks,
+): void {
 	config.mode = mode;
 	saveConfig();
-	refreshCurrentTranscript(compactStyle, ctx);
+	refreshCurrentTranscript(compactStyle, ctx, toolGrouping);
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
 
@@ -2011,7 +2049,11 @@ function renderSectionTabBar(
 	return truncateToWidth(pieces.join(""), Math.max(0, width));
 }
 
-async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Promise<void> {
+async function showCcstylePanel(
+	ctx: any,
+	compactStyle: CompactStyleHooks,
+	toolGrouping?: ToolGroupingHooks,
+): Promise<void> {
 	if (ctx?.mode !== "tui" || !ctx?.hasUI || typeof ctx.ui?.custom !== "function") {
 		ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 		return;
@@ -2110,7 +2152,7 @@ async function showCcstylePanel(ctx: any, compactStyle: CompactStyleHooks): Prom
 			switch (id) {
 				case "mode":
 					modeSetting.description = modeSettingDescription(value as CompactStyleMode);
-					applyStyleMode(value as CompactStyleMode, ctx, compactStyle);
+					applyStyleMode(value as CompactStyleMode, ctx, compactStyle, toolGrouping);
 					return;
 				case "fixedEditorFeatures":
 					config.fixedEditorFeatures = value === "on";
@@ -2287,21 +2329,64 @@ function singleLine(text: string) {
 	};
 }
 
-/** Return the most useful scalar argument without semantically truncating it. */
-function toolCallArgument(args: any): { key: string; value: string } | undefined {
-	if (!args) return undefined;
-	const keys = Object.keys(args);
-	if (keys.length === 0) return undefined;
-	const preferred = ["query", "question", "command", "pattern", "name", "path", "url", "message"];
-	const key = preferred.find((candidate) => {
-		const val = args[candidate];
-		return val !== undefined && val !== null && typeof val !== "object";
-	});
-	const selected = key ?? keys[0];
-	const value = args[selected];
-	return value !== undefined && value !== null && typeof value !== "object"
-		? { key: selected, value: oneLine(value, Infinity) }
-		: undefined;
+function insetComponent(component: any): any {
+	return {
+		render: (width: number) =>
+			component.render(Math.max(1, width - 1)).map((line: string) => {
+				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
+				return ` ${nestedMarker}`;
+			}),
+		invalidate: () => component.invalidate?.(),
+	};
+}
+
+function humanizeToolLabel(label: string): string {
+	return label
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.replace(/[_-]+/g, " ")
+		.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function singleToolCallSummary(
+	toolName: string,
+	label: string,
+	args: any,
+): { main: string; detail: string } {
+	const title = label === toolName ? humanizeToolLabel(label) : label;
+	if (!args || typeof args !== "object") return { main: title, detail: "" };
+	if (AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
+		return { main: `${title} ${oneLine(args.agent_id, Infinity)}`, detail: "" };
+	}
+	if (toolName === "read") {
+		const details = [
+			args.offset !== undefined ? `offset=${args.offset}` : "",
+			args.limit !== undefined ? `limit=${args.limit}` : "",
+		].filter(Boolean);
+		return {
+			main: `${title}${args.path ? ` ${oneLine(args.path, Infinity)}` : ""}`,
+			detail: details.length ? ` (${details.join(", ")})` : "",
+		};
+	}
+	const value =
+		args.path ??
+		args.file_path ??
+		args.command ??
+		args.query ??
+		args.question ??
+		args.pattern ??
+		args.url ??
+		args.name ??
+		args.tool_use_id ??
+		args.toolCallId ??
+		args.id ??
+		args.message;
+	return {
+		main:
+			value !== undefined && value !== null && typeof value !== "object"
+				? `${title} ${oneLine(value, Infinity)}`
+				: title,
+		detail: "",
+	};
 }
 
 export function middleTruncateToWidth(text: string, width: number): string {
@@ -2337,7 +2422,7 @@ function createCcstyleTool(
 ): any {
 	const toolName = originalTool.name;
 	const label = isMcpToolDefinition(originalTool, toolName)
-		? toolName
+		? humanizeMcpToolName(toolName)
 		: originalTool.label || toolName;
 
 	return {
@@ -2358,20 +2443,18 @@ function createCcstyleTool(
 				visualState === "success"
 					? `${BRIGHT_GREEN}${rawIcon}${ANSI_FG_RESET}`
 					: theme.fg(toolIconColor(context), rawIcon);
-
-			const argument = toolCallArgument(args);
+			const summary = singleToolCallSummary(toolName, label, args);
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
 			return {
 				render(width: number) {
 					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
-					const callWidth = Math.max(0, toolViewportWidth(width) - visibleWidth(icon) - 1);
-					const argumentWidth = Math.max(1, callWidth - visibleWidth(`${label}()`));
-					const shown = argument ? middleTruncateToWidth(argument.value, argumentWidth) : undefined;
-					const call = shown === undefined ? label : `${label}(${shown})`;
+					const viewportWidth = toolViewportWidth(width);
+					const callWidth = Math.max(0, viewportWidth - visibleWidth(icon) - 2);
+					const mainWidth = Math.max(0, callWidth - visibleWidth(summary.detail));
 					cachedWidth = width;
-					cachedLine = `${icon} ${theme.fg("toolTitle", truncateToWidth(call, callWidth, ""))}`;
-					return [cachedLine];
+					cachedLine = ` ${icon} ${theme.fg("toolTitle", middleTruncateToWidth(summary.main, mainWidth))}${theme.fg("muted", summary.detail)}`;
+					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {},
 			};
@@ -2387,7 +2470,7 @@ function createCcstyleTool(
 			}
 
 			if (options?.isPartial) {
-				return new Text(theme.fg("muted", "  ⎿ Pending…"), 0, 0);
+				return new Text(theme.fg("muted", "   ⎿ Pending…"), 0, 0);
 			}
 
 			const isError = options?.isError || context?.isError;
@@ -2405,17 +2488,24 @@ function createCcstyleTool(
 					writeExecutionMetadata,
 					getToolDisplayConfig,
 				);
-				if (richResult) return richResult;
+				if (richResult) return insetComponent(richResult);
 			}
 
-			const text = textFromResult(result);
+			const text = textFromResult(result, expanded);
 			const args = context?.args;
-			const rendered = !expanded ? (text ? oneLine(text) : "Done") : text;
-
-			const detailLineCount = outputLineCount(result) || countLines(formatToolInputArgs(args));
-			const hint =
-				!expanded && hasExpandableDetail(text, args) ? expandHint(theme, detailLineCount) : "";
-			const hoveredHint = hint ? expandHint(theme, detailLineCount, true) : "";
+			const outputLines = outputLineCount(result) || countLines(text);
+			const lineWord = outputLines === 1 ? "line" : "lines";
+			const action = toolName === "read" ? "loaded" : "returned";
+			const rendered = isError
+				? text
+					? oneLine(text)
+					: "Failed"
+				: outputLines
+					? `${outputLines} ${lineWord} ${action}`
+					: "Done";
+			const expandable = !expanded && hasExpandableDetail(text, args);
+			const hint = expandable ? theme.fg("muted", " • click to show more") : "";
+			const hoveredHint = expandable ? theme.fg("text", " • click to show more") : "";
 			if (expanded) {
 				return renderExpandedToolResult(
 					text || "",
@@ -2461,7 +2551,13 @@ function createCcstyleTool(
 const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
 const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-render-mode");
 const COMPONENT_TOOL_SELF_SHELL_MODE = Symbol.for("pi.ccstyle.component-tool-self-shell-mode");
-const SUBAGENT_TOOL_NAMES = new Set(["Agent"]);
+const AGENT_FAMILY_TOOL_NAMES = new Set([
+	"Agent",
+	"Agents",
+	"get_subagent_result",
+	"steer_subagent",
+]);
+const DEDICATED_SUBAGENT_TOOL_NAMES = new Set(["Agent"]);
 
 type ToolRenderMethods = {
 	hasRendererDefinition: (...args: any[]) => boolean;
@@ -2489,9 +2585,23 @@ type GlobalToolRenderPatch = {
 	originalGetResultRenderer: ToolRenderMethods["getResultRenderer"];
 };
 
-function isMcpToolDefinition(definition: any, toolName: string): boolean {
-	const label = typeof definition?.label === "string" ? definition.label : "";
-	return toolName === "mcp" || label === "MCP" || label.startsWith("MCP: ");
+export function isMcpToolDefinition(definition: any, toolName: string): boolean {
+	const label = typeof definition?.label === "string" ? definition.label.trim() : "";
+	if (/^MCP(?::|$)/i.test(label)) return true;
+	if (toolName === "mcp" || /^mcp[_:-]|[_:-]mcp[_:-]/i.test(toolName)) return true;
+	if (label) return false;
+	const description = typeof definition?.description === "string" ? definition.description : "";
+	return /\bModel Context Protocol\b/i.test(description);
+}
+
+export function humanizeMcpToolName(toolName: string): string {
+	const words = toolName
+		.replace(/^mcp(?:[_:-]+)+/i, "")
+		.split(/[_:-]+/)
+		.filter(Boolean);
+	return words.length
+		? words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ")
+		: "MCP";
 }
 
 /** Return true when this tool must keep its original renderer. */
@@ -2501,7 +2611,7 @@ export function preservesOriginalRenderer(
 	builtInToolDefinition?: any,
 	excludeRenderers: readonly string[] = config.excludeRenderers,
 ): boolean {
-	if (SUBAGENT_TOOL_NAMES.has(toolName)) return true;
+	if (DEDICATED_SUBAGENT_TOOL_NAMES.has(toolName)) return true;
 	if (!excludeRenderers.includes(toolName)) return false;
 	return [extensionDefinition, builtInToolDefinition].some(
 		(definition) =>
@@ -2547,7 +2657,7 @@ function shouldUseSelfShell(component: any, patch: GlobalToolRenderPatch): boole
 	const toolName = String(component.toolName || definition?.name || "");
 	const useSelfShell =
 		patch.enabled() &&
-		SUBAGENT_TOOL_NAMES.has(toolName) &&
+		DEDICATED_SUBAGENT_TOOL_NAMES.has(toolName) &&
 		definition != null &&
 		definition.renderShell === undefined;
 	component[COMPONENT_TOOL_SELF_SHELL_MODE] = useSelfShell;
@@ -2785,6 +2895,7 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	if (configOverride) config = normalizeConfig({ ...config, ...configOverride });
 	const writeExecutionMetadata = installWriteOverride(pi, new WriteExecutionMetadataStore());
 	const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
+	const toolGrouping = installToolGrouping(() => config.mode === "on");
 	deactivateLegacyCompactionRendering();
 	const compactStyle: CompactStyleHooks = installCompactStyle(pi, {
 		getMode: () => config.mode,
@@ -2806,11 +2917,11 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
 			if (!arg || arg === "panel") {
-				await showCcstylePanel(ctx, compactStyle);
+				await showCcstylePanel(ctx, compactStyle, toolGrouping);
 				return;
 			}
 			if (arg === "on" || arg === "off" || arg === "compact") {
-				applyStyleMode(arg, ctx, compactStyle);
+				applyStyleMode(arg, ctx, compactStyle, toolGrouping);
 				return;
 			}
 			if (arg === "status") {
@@ -2822,6 +2933,7 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	});
 
 	pi.on("session_start", async (event, ctx) => {
+		toolGrouping.setTheme(ctx.ui.theme);
 		compactStyle?.onSessionStart(event, ctx);
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
@@ -2831,6 +2943,7 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
+		toolGrouping.setTheme(ctx.ui.theme);
 		compactStyle?.onSessionCompact(event, ctx);
 		// Compaction rebuilds the transcript without session_start. Rebind after
 		// other TUI extensions may have replaced the root input dispatcher.
@@ -2864,6 +2977,7 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
+		toolGrouping.setTheme(ctx.ui.theme);
 		compactStyle?.onToolExecutionStart(event, ctx);
 	});
 
@@ -2880,6 +2994,7 @@ export default function (pi: ExtensionAPI, configOverride?: Partial<Config>) {
 		writeExecutionMetadata.clear();
 		teardownToolMouseInteraction();
 		deactivateGlobalToolRendering(globalToolRendering);
+		toolGrouping.shutdown();
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
 	});

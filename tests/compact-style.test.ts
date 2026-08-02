@@ -35,7 +35,7 @@ test("tool input and output truncation preserves both ends", () => {
 		" (10 more lines / click)",
 		40,
 	);
-	assert.equal(output, "  ↳ ab…z (10 more lines / click)");
+	assert.equal(output, "   ↳ a…z (10 more lines / click)");
 });
 
 const theme = {
@@ -154,7 +154,7 @@ test("rendererRoute keeps Agent and exclusions native in every mode", () => {
 });
 
 test("compact duration, previews, and summaries stay concise", () => {
-	assert.equal(renderCollapsedToolResult("Done"), "  ↳ Done");
+	assert.equal(renderCollapsedToolResult("Done"), "   ↳ Done");
 	assert.equal(formatExpandHint(100), " (100 more lines / click)");
 	assert.equal(formatExpandHint(1), " (1 more line / click)");
 	const actualLines = Array.from({ length: 100 }, (_, index) => `${index}:${"x".repeat(200)}`);

@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension, {
 	fixedEditorWheelDispatchCount,
 	installToolMouseInteraction,
 } from "../extensions/claude-code-style.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grouping.ts";
+
+initTheme("dark");
 
 test("fixed editor wheel dispatch averages five rows per tick", () => {
 	installToolMouseInteraction({}, false);
@@ -205,6 +210,77 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	await events.get("session_shutdown")?.({}, { mode: "tui", hasUI: true, ui });
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	assert.ok(!renderRequests.includes(true), "shutdown cancels the deferred repaint");
+});
+
+test("tool groups expand from their hint and collapse from any expanded group row", () => {
+	const grouping = installToolGrouping(() => true);
+	grouping.setTheme({
+		fg: (color: string, text: string) => (color === "text" ? `\x1b[37m${text}\x1b[39m` : text),
+	});
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	try {
+		const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
+		const parent = new Container() as any;
+		for (const [name, id] of [
+			["read", "one"],
+			["bash", "two"],
+		] as const) {
+			const component = new ToolExecutionComponent(
+				name,
+				id,
+				{},
+				{},
+				undefined,
+				ui,
+				process.cwd(),
+			) as any;
+			component.updateResult({ content: [{ type: "text", text: "one\ntwo" }], isError: false });
+			parent.addChild(component);
+		}
+		const group = parent.children[0] as any;
+		assert.ok(group instanceof ToolGroupComponent);
+		const tui = {
+			terminal: { columns: 100, write() {} },
+			children: [parent],
+			previousLines: group.render(100),
+			previousViewportTop: 0,
+			requestRender() {},
+		};
+		installToolMouseInteraction(
+			{
+				mode: "tui",
+				hasUI: true,
+				ui: {
+					setWidget(_key: string, factory: any) {
+						factory?.(tui, ui.theme);
+					},
+					onTerminalInput(handler: typeof inputHandler) {
+						inputHandler = handler;
+						return () => undefined;
+					},
+				},
+			},
+			false,
+		);
+		const headerRow = tui.previousLines.findIndex((line: string) =>
+			line.includes("click to show more"),
+		);
+		assert.ok(headerRow >= 0);
+		const hintColumn = tui.previousLines[headerRow].indexOf("click to show more") + 1;
+		inputHandler?.(`\x1b[<32;${hintColumn};${headerRow + 1}M`);
+		assert.match(group.render(100)[headerRow], /\x1b\[37m• click to show more\x1b\[39m/);
+		assert.equal(inputHandler?.(`\x1b[<0;${hintColumn};${headerRow + 1}M`)?.consume, true);
+		assert.equal(group.expanded, true);
+
+		tui.previousLines = group.render(100);
+		const childRow = tui.previousLines.findIndex((line: string) => /[├└]/.test(line));
+		assert.ok(childRow >= 0);
+		assert.equal(inputHandler?.(`\x1b[<0;2;${childRow + 1}M`)?.consume, true);
+		assert.equal(group.expanded, false);
+	} finally {
+		installToolMouseInteraction({}, false);
+		grouping.shutdown();
+	}
 });
 
 test("truncated tool summary remains clickable and highlights on hover", async () => {

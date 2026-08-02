@@ -5,6 +5,8 @@ import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-age
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
+	humanizeMcpToolName,
+	isMcpToolDefinition,
 	preservesOriginalRenderer,
 } from "../extensions/claude-code-style.ts";
 
@@ -63,6 +65,14 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			ui as any,
 			process.cwd(),
 		) as any;
+		assert.match(
+			component
+				.render(100)
+				.join("\n")
+				.replace(/\x1b\[[0-9;]*m/g, ""),
+			/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Bash /,
+			"single tools use the shared Braille loader",
+		);
 		component.updateResult({
 			content: [{ type: "text", text: "first line\nsecond line\nthird line" }],
 			isError: false,
@@ -71,7 +81,7 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		const collapsedLines = component
 			.render(100)
 			.map((line: string) => line.replace(/\x1b\[[0-9;]*m/g, ""));
-		const collapsedCall = collapsedLines.find((line: string) => line.includes("bash("));
+		const collapsedCall = collapsedLines.find((line: string) => line.includes("✓ Bash "));
 		const collapsedOutput = collapsedLines.filter((line: string) => line.includes("↳"));
 		assert.ok(collapsedCall);
 		assert.ok(collapsedOutput.length === 1);
@@ -99,7 +109,7 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 
 		const cardLines = component.render(60);
 		assert.ok(cardLines.some((line: string) => /\x1b\[(?:4[0-8]|10[0-7])/.test(line)));
-		const callLine = cardLines.find((line: string) => line.includes("bash("));
+		const callLine = cardLines.find((line: string) => line.includes("Bash "));
 		assert.ok(callLine);
 		assert.equal(
 			visibleWidth(callLine),
@@ -107,10 +117,127 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			"background card title stays within its full-width row",
 		);
 		const plainCallLine = callLine.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
-		assert.match(plainCallLine, /bash\(.*….*compositor\.ts'\)$/);
+		assert.match(plainCallLine, /✓ Bash .*….*compositor\.ts'$/);
 		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
 		component.setExpanded(false);
 		assert.equal(component.children.includes(component.selfRenderContainer), true);
+
+		const edit = new ToolExecutionComponent(
+			"edit",
+			"inset-edit-marker",
+			{ path: "sample.ts" },
+			{},
+			undefined,
+			ui as any,
+			process.cwd(),
+		) as any;
+		edit.updateResult({
+			content: [],
+			details: { diff: "@@ -1 +1 @@\n-old\n+new" },
+			isError: false,
+		});
+		const editMarker = edit
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.find((line: string) => line.includes("↳"));
+		assert.match(editMarker!, /^   ↳/, "rich diff marker is nested two columns inside the tool");
+	} finally {
+		await events.get("session_shutdown")?.({}, ctx);
+	}
+});
+
+test("MCP detection, titles, details, and custom tools use the global wrapper", async () => {
+	assert.equal(isMcpToolDefinition({ label: "MCP: Files" }, "read_file"), true);
+	assert.equal(isMcpToolDefinition({}, "mcp__filesystem__read_file"), true);
+	assert.equal(isMcpToolDefinition({ description: "Model Context Protocol tool" }, "remote"), true);
+	assert.equal(
+		isMcpToolDefinition({ label: "Ordinary", description: "mentions MCP" }, "remote"),
+		false,
+	);
+	assert.equal(isMcpToolDefinition({ description: "not an MCP tool" }, "remote"), false);
+	assert.equal(humanizeMcpToolName("mcp__filesystem__read_file"), "Filesystem Read File");
+
+	const events = new Map<string, Function>();
+	claudeCodeStyleExtension(
+		{
+			registerCommand() {},
+			registerShortcut() {},
+			on(name: string, handler: Function) {
+				events.set(name, handler);
+			},
+		} as any,
+		{ mode: "on" },
+	);
+	const ui = {
+		theme: { fg: (_color: string, text: string) => text },
+		setStatus() {},
+		requestRender() {},
+	};
+	const ctx = { ui } as any;
+	try {
+		for (const [name, expected] of [
+			["mcp__filesystem__read_file", "Filesystem Read File"],
+			["openai_custom_search", "Openai Custom Search"],
+			["custom_lookup", "Custom Lookup"],
+		] as const) {
+			const component = new ToolExecutionComponent(
+				name,
+				`${name}-id`,
+				{},
+				{},
+				{ name },
+				ui as any,
+				process.cwd(),
+			) as any;
+			const shared = { value: 1n };
+			const details: any = { first: shared, second: shared };
+			details.self = details;
+			component.updateResult({
+				content: [
+					{ type: "text", text: "first block" },
+					{ type: "image", data: "ignored" },
+					{ type: "text", text: "second block" },
+				],
+				details,
+				isError: false,
+			});
+			const collapsed = component.render(100).join("\n");
+			assert.match(collapsed, new RegExp(expected));
+			assert.match(collapsed, /2 lines returned.*click to show more/);
+			component.setExpanded(true);
+			const expanded = component.render(100).join("\n");
+			assert.match(expanded, /first block[\s\S]*second block[\s\S]*Details:/);
+			assert.match(expanded, /1n/);
+			assert.match(expanded, /Circular/);
+		}
+
+		const agentResult = new ToolExecutionComponent(
+			"get_subagent_result",
+			"agent-result-id",
+			{ agent_id: "agent-123" },
+			{},
+			{ name: "get_subagent_result" },
+			ui as any,
+			process.cwd(),
+		) as any;
+		assert.match(agentResult.render(100).join("\n"), /Get Subagent Result agent-123/);
+
+		const duplicate = new ToolExecutionComponent(
+			"custom",
+			"duplicate",
+			{},
+			{},
+			{ name: "custom" },
+			ui as any,
+			process.cwd(),
+		) as any;
+		duplicate.updateResult({
+			content: [{ type: "text", text: "same" }],
+			details: "same",
+			isError: false,
+		});
+		duplicate.setExpanded(true);
+		assert.doesNotMatch(duplicate.render(100).join("\n"), /Details:/);
 	} finally {
 		await events.get("session_shutdown")?.({}, ctx);
 	}

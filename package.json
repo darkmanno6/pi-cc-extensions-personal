@@ -27,13 +27,7 @@
 	],
 	"pi": {
 		"extensions": [
-			"./extensions/pi-aliases.ts",
-			"./extensions/pi-startup-header.ts",
-			"./extensions/claude-code-style.ts",
-			"./extensions/context.ts",
-			"./extensions/session-reference.ts",
-			"./extensions/agent-autocomplete.ts",
-			"./extensions/ask-user-question/index.ts"
+			"./extensions/index.ts"
 		],
 		"themes": [
 			"./themes/github-dark-default.json"
@@ -52,6 +46,7 @@
 	},
 	"dependencies": {
 		"@juicesharp/rpiv-config": "^2.1.0",
+		"@shikijs/cli": "^4.0.2",
 		"typebox": "^1.1.24"
 	},
 	"peerDependencies": {

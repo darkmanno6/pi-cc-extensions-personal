@@ -7,6 +7,10 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 
 import { shouldRenderRichDiff } from "../extensions/claude-code-style.ts";
 import {
+	renderEditDiffResult,
+	renderWriteDiffResult,
+} from "../extensions/tool-diff/diff-renderer.ts";
+import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	installWriteOverride,
 	renderRichToolResult,
@@ -98,6 +102,11 @@ test("diff indicator mode live-updates on the same component via config getter",
 
 	const classicText = output(component, 80).join("\n");
 	assert.match(classicText, /\+.*added line/, "classic mode uses +/- content markers");
+	assert.doesNotMatch(
+		classicText,
+		/• \d+ hunks? • \d+ files?/,
+		"unified headers omit redundant hunk and file counts",
+	);
 
 	display = { ...display, diffIndicatorMode: "bars" };
 	const barsText = output(component, 80).join("\n");
@@ -138,6 +147,54 @@ test("split diff keeps the panel transparent while highlighting changed rows", (
 	const text = output(rendered, 140).join("\n");
 	assert.equal(text.includes(panelBackground), false);
 	assert.match(text, /\x1b\[48;2;/);
+});
+
+test("final edit/write diff output removes terminal command injection", () => {
+	const osc = "\x1b]52;c;OSC_PAYLOAD\x07";
+	const dcs = "\x1bP1;2|DCS_PAYLOAD\x9c";
+	const csi = "\x1b[2J";
+	const edit = renderEditDiffResult(
+		{
+			diff: [
+				`diff --git a/safe.ts b/safe${osc}.ts`,
+				`--- a/safe.ts${dcs}`,
+				"+++ b/safe.ts",
+				`@@ -1 +1 @@${osc}`,
+				`meta${dcs}`,
+				`+1|const safe = 1;${csi}`,
+			].join("\n"),
+		},
+		{ expanded: true, filePath: "safe.ts" },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		"",
+	);
+	const write = renderWriteDiffResult(
+		`const safe = 1;${osc}${dcs}${csi}`,
+		{ expanded: true, filePath: "safe.ts" },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		"",
+	);
+	const editFallback = renderEditDiffResult(
+		{},
+		{ expanded: true },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		`fallback${osc}${dcs}${csi}`,
+	);
+	const writeFallback = renderWriteDiffResult(
+		undefined,
+		{ expanded: true },
+		DEFAULT_TOOL_DISPLAY_CONFIG,
+		theme,
+		`fallback${osc}${dcs}${csi}`,
+	);
+
+	for (const rendered of [edit, write, editFallback, writeFallback]) {
+		const text = output(rendered).join("\n");
+		assert.doesNotMatch(text, /OSC_PAYLOAD|DCS_PAYLOAD|\x1b\[2J|\x1b\]|\x1bP|[\x90\x9c\x9d]/);
+	}
 });
 
 test("write create and overwrite render distinct rich diffs", () => {

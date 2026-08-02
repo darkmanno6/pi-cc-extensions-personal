@@ -30,8 +30,10 @@ import {
 	resolveDiffPresentationMode,
 	type DiffPresentationMode,
 } from "./diff-presentation.ts";
+import { sanitizeToolResultText } from "../tool-result-sanitize.ts";
 import { pluralize, sanitizeAnsiForThemedOutput } from "./render-utils.ts";
 import { splitWriteContentLines } from "./write-display-utils.ts";
+import { MAX_HL_CHARS, shikiHighlightCache } from "./shiki-highlight.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	type DiffIndicatorMode,
@@ -119,9 +121,10 @@ interface DiffRenderOptions {
 	previousContent?: string;
 	fileExistedBeforeWrite?: boolean;
 	headerLabel?: string;
+	invalidate?: () => void;
 }
 
-type CodeLineHighlighter = (line: string) => string;
+type CodeLineHighlighter = (line: string, entry: DiffLineEntry) => string;
 
 const CANONICAL_LINE_PATTERN = /^([+\- ])(\s*\d+)\|(.*)$/;
 const HASHLINE_ANCHOR_LINE_PATTERN = /^([+\- ])(\s*\d+)#([A-Za-z0-9]+| {2}):(.*)$/;
@@ -277,41 +280,75 @@ function resolveLanguageFromPath(rawPath: string | undefined): string | undefine
 	}
 }
 
-const MAX_CODE_HIGHLIGHT_CACHE_ENTRIES = 2048;
+function resolveShikiTheme(theme: DiffTheme): string {
+	if (process.env.DIFF_THEME) return process.env.DIFF_THEME;
+	const background =
+		parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolSuccessBg")) ??
+		parseAnsiColorCode(readThemeAnsi(theme, "bg", "toolPendingBg")) ??
+		parseAnsiColorCode(readThemeAnsi(theme, "bg", "userMessageBg"));
+	if (!background) return "github-dark";
+	const luminance = (background.r * 299 + background.g * 587 + background.b * 114) / 1000;
+	return luminance >= 128 ? "github-light" : "github-dark";
+}
 
-function createCodeLineHighlighter(language: string | undefined): CodeLineHighlighter {
-	if (!language) {
-		return (line) => sanitizeAnsiForThemedOutput(line);
-	}
+function cleanCodeLine(line: string): string {
+	return sanitizeToolResultText(line).replace(/\n/g, "");
+}
 
-	// Insertion-order Map used as a small LRU so large diffs cannot retain every unique line.
-	const cache = new Map<string, string>();
-	const remember = (line: string, value: string): string => {
-		if (cache.has(line)) cache.delete(line);
-		cache.set(line, value);
-		if (cache.size > MAX_CODE_HIGHLIGHT_CACHE_ENTRIES) {
-			const oldest = cache.keys().next().value;
-			if (oldest !== undefined) cache.delete(oldest);
+export function shouldHighlightCodeBlock(code: string): boolean {
+	return code.length <= MAX_HL_CHARS;
+}
+
+function createCodeLineHighlighter(
+	language: string | undefined,
+	theme: DiffTheme,
+	entries: readonly ParsedDiffEntry[],
+	invalidate?: () => void,
+): CodeLineHighlighter {
+	const codeEntries = entries.filter((entry): entry is DiffLineEntry => entry.kind === "line");
+	const cleanLines = codeEntries.map((entry) =>
+		cleanCodeLine(normalizeCodeWhitespace(entry.content)),
+	);
+	const code = cleanLines.join("\n");
+	const shouldHighlight = !!language && shouldHighlightCodeBlock(code);
+	const fallbackLines = shouldHighlight
+		? (() => {
+				try {
+					return highlightCode(code, language).map(sanitizeAnsiForThemedOutput);
+				} catch {
+					return cleanLines.map(sanitizeAnsiForThemedOutput);
+				}
+			})()
+		: cleanLines.map(sanitizeAnsiForThemedOutput);
+	const fallbackByEntry = new WeakMap(
+		codeEntries.map((entry, index) => [entry, fallbackLines[index] ?? cleanLines[index] ?? ""]),
+	);
+	if (!shouldHighlight) return (_line, entry) => fallbackByEntry.get(entry) ?? "";
+
+	const shikiTheme = resolveShikiTheme(theme);
+	let highlightedByEntry: WeakMap<DiffLineEntry, string> | undefined;
+	const resolveHighlighted = () => {
+		if (highlightedByEntry) return;
+		const highlighted = shikiHighlightCache.get(
+			code,
+			language,
+			shikiTheme,
+			fallbackLines,
+			invalidate,
+		);
+		if (highlighted) {
+			highlightedByEntry = new WeakMap(
+				codeEntries.map((entry, index) => [
+					entry,
+					sanitizeAnsiForThemedOutput(highlighted[index] ?? fallbackByEntry.get(entry) ?? ""),
+				]),
+			);
 		}
-		return value;
 	};
-	return (line) => {
-		if (!line) {
-			return line;
-		}
-		const cached = cache.get(line);
-		if (cached !== undefined) {
-			// Refresh recency for LRU.
-			cache.delete(line);
-			cache.set(line, cached);
-			return cached;
-		}
-		try {
-			const highlighted = highlightCode(line, language)[0] ?? line;
-			return remember(line, sanitizeAnsiForThemedOutput(highlighted));
-		} catch {
-			return remember(line, sanitizeAnsiForThemedOutput(line));
-		}
+	resolveHighlighted();
+	return (_line, entry) => {
+		resolveHighlighted();
+		return highlightedByEntry?.get(entry) ?? fallbackByEntry.get(entry) ?? "";
 	};
 }
 
@@ -1104,6 +1141,10 @@ function parseAnsiColorCode(ansi: string | undefined): RgbColor | null {
 		}
 	}
 
+	const basicMatch = /\x1b\[(?:3|4)([0-7])m/.exec(ansi);
+	if (basicMatch) return ansi256ToRgb(Number(basicMatch[1]));
+	const brightMatch = /\x1b\[(?:9|10)([0-7])m/.exec(ansi);
+	if (brightMatch) return ansi256ToRgb(Number(brightMatch[1]) + 8);
 	return null;
 }
 
@@ -1696,7 +1737,7 @@ function highlightDiffLine(
 	highlightLine: CodeLineHighlighter,
 	containerBgAnsi: string | undefined,
 ): { highlighted: string; rowBg: string | undefined } {
-	const syntaxHighlighted = highlightLine(codeText);
+	const syntaxHighlighted = highlightLine(codeText, entry);
 	const rowBg = getLineBackground(entry.lineKind, palette, false);
 	const emphasisBg = getLineBackground(entry.lineKind, palette, true);
 	const inlineSpans = inlineHighlights.get(entry) ?? [];
@@ -2133,15 +2174,7 @@ function renderHeaderRows(
 		return [{ text: stabilizeBackgroundResets(truncateToWidth(summary, width)), hunkIndex: null }];
 	}
 
-	const summaryPieces =
-		mode === "split"
-			? [...buildDiffSummaryBasePieces(stats, theme), theme.fg("muted", mode)]
-			: [
-					...buildDiffSummaryBasePieces(stats, theme),
-					theme.fg("muted", `${stats.hunks} ${pluralize(stats.hunks, "hunk")}`),
-					theme.fg("muted", `${stats.files} ${pluralize(stats.files, "file")}`),
-					theme.fg("muted", mode),
-				];
+	const summaryPieces = [...buildDiffSummaryBasePieces(stats, theme), theme.fg("muted", mode)];
 
 	const summary = summaryPieces.join(mode === "split" ? " " : theme.fg("muted", " • "));
 	const meter = renderDiffStatBar(stats, width, theme);
@@ -2421,12 +2454,13 @@ export function renderEditDiffResult(
 	theme: DiffTheme,
 	fallbackText: string,
 ): Component {
-	const diffText = safeGetDiff(details);
+	const diffText = sanitizeToolResultText(safeGetDiff(details));
+	const safeFallbackText = sanitizeToolResultText(fallbackText);
 	if (!diffText.trim()) {
-		if (!fallbackText.trim()) {
+		if (!safeFallbackText.trim()) {
 			return new Text(theme.fg("muted", "↳ edit completed (no diff payload)"), 0, 0);
 		}
-		return new Text(theme.fg("toolOutput", fallbackText), 0, 0);
+		return new Text(theme.fg("toolOutput", safeFallbackText), 0, 0);
 	}
 
 	let parsed: ParsedDiff;
@@ -2451,9 +2485,11 @@ export function renderEditDiffResult(
 	// separator cannot leak toolSuccessBg across the entire new column.
 	const containerBgAnsi = undefined;
 	const language = resolveLanguageFromPath(options.filePath);
-	const highlightLine = createCodeLineHighlighter(language);
-
 	const cache = createDiffRenderCache();
+	const highlightLine = createCodeLineHighlighter(language, theme, parsed.entries, () => {
+		cache.invalidate();
+		options.invalidate?.();
+	});
 
 	return {
 		render(width: number): string[] {
@@ -2795,18 +2831,19 @@ export function renderWriteDiffResult(
 	theme: DiffTheme,
 	fallbackText: string,
 ): Component {
+	const safeFallbackText = sanitizeToolResultText(fallbackText);
 	if (typeof content !== "string") {
-		if (!fallbackText.trim()) {
+		if (!safeFallbackText.trim()) {
 			return new Text(theme.fg("muted", "↳ write completed"), 0, 0);
 		}
-		return new Text(theme.fg("toolOutput", fallbackText), 0, 0);
+		return new Text(theme.fg("toolOutput", safeFallbackText), 0, 0);
 	}
 
 	const filePath = options.filePath?.trim() || "(unknown path)";
-	const lines = splitWriteContentLines(content);
+	const lines = splitWriteContentLines(sanitizeToolResultText(content));
 	const previousLines =
 		typeof options.previousContent === "string"
-			? splitWriteContentLines(options.previousContent)
+			? splitWriteContentLines(sanitizeToolResultText(options.previousContent))
 			: [];
 	const hasComparablePrevious =
 		options.fileExistedBeforeWrite === true && typeof options.previousContent === "string";
@@ -2819,10 +2856,9 @@ export function renderWriteDiffResult(
 	// Keep the panel transparent; changed rows and inline spans retain their own highlights.
 	const containerBgAnsi = undefined;
 	const language = resolveLanguageFromPath(filePath);
-	const highlightLine = createCodeLineHighlighter(language);
-
-	let detailedData: WriteDiffData | undefined;
 	const cache = createDiffRenderCache();
+	let highlightLine: CodeLineHighlighter | undefined;
+	let detailedData: WriteDiffData | undefined;
 
 	function getDetailedData(): WriteDiffData {
 		if (detailedData) {
@@ -2832,6 +2868,10 @@ export function renderWriteDiffResult(
 			? buildWriteOverwriteEntries(previousLines, lines)
 			: buildWriteEntries(lines);
 		detailedData = buildWriteDiffData(entries);
+		highlightLine = createCodeLineHighlighter(language, theme, entries, () => {
+			cache.invalidate();
+			options.invalidate?.();
+		});
 		return detailedData;
 	}
 
@@ -2921,7 +2961,7 @@ export function renderWriteDiffResult(
 				theme,
 				inlineHighlights,
 				palette,
-				highlightLine,
+				highlightLine: highlightLine!,
 				containerBgAnsi,
 				wordWrap,
 				indicatorMode,

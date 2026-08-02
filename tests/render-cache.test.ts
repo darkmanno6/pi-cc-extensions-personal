@@ -53,8 +53,10 @@ test("formatToolInputArgs pretty-prints object fields and multiline values", () 
 });
 
 test("ExpandedToolIoView labels Input and Output sections", () => {
+	const styled: Array<[string, string]> = [];
 	const theme = {
-		fg(_color: string, text: string) {
+		fg(color: string, text: string) {
+			styled.push([color, text]);
 			return text;
 		},
 		bold(text: string) {
@@ -63,11 +65,19 @@ test("ExpandedToolIoView labels Input and Output sections", () => {
 	};
 	const view = new ExpandedToolIoView(theme, "path: src/a.ts", "line one\nline two", false, 4000);
 	const lines = view.render(60).map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
-	assert.ok(lines.some((line) => /┌ Input/.test(line)));
-	assert.ok(lines.some((line) => /└ Output/.test(line)));
+	assert.ok(lines.some((line) => /^ ├ Input/.test(line)));
+	assert.ok(lines.some((line) => /^ └ Output/.test(line)));
 	assert.ok(lines.some((line) => line.includes("path: src/a.ts")));
+	assert.ok(styled.some(([color, text]) => color === "muted" && text === "src/a.ts"));
+	assert.ok(!styled.some(([color, text]) => color === "text" && text === "src/a.ts"));
 	assert.ok(lines.some((line) => line.includes("line one")));
 	assert.ok(lines.some((line) => line.includes("line two")));
+	assert.ok(
+		lines
+			.filter((line) => line.includes("line one") || line.includes("line two"))
+			.every((line) => !line.includes("│")),
+		"output body stops the inner tree rail",
+	);
 	// Tree rail between sections.
 	assert.ok(lines.some((line) => line.trim() === "│"));
 	// Short bodies stay fully visible — no show-more affordance.
@@ -90,10 +100,10 @@ test("ExpandedToolIoView wraps Input/Output at 80% of the viewport", () => {
 			return text;
 		},
 	};
-	const body = "x".repeat(77);
+	const body = "x".repeat(79);
 	const view = new ExpandedToolIoView(theme, `command: ${body}`, body, false, 1, 1);
 	const lines = view.render(100);
-	assert.ok(lines.filter((line) => line.includes("│")).every((line) => visibleWidth(line) <= 80));
+	assert.ok(lines.every((line) => visibleWidth(line) <= 80));
 	assert.ok(lines.find((line) => line.includes("Input"))?.includes("[show more]"));
 	assert.ok(lines.find((line) => line.includes("Output"))?.includes("[show more]"));
 });

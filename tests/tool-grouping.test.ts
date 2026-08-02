@@ -29,18 +29,19 @@ test("mixed tools group across three empty separators while edit/write and conte
 		parent.addChild(bash);
 		parent.addChild(grep);
 		assert.ok(parent.children[0] instanceof ToolGroupComponent);
-		const collapsed = parent.children[0]
-			.render(100)
+		const renderedGroup = parent.children[0].render(100);
+		assert.notEqual(renderedGroup.at(-1)?.trim(), "", "group does not add a trailing blank row");
+		const collapsed = renderedGroup
 			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
 			.filter((line: string) => line.trim());
 		assert.match(
 			collapsed[0],
-			/^ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Multiple Tools: 3 running .*read, bash, grep.*click to show more/,
+			/^ ● Multiple Tools: 3 running .*read, bash, grep.*click to show more/,
 		);
 		assert.equal(collapsed.filter((line: string) => line.trim()).length, 4);
-		assert.match(collapsed[1], /^ ├ ● Read /);
-		assert.match(collapsed[2], /^ ├ ● Bash /);
-		assert.match(collapsed[3], /^ └ ● Grep /);
+		assert.match(collapsed[1], /^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Read /);
+		assert.match(collapsed[2], /^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Bash /);
+		assert.match(collapsed[3], /^ └ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Grep /);
 		bash.updateResult({ content: [], isError: false });
 		grep.updateResult({ content: [], isError: true });
 		assert.match(
@@ -75,6 +76,60 @@ test("mixed tools group across three empty separators while edit/write and conte
 	}
 });
 
+test("expanded native cards align nested trees through interleaved ANSI padding", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const read = tool("read", "read");
+		const bash = tool("bash", "bash");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		hooks.setTheme({
+			fg: (_color: string, text: string) => text,
+			bg: (_color: string, text: string) => `\x1b[48;2;10;20;30m${text}\x1b[49m`,
+			getBgAnsi: () => "\x1b[48;2;10;20;30m",
+		});
+		group.setExpanded(true);
+		read.render = (width: number) => {
+			assert.equal(width, 98, "native card uses the full padded panel width");
+			return [
+				"\x1b[48;2;20;20;20m  ✓ Read sample.ts\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m ├ Input\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m │ path: sample.ts\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m └ Output\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m   ok\x1b[0m",
+			];
+		};
+		const rendered = group.render(100);
+		const stripAnsi = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const inputLine = rendered.find((line: string) => stripAnsi(line).includes("Input")) ?? "";
+		const backgroundIndex = inputLine.indexOf("\x1b[48;");
+		assert.equal(backgroundIndex, 0, "expanded panel background covers the full row");
+		assert.match(
+			stripAnsi(rendered[2]),
+			/^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Read/,
+			"panel starts directly with the loading tool",
+		);
+		assert.equal(
+			stripAnsi(rendered.at(-1) ?? "").length,
+			100,
+			"bottom padding covers the full width",
+		);
+		const expanded = rendered.map(stripAnsi).join("\n");
+		assert.match(
+			expanded,
+			/^ ├ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Read sample\.ts\s*$/m,
+			"expanded branch matches collapsed position",
+		);
+		assert.match(expanded, /^ │ ├ Input\s*$/m, "nested tree aligns with the status dot");
+		assert.match(expanded, /^ │ │ path: sample\.ts\s*$/m);
+		assert.match(expanded, /^ │   ok\s*$/m, "output content retains its relative indent");
+	} finally {
+		hooks.shutdown();
+	}
+});
+
 test("external task, skill, and plan tools keep reference summaries in groups", () => {
 	const hooks = installToolGrouping(() => true);
 	try {
@@ -102,10 +157,10 @@ test("external task, skill, and plan tools keep reference summaries in groups", 
 			.filter((line: string) => line.trim());
 		assert.match(
 			agentLines[0],
-			/^ ✓ Multiple Tools: 2 done • Agent, get_subagent_result • click to show more$/,
+			/^ ● Multiple Tools: 2 done • Agent, get_subagent_result • click to show more$/,
 		);
-		assert.equal(agentLines[1], " ├ ● Agent 再次测试 tool 调用");
-		assert.equal(agentLines[2], " └ ● Get Subagent Result 6a559462-95d0-40b");
+		assert.equal(agentLines[1], " ├ ✓ Agent 再次测试 tool 调用");
+		assert.equal(agentLines[2], " └ ✓ Get Subagent Result 6a559462-95d0-40b");
 	} finally {
 		hooks.shutdown();
 	}
@@ -123,8 +178,8 @@ test("group status and tool labels use the injected active theme", () => {
 		parent.addChild(read);
 		parent.addChild(bash);
 		const rendered = parent.children[0].render(200).join("\n");
-		assert.match(rendered, /<success>✓<\/success>/, "group header uses the settled icon");
-		assert.match(rendered, /<dim>[├└]<\/dim> <success>●<\/success>/, "outer child nodes stay dots");
+		assert.match(rendered, /<success>●<\/success>/, "group header stays a status dot");
+		assert.match(rendered, /<dim>[├└]<\/dim> <success>✓<\/success>/, "children use checks");
 		assert.match(rendered, /<success>2<\/success> done/);
 		assert.match(rendered, /<toolTitle>Read /);
 		assert.match(rendered, /<toolTitle>Bash /);
@@ -132,7 +187,7 @@ test("group status and tool labels use the injected active theme", () => {
 		const group = parent.children[0] as ToolGroupComponent;
 		group.setExpanded(true);
 		const expanded = group.render(200).join("\n");
-		assert.equal(expanded.match(/✓/g)?.length, 1, "expanded children remove their inner checks");
+		assert.equal(expanded.match(/✓/g)?.length, 2, "expanded children keep one check each");
 	} finally {
 		hooks.shutdown();
 	}

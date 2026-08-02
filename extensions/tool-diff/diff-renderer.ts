@@ -121,6 +121,8 @@ interface DiffRenderOptions {
 	previousContent?: string;
 	fileExistedBeforeWrite?: boolean;
 	headerLabel?: string;
+	/** Live hover state for the collapsed hint row (muted → text on hover). */
+	isHovered?: () => boolean;
 	invalidate?: () => void;
 }
 
@@ -2289,6 +2291,7 @@ function applyLineLimit(
 	 * remainder so the collapse hint still reflects total hidden content.
 	 */
 	unprocessedLogicalRows = 0,
+	hovered = false,
 ): string[] {
 	const limit = resolveDiffDisplayLimit(expanded, maxCollapsedLines, maxExpandedLines);
 	const safeUnprocessed = Math.max(0, unprocessedLogicalRows);
@@ -2319,7 +2322,10 @@ function applyLineLimit(
 	return [
 		...shown.map((row) => clampDiffLineToWidth(row.text, width)),
 		renderDiffSpacerLine(width),
-		clampDiffLineToWidth(theme.fg(expanded ? "warning" : "muted", hintText), width),
+		clampDiffLineToWidth(
+			theme.fg(expanded ? "warning" : hovered ? "text" : "muted", hintText),
+			width,
+		),
 	];
 }
 
@@ -2403,6 +2409,7 @@ function createDiffRenderCache() {
 	let cachedExpanded: boolean | undefined;
 	let cachedMode: DiffPresentationMode | undefined;
 	let cachedConfigKey: string | undefined;
+	let cachedHovered: boolean | undefined;
 	let cachedLines: string[] | undefined;
 
 	return {
@@ -2411,13 +2418,15 @@ function createDiffRenderCache() {
 			expanded: boolean,
 			mode: DiffPresentationMode,
 			configKey: string,
+			hovered: boolean,
 		): string[] | undefined {
 			if (
 				cachedLines &&
 				cachedWidth === width &&
 				cachedExpanded === expanded &&
 				cachedMode === mode &&
-				cachedConfigKey === configKey
+				cachedConfigKey === configKey &&
+				cachedHovered === hovered
 			) {
 				return cachedLines;
 			}
@@ -2428,12 +2437,14 @@ function createDiffRenderCache() {
 			expanded: boolean,
 			mode: DiffPresentationMode,
 			configKey: string,
+			hovered: boolean,
 			lines: string[],
 		): string[] {
 			cachedWidth = width;
 			cachedExpanded = expanded;
 			cachedMode = mode;
 			cachedConfigKey = configKey;
+			cachedHovered = hovered;
 			cachedLines = lines;
 			return lines;
 		},
@@ -2442,6 +2453,7 @@ function createDiffRenderCache() {
 			cachedExpanded = undefined;
 			cachedMode = undefined;
 			cachedConfigKey = undefined;
+			cachedHovered = undefined;
 			cachedLines = undefined;
 		},
 	};
@@ -2500,7 +2512,8 @@ export function renderEditDiffResult(
 			const configKey = displayConfigCacheKey(live);
 			const safeWidth = normalizeDiffRenderWidth(width);
 			const mode = resolveDiffPresentationMode(live, safeWidth, canRenderSplitLayout(safeWidth));
-			const cached = cache.get(safeWidth, options.expanded, mode, configKey);
+			const hovered = options.isHovered?.() ?? false;
+			const cached = cache.get(safeWidth, options.expanded, mode, configKey, hovered);
 			if (cached) {
 				return cached;
 			}
@@ -2511,6 +2524,7 @@ export function renderEditDiffResult(
 					options.expanded,
 					mode,
 					configKey,
+					hovered,
 					clampDiffLinesToWidth(
 						renderSingleDiffRow(
 							buildDiffSummaryText(parsed.stats, safeWidth),
@@ -2565,6 +2579,7 @@ export function renderEditDiffResult(
 				parsed.stats.hunks,
 				theme,
 				unprocessedLogicalRows,
+				hovered,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
@@ -2573,7 +2588,7 @@ export function renderEditDiffResult(
 					: [...headerRows.map((row) => row.text), ...bodyWithLimit];
 
 			const clampedLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, configKey, clampedLines);
+			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, clampedLines);
 		},
 		invalidate: cache.invalidate,
 	};
@@ -2893,7 +2908,8 @@ export function renderWriteDiffResult(
 				: resolvedMode === "split"
 					? "unified"
 					: resolvedMode;
-			const cached = cache.get(safeWidth, options.expanded, mode, configKey);
+			const hovered = options.isHovered?.() ?? false;
+			const cached = cache.get(safeWidth, options.expanded, mode, configKey, hovered);
 			if (cached) {
 				return cached;
 			}
@@ -2914,6 +2930,7 @@ export function renderWriteDiffResult(
 					options.expanded,
 					mode,
 					configKey,
+					hovered,
 					clampDiffLinesToWidth(
 						[header, ...renderWriteOverwriteGuardRows(overwriteGuard, safeWidth, theme)],
 						safeWidth,
@@ -2939,6 +2956,7 @@ export function renderWriteDiffResult(
 					options.expanded,
 					mode,
 					configKey,
+					hovered,
 					clampDiffLinesToWidth(summaryRows, safeWidth),
 				);
 			}
@@ -2989,12 +3007,13 @@ export function renderWriteDiffResult(
 				data.hunkCount,
 				theme,
 				unprocessedLogicalRows,
+				hovered,
 			);
 			const frame = renderDiffFrameLine(safeWidth, theme);
 			const renderedLines =
 				mode === "unified" ? [header, frame, ...bodyWithLimit, frame] : [header, ...bodyWithLimit];
 			const finalLines = clampDiffLinesToWidth(renderedLines, safeWidth);
-			return cache.set(safeWidth, options.expanded, mode, configKey, finalLines);
+			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, finalLines);
 		},
 		invalidate: cache.invalidate,
 	};

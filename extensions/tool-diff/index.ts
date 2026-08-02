@@ -47,7 +47,12 @@ export function renderRichToolResult(
 	if (toolName === "edit") {
 		return renderEditDiffResult(
 			result?.details,
-			{ expanded, filePath, invalidate: () => context?.invalidate?.() },
+			{
+				expanded,
+				filePath,
+				isHovered: options?.isHovered,
+				invalidate: () => context?.invalidate?.(),
+			},
 			displayConfig,
 			theme,
 			resultText(result),
@@ -69,6 +74,7 @@ export function renderRichToolResult(
 			filePath,
 			previousContent: metadata.previousContent,
 			fileExistedBeforeWrite: metadata.fileExistedBeforeWrite,
+			isHovered: options?.isHovered,
 			invalidate: () => context?.invalidate?.(),
 		},
 		displayConfig,

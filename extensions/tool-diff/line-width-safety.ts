@@ -71,7 +71,7 @@ export function buildCollapsedDiffHintText(
 				: undefined;
 
 		const candidates = [
-			`… (${[remainingText, hiddenHunksText, "Ctrl+O to expand"].filter(Boolean).join(" • ")})`,
+			`… (${[remainingText, hiddenHunksText, "click to show more"].filter(Boolean).join(" • ")})`,
 			`… (${[remainingText, hiddenHunksText].filter(Boolean).join(" • ")})`,
 			`… (${[shortRemainingText, shortHiddenHunksText].filter(Boolean).join(" • ")})`,
 			options.hiddenHunks > 0

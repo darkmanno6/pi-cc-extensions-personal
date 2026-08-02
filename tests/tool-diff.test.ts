@@ -77,6 +77,53 @@ test("edit rich diff is width-safe and honors collapsed/expanded limits", () => 
 	assert.ok(output(expanded, 32).length > collapsedLines.length);
 });
 
+test("edit/write collapsed diff hints switch from muted to white text on hover", () => {
+	let hovered = false;
+	const hoverTheme = {
+		...theme,
+		fg(color: string, text: string) {
+			const code = color === "muted" ? "\x1b[90m" : color === "text" ? "\x1b[97m" : "\x1b[37m";
+			return `${code}${text}\x1b[39m`;
+		},
+	};
+	const diff = [
+		"@@ -1,40 +1,40 @@",
+		...Array.from({ length: 40 }, (_, index) => ` ${index + 1}|const value${index} = ${index}`),
+		"-41|const oldValue = 1",
+		"+41|const oldValue = 2",
+	].join("\n");
+	const component = renderEditDiffResult(
+		{ diff },
+		{ expanded: false, filePath: "sample.ts", isHovered: () => hovered },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2 },
+		hoverTheme,
+		"",
+	);
+	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
+	assert.match(hint(), /\x1b\[90m/, "resting edit hint uses muted color");
+	hovered = true;
+	assert.match(hint(), /\x1b\[97m/, "hovered edit hint uses white text color");
+
+	hovered = false;
+	const writeComponent = renderWriteDiffResult(
+		Array.from({ length: 40 }, (_, index) => `const value${index} = ${index}`).join("\n"),
+		{
+			expanded: false,
+			filePath: "sample.ts",
+			fileExistedBeforeWrite: false,
+			isHovered: () => hovered,
+		},
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2 },
+		hoverTheme,
+		"",
+	);
+	const writeHint = () =>
+		output(writeComponent).find((line) => line.includes("click to show more")) ?? "";
+	assert.match(writeHint(), /\x1b\[90m/, "resting write hint uses muted color");
+	hovered = true;
+	assert.match(writeHint(), /\x1b\[97m/, "hovered write hint uses white text color");
+});
+
 test("diff indicator mode live-updates on the same component via config getter", () => {
 	// Panel changes must repaint existing tool rows without re-running the tool.
 	let display: ToolDisplayConfig = {

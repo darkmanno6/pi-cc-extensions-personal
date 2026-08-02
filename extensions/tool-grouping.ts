@@ -1,5 +1,5 @@
 import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, truncateToWidth } from "@earendil-works/pi-tui";
+import { Container, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "./tool-loading-icon.ts";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 
@@ -92,6 +92,42 @@ function stripLeadingStatusIcon(line: string): string {
 		/^((?:\x1b\[[0-9;]*m|[ \t]|[├└│─])*)(?:\x1b\[[0-9;]*m)*(?:[✓✗●○■⬤•·])(?:\x1b\[[0-9;]*m)*\s+/,
 		"$1",
 	);
+}
+
+function stripBackgroundAnsi(line: string): string {
+	return line.replace(/\x1b\[(?:4[0-9]|10[0-7]|48(?:(?:;|:)[0-9]+)+|49)m/g, "");
+}
+
+function stripLeadingSpaces(line: string, count: number): string {
+	let offset = 0;
+	let removed = 0;
+	let ansi = "";
+	while (offset < line.length) {
+		const control = line.slice(offset).match(/^\x1b\[[0-?]*[ -/]*[@-~]/)?.[0];
+		if (control) {
+			ansi += control;
+			offset += control.length;
+			continue;
+		}
+		if (removed < count && line[offset] === " ") {
+			removed++;
+			offset++;
+			continue;
+		}
+		break;
+	}
+	return ansi + line.slice(offset);
+}
+
+function paddedBackgroundRow(theme: any, slot: string, content: string, width: number): string {
+	const innerWidth = Math.max(0, width - 2);
+	const clipped = truncateToWidth(stripBackgroundAnsi(content), innerWidth, "");
+	const row = ` ${clipped}${" ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)))} `;
+	if (typeof theme?.bg !== "function") return row;
+	const bgAnsi =
+		theme.getBgAnsi?.(slot) ?? theme.bg(slot, "").match(/^\x1b\[[0-?]*[ -/]*[@-~]/)?.[0] ?? "";
+	const stable = bgAnsi ? row.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi) : row;
+	return theme.bg(slot, stable);
 }
 
 function oneLine(value: unknown, max = 96): string {
@@ -275,12 +311,13 @@ export class ToolGroupComponent extends Container {
 		const lines = [
 			"",
 			truncateToWidth(
-				` ${fg(overallColor, statusIcon(overall))} ${label}: ${countText}${nameList} ${hint}`,
+				` ${fg(overallColor, "●")} ${label}: ${countText}${nameList} ${hint}`,
 				width,
 				"…",
 			),
 		];
 		const total = this.children.length;
+		const expandedLines: string[] = [];
 		for (let index = 0; index < total; index++) {
 			const tool = this.children[index];
 			const toolStatus = status(tool);
@@ -291,14 +328,14 @@ export class ToolGroupComponent extends Container {
 				const summary = toolSummary(tool);
 				lines.push(
 					truncateToWidth(
-						` ${fg("dim", branch)} ${fg(color, "●")} ${fg("toolTitle", summary.main)}${fg("dim", summary.detail)}`,
+						` ${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} ${fg("toolTitle", summary.main)}${fg("dim", summary.detail)}`,
 						width,
 						"…",
 					),
 				);
 				continue;
 			}
-			const rendered = visibleLines(tool.render(Math.max(1, width - 5)));
+			const rendered = visibleLines(tool.render(Math.max(1, width - 2)));
 			if (rendered.length) {
 				rendered[0] = stripLeadingStatusIcon(rendered[0])
 					.replace(/^ +/, "")
@@ -306,14 +343,27 @@ export class ToolGroupComponent extends Container {
 			}
 			const childLines = rendered.length ? rendered : [toolSummary(tool).main];
 			for (let lineIndex = 0; lineIndex < childLines.length; lineIndex++) {
+				const content =
+					lineIndex === 0 ? childLines[lineIndex] : stripLeadingSpaces(childLines[lineIndex], 2);
 				const prefix =
 					lineIndex === 0
-						? ` ${fg("dim", branch)} ${fg(color, "●")} `
-						: ` ${fg("dim", continuation)}  `;
-				lines.push(truncateToWidth(prefix + childLines[lineIndex], width, ""));
+						? `${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `
+						: fg("dim", continuation);
+				expandedLines.push(prefix + content);
 			}
 		}
-		lines.push("");
+		if (this.expanded) {
+			const backgroundSlot =
+				overall === "error"
+					? "toolErrorBg"
+					: overall === "pending"
+						? "toolPendingBg"
+						: "toolSuccessBg";
+			for (const line of expandedLines) {
+				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
+			}
+			lines.push(paddedBackgroundRow(theme, backgroundSlot, "", width));
+		}
 		return lines;
 	}
 }

@@ -273,9 +273,9 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		assert.equal(group.expanded, true);
 
 		tui.previousLines = group.render(100);
-		const childRow = tui.previousLines.findIndex((line: string) => /[├└]/.test(line));
-		assert.ok(childRow >= 0);
-		assert.equal(inputHandler?.(`\x1b[<0;2;${childRow + 1}M`)?.consume, true);
+		const bottomPaddingRow = tui.previousLines.length - 1;
+		assert.equal(tui.previousLines[bottomPaddingRow].trim(), "");
+		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, false);
 	} finally {
 		installToolMouseInteraction({}, false);
@@ -348,6 +348,58 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 	assert.equal(tool.expanded, true);
 
 	installToolMouseInteraction({}, false);
+});
+
+test("parenthesized rich diff hint highlights and expands on click", async () => {
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	let renderRequests = 0;
+	const tool = {
+		toolCallId: "edit-diff",
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			return ["✓ Edit sample.ts", " … (29 more diff lines • click to show more)"];
+		},
+	};
+	const tui = {
+		terminal: { columns: 80, write() {} },
+		children: [tool],
+		previousLines: tool.render(),
+		previousViewportTop: 0,
+		handleInput() {},
+		requestRender() {
+			renderRequests++;
+		},
+	};
+	installToolMouseInteraction(
+		{
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function")
+						factory(tui, { fg: (_color: string, text: string) => text });
+				},
+				onTerminalInput(handler: typeof inputHandler) {
+					inputHandler = handler;
+					return () => undefined;
+				},
+			},
+		},
+		false,
+	);
+	try {
+		inputHandler?.("\x1b[<35;35;2M");
+		await new Promise<void>((resolve) => process.nextTick(resolve));
+		assert.equal(renderRequests, 1, "hover requests a repaint for white hint text");
+		assert.deepEqual(inputHandler?.("\x1b[<0;35;2M"), { consume: true });
+		assert.equal(tool.expanded, true);
+	} finally {
+		installToolMouseInteraction({}, false);
+	}
 });
 
 test("expanded native card collapses on click and preserves the viewport", async () => {

@@ -1017,7 +1017,7 @@ function fixedEditorContextScore(
 }
 
 /** Summary markers used by Pi and ccstyle; unlike the trailing hint, these survive truncation. */
-const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿|●|✓|✗)/;
+const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿|●|✓|✗|…)/;
 /** fixedEditorContextScore max ≈ 100 + 2*(5+4+3+2); stop once we hit a near-perfect match. */
 const TOOL_CLICK_EARLY_EXIT_SCORE = 120;
 
@@ -1511,7 +1511,8 @@ function visibleMouseLine(tui: any, packet: SgrMousePacket): string {
 }
 
 function isCollapsedHintAtColumn(line: string, col: number): boolean {
-	const match = /(\([^()\n]* \/ click\)|click to show more)\s*$/.exec(line);
+	// Rich diff hints place "click to show more" inside a trailing parenthesis.
+	const match = /(\([^()\n]* \/ click\)|click to show more)(?=\)?\s*$)/.exec(line);
 	if (!match?.[1] || col <= 0) return false;
 	const start = visibleWidth(line.slice(0, match.index)) + 1;
 	return col >= start && col < start + visibleWidth(match[1]);
@@ -2575,19 +2576,25 @@ function createCcstyleTool(
 			}
 
 			if (options?.isPartial) {
-				return new Text(theme.fg("muted", "   ⎿ Pending…"), 0, 0);
+				return new Text(theme.fg("muted", "   ↳ Pending…"), 0, 0);
 			}
 
 			const isError = options?.isError || context?.isError;
 			setToolVisualState(context, isError ? "error" : "success");
 			const expanded = isToolExpanded(options, context);
+			const toolCallId = context?.toolCallId;
 			if (shouldRenderRichDiff(config.mode, toolName, Boolean(isError))) {
 				// Pass getter so Diff indicator / wrap / limits update on the next paint
 				// without recreating the tool result component.
 				const richResult = renderRichToolResult(
 					toolName,
 					result,
-					{ ...options, expanded },
+					{
+						...options,
+						expanded,
+						// Live hover state for the collapsed hint row (muted → text on hover).
+						isHovered: () => !!toolCallId && toolCallId === hoveredToolCallId,
+					},
 					theme,
 					context,
 					writeExecutionMetadata,
@@ -2629,7 +2636,6 @@ function createCcstyleTool(
 				);
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
-			const toolCallId = context?.toolCallId;
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
 			let cachedHoveredLine: string | undefined;

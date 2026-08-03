@@ -1,12 +1,20 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import * as piCodingAgent from "@earendil-works/pi-coding-agent";
+import * as piTui from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { createJiti } from "jiti";
 
 type LifecycleHandler = (event: any, ctx: any) => void;
 type FixedEditorExtension = (pi: ExtensionAPI) => void;
 
-// The npm package publishes TypeScript source only, so use Pi's own TS loader.
-const jiti = createJiti(import.meta.url);
+// Upstream publishes TS only. Nested jiti must reuse Pi's live modules — peer
+// deps are not resolvable from ~/.pi/agent/npm/node_modules/pi-cc-extensions.
+const jiti = createJiti(import.meta.url, {
+	virtualModules: {
+		"@earendil-works/pi-coding-agent": piCodingAgent,
+		"@earendil-works/pi-tui": piTui,
+	},
+});
 // Match pi-fixed-editor's own `.js` import specifier; Jiti caches `.ts` separately.
 const terminalSplit = jiti("@tifan/pi-fixed-editor/src/terminal-split.js") as {
 	TerminalSplitCompositor?: { prototype: Record<PropertyKey, any> };

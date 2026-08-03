@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container, visibleWidth } from "@earendil-works/pi-tui";
 import { createJiti } from "jiti";
@@ -492,7 +496,7 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 					},
 				},
 			},
-			false,
+			true,
 		);
 		tui.doRender();
 		const headerRow = tui.previousLines.findIndex((line: string) =>
@@ -561,7 +565,7 @@ test("truncated tool summary remains clickable and highlights on hover", async (
 				},
 			},
 		},
-		false,
+		true,
 	);
 	tui.doRender();
 
@@ -629,7 +633,7 @@ test("parenthesized rich diff hint highlights and expands on click", async () =>
 				},
 			},
 		},
-		false,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -890,8 +894,10 @@ test("disabled fixed editor features release mouse reporting but retain Ctrl+End
 	const disabledWritesStart = writes.length;
 	installToolMouseInteraction(ctx, false);
 	const disabledWrites = writes.slice(disabledWritesStart);
-	assert.ok(!disabledWrites.some((value) => value.includes("?1000l")));
-	assert.ok(disabledWrites.some((value) => value.includes("?1003h")));
+	// Disabling the fixed editor releases mouse reporting entirely, restoring the
+	// terminal's native scrollback wheel scrolling.
+	assert.ok(disabledWrites.some((value) => value.includes("?1000l")));
+	assert.ok(!disabledWrites.some((value) => value.includes("?1003h")));
 	assert.equal(typeof widgetValues.at(-1), "function");
 
 	const result = inputHandler?.("\x1b[8^");
@@ -1057,7 +1063,7 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 					},
 				},
 			},
-			false,
+			true,
 		);
 		tui.doRender();
 		const showMoreRow = tui.previousLines.findIndex((line: string) =>
@@ -1121,7 +1127,7 @@ test("native mode hits the visible identical tool, not the offscreen duplicate",
 				},
 			},
 		},
-		false,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -1182,7 +1188,7 @@ test("native mode hits offset columns after parent layout prefix", async () => {
 				},
 			},
 		},
-		false,
+		true,
 	);
 	try {
 		tui.doRender();
@@ -1308,7 +1314,7 @@ test("expanded group identical show-more labels open their own content", () => {
 					},
 				},
 			},
-			false,
+			true,
 		);
 		tui.doRender();
 		assert.ok(
@@ -1495,7 +1501,8 @@ test("footer rebuild and fixed toggle do not stack inactive doRender wrappers", 
 		const row = tui.previousLines.indexOf(hintLine) + 1;
 		const col = hintLine.indexOf("/ click") + 1;
 		for (const listener of inputListeners) listener(`\x1b[<0;${col};${row}M`);
-		assert.equal(tool.expanded, true);
+		// Fixed editor off restores native input: clicks no longer expand tools.
+		assert.equal(tool.expanded, false);
 
 		fixedEvents.get("session_shutdown")?.({}, ctx);
 		baseRenderCalls = 0;
@@ -1504,6 +1511,254 @@ test("footer rebuild and fixed toggle do not stack inactive doRender wrappers", 
 	} finally {
 		process.stdout.write = write;
 		setBeforeFixedEditorStart(undefined);
+		installToolMouseInteraction({}, false);
+	}
+});
+
+test("ccstyle mode off restores native mouse input: no hover/click, wheel still scrolls", async () => {
+	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
+	const terminalWrites: string[] = [];
+	let renderRequests = 0;
+	let expandedToolId: string | null = null;
+	const contentBox = {
+		render() {
+			return ["  └ expanded card body"];
+		},
+	};
+	const tool = {
+		toolCallId: "tool-1",
+		expanded: false,
+		contentBox,
+		children: [contentBox],
+		setExpanded(value: boolean) {
+			this.expanded = value;
+			if (value) expandedToolId = "tool-1";
+			else expandedToolId = null;
+		},
+		invalidate() {},
+		render() {
+			return this.expanded
+				? ["✓ Bash(echo ok)", ...this.contentBox.render()]
+				: ["✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
+		},
+	};
+	const terminal = {
+		columns: 80,
+		rows: 24,
+		write(data: string) {
+			terminalWrites.push(data);
+		},
+	};
+	const tui = {
+		terminal,
+		children: [tool],
+		previousLines: [] as string[],
+		previousViewportTop: 0,
+		focusedComponent: null as { handleInput(data: string): void } | null,
+		requestRender() {
+			renderRequests++;
+		},
+		render(width: number) {
+			return this.children.flatMap((child: any) => child.render(width));
+		},
+		doRender() {
+			this.previousLines = this.render(80);
+		},
+		handleInput(data: string) {
+			for (const listener of inputListeners) {
+				if (listener(data)?.consume) return;
+			}
+			this.focusedComponent?.handleInput?.(data);
+		},
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			notify() {},
+			setStatus() {},
+			setWidget(_key: string, factory: any) {
+				factory?.(tui, { fg: (_color: string, text: string) => text });
+			},
+			onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
+				inputListeners.add(handler);
+				return () => inputListeners.delete(handler);
+			},
+		},
+	};
+	const commands = new Map<string, any>();
+	const events = new Map<string, Function>();
+	const pi = {
+		registerCommand(name: string, options: any) {
+			commands.set(name, options);
+		},
+		registerShortcut() {},
+		registerEntryRenderer() {},
+		on(name: string, handler: Function) {
+			events.set(name, handler);
+		},
+	};
+	try {
+		claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
+		const command = commands.get("ccstyle");
+		// /ccstyle writes the user's real config; back it up and restore it.
+		const configPath = join(homedir(), ".pi", "agent", "claude-code-style.json");
+		const savedConfig = existsSync(configPath) ? readFileSync(configPath, "utf8") : null;
+		try {
+			await events.get("session_start")?.({}, ctx);
+			await new Promise<void>((resolve) => setTimeout(resolve, 0));
+			tui.doRender();
+
+			const hintLine = tui.previousLines.find((line: string) => line.includes("/ click"));
+			assert.ok(hintLine);
+			const row = tui.previousLines.indexOf(hintLine) + 1;
+			const col = hintLine.indexOf("/ click") + 1;
+
+			// Baseline in on mode: click expands (frame rebuilds), click collapses,
+			// hover repaints.
+			tui.handleInput(`\x1b[<0;${col};${row}M`);
+			assert.equal(expandedToolId, "tool-1");
+			tui.doRender();
+			tui.handleInput(`\x1b[<0;${col};${row}M`);
+			assert.equal(expandedToolId, null);
+			tui.doRender();
+			const rendersBeforeHover = renderRequests;
+			tui.handleInput(`\x1b[<35;${col};${row}M`);
+			assert.ok(renderRequests > rendersBeforeHover, "hover repaints in on mode");
+
+			// /ccstyle off: hover/click go native, motion reporting stops.
+			await command.handler("off", ctx);
+			assert.ok(
+				terminalWrites.includes("\x1b[?1006l\x1b[?1003l\x1b[?1000l"),
+				"off mode fully disables mouse reporting so terminal scrollback wheel scrolling resumes",
+			);
+			const rendersAfterOff = renderRequests;
+			tui.handleInput(`\x1b[<35;${col};${row}M`);
+			assert.equal(renderRequests, rendersAfterOff, "off mode: hover has no effect");
+			tui.handleInput(`\x1b[<0;${col};${row}M`);
+			assert.equal(expandedToolId, null, "off mode: tool click does not expand");
+			assert.equal(tool.expanded, false, "off mode: tool stays collapsed");
+			let editorInputs = 0;
+			tui.focusedComponent = {
+				handleInput(data: string) {
+					if (data === "\x1b[<65;20;3M") editorInputs++;
+				},
+			};
+			tui.handleInput("\x1b[<65;20;3M");
+			assert.equal(editorInputs, 1, "off mode: wheel passes through to native scrolling");
+			// No motion re-enable on subsequent paints while off.
+			terminalWrites.length = 0;
+			tui.doRender();
+			assert.ok(
+				!terminalWrites.some((write) => write.includes("?1003h")),
+				"off mode: paints do not re-enable motion",
+			);
+
+			// Back to on: click affordances return.
+			await command.handler("on", ctx);
+			tui.handleInput(`\x1b[<0;${col};${row}M`);
+			assert.equal(expandedToolId, "tool-1", "on mode: tool click expands again");
+		} finally {
+			if (savedConfig === null) rmSync(configPath, { force: true });
+			else writeFileSync(configPath, savedConfig);
+		}
+	} finally {
+		installToolMouseInteraction({}, false);
+	}
+});
+
+test("fixed editor off: no hover/click, wheel passes through, no motion reporting", () => {
+	const inputListeners = new Set<(data: string) => { consume?: boolean } | undefined>();
+	const terminalWrites: string[] = [];
+	let renderRequests = 0;
+	let expandedToolId: string | null = null;
+	const tool = {
+		toolCallId: "tool-1",
+		expanded: false,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+			if (value) expandedToolId = "tool-1";
+			else expandedToolId = null;
+		},
+		invalidate() {},
+		render() {
+			return ["✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
+		},
+	};
+	const tui = {
+		terminal: {
+			columns: 80,
+			rows: 24,
+			write(data: string) {
+				terminalWrites.push(data);
+			},
+		},
+		children: [tool],
+		previousLines: [] as string[],
+		previousViewportTop: 0,
+		focusedComponent: null as { handleInput(data: string): void } | null,
+		requestRender() {
+			renderRequests++;
+		},
+		render(width: number) {
+			return this.children.flatMap((child: any) => child.render(width));
+		},
+		doRender() {
+			this.previousLines = this.render(80);
+		},
+		handleInput(data: string) {
+			for (const listener of inputListeners) {
+				if (listener(data)?.consume) return;
+			}
+			this.focusedComponent?.handleInput?.(data);
+		},
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			setWidget(_key: string, factory: any) {
+				factory?.(tui, { fg: (_color: string, text: string) => text });
+			},
+			onTerminalInput(handler: (data: string) => { consume?: boolean } | undefined) {
+				inputListeners.add(handler);
+				return () => inputListeners.delete(handler);
+			},
+		},
+	};
+	try {
+		installToolMouseInteraction(ctx, false);
+		tui.doRender();
+
+		const hintLine = tui.previousLines.find((line: string) => line.includes("/ click"));
+		assert.ok(hintLine);
+		const row = tui.previousLines.indexOf(hintLine) + 1;
+		const col = hintLine.indexOf("/ click") + 1;
+
+		// No motion reporting is ever enabled without the fixed editor.
+		assert.ok(
+			!terminalWrites.some((write) => write.includes("?1003h")),
+			"fixed editor off: motion reporting stays off",
+		);
+
+		// Hover and click have no effect.
+		const rendersBeforeHover = renderRequests;
+		tui.handleInput(`\x1b[<35;${col};${row}M`);
+		assert.equal(renderRequests, rendersBeforeHover, "fixed editor off: hover has no effect");
+		tui.handleInput(`\x1b[<0;${col};${row}M`);
+		assert.equal(expandedToolId, null, "fixed editor off: click does not expand");
+		assert.equal(tool.expanded, false);
+
+		// Wheel passes through to Pi's input chain (terminal scrollback scrolling).
+		let editorInputs = 0;
+		tui.focusedComponent = {
+			handleInput(data: string) {
+				if (data === "\x1b[<65;20;3M") editorInputs++;
+			},
+		};
+		tui.handleInput("\x1b[<65;20;3M");
+		assert.equal(editorInputs, 1, "fixed editor off: wheel passes through");
+	} finally {
 		installToolMouseInteraction({}, false);
 	}
 });

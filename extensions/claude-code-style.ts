@@ -1126,6 +1126,13 @@ function useFixedEditorFeatures(tui: any): boolean {
 	return toolMouseFixedFeaturesEnabled && isFixedEditorTui(tui);
 }
 
+/** Mouse hover/click affordances need ccstyle rendering AND the fixed editor. Without
+ * the fixed editor, Pi's native TUI has no mouse handling, so any reporting mode leaves
+ * the wheel in a dead zone — native mode must leave reporting off entirely. */
+function toolMouseInteractionActive(): boolean {
+	return config.mode !== "off" && toolMouseFixedFeaturesEnabled;
+}
+
 function formatShortcut(shortcut: string): string {
 	return shortcut
 		.split("+")
@@ -1249,7 +1256,12 @@ function hideScrollButton(tui: any): void {
 }
 
 function scheduleScrollButtonSync(tui: any, data: string): void {
-	if (!useFixedEditorFeatures(tui) || !isScrollNavigationInput(data) || scrollButtonSyncScheduled)
+	if (
+		!useFixedEditorFeatures(tui) ||
+		!toolMouseInteractionActive() ||
+		!isScrollNavigationInput(data) ||
+		scrollButtonSyncScheduled
+	)
 		return;
 	scrollButtonSyncScheduled = true;
 	const previousLines = tui.previousLines;
@@ -1278,7 +1290,7 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 }
 
 function updateScrollButtonFromInput(tui: any, data: string): void {
-	if (!useFixedEditorFeatures(tui)) return;
+	if (!useFixedEditorFeatures(tui) || !toolMouseInteractionActive()) return;
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
@@ -1521,7 +1533,7 @@ function patchToolMouseInputCapture(tui: any): void {
 			)
 				return;
 			const packets = parseSgrMousePackets(data);
-			if (packets) {
+			if (packets && toolMouseInteractionActive()) {
 				for (const packet of packets) {
 					// Fixed-editor owners may consume motion before extension listeners run,
 					// so hover must be handled at the root input boundary too.
@@ -1810,7 +1822,8 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 				this.previousLines = extracted.lines;
 				placements = extracted.placements;
 			}
-			if (!useFixedEditorFeatures(this)) toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
+			if (!useFixedEditorFeatures(this) && toolMouseInteractionActive())
+				toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
 			return result;
 		} finally {
 			activeIoViewFrame = previousFrame;
@@ -1833,7 +1846,8 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 	toolMouseRenderPatchOriginal = original;
 	toolMouseRenderPatchWrapper = wrapper;
 	toolMouseRenderPatchState = patchState;
-	if (!useFixedEditorFeatures(tui)) toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
+	if (!useFixedEditorFeatures(tui) && toolMouseInteractionActive())
+		toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
 }
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
@@ -1857,6 +1871,9 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 			return { consume: true };
 		}
 	}
+	// Off mode restores native input: wheel keeps scrolling through Pi's normal
+	// dispatcher, while hover/click affordances are entirely inactive.
+	if (!toolMouseInteractionActive()) return undefined;
 	const packets = parseSgrMousePackets(data);
 	if (!packets) {
 		scheduleScrollButtonSync(toolMouseTui, data);
@@ -1892,7 +1909,7 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
 	try {
-		if (!toolMouseFixedFeaturesEnabled && !nextFixedEditorFeatures) {
+		if (!nextFixedEditorFeatures) {
 			toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	} catch {
@@ -1932,13 +1949,17 @@ export function installToolMouseInteraction(
 	toolMouseFixedFeaturesEnabled = fixedEditorFeatures;
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
-		if (fixedEditorFeatures) patchToolMouseInputCapture(tui);
-		// Fixed mode: wrap only after compositor install makes features live.
-		if (!fixedEditorFeatures || useFixedEditorFeatures(tui)) {
-			patchToolMouseMotionAfterRender(tui);
-		}
-		// The fixed-editor compositor owns its mouse mode; native Pi still needs motion enabled.
-		if (!fixedEditorFeatures) tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
+		// Root input capture follows the live compositor; onRebuild re-applies it
+		// once the fixed-editor compositor actually owns the terminal.
+		if (useFixedEditorFeatures(tui)) patchToolMouseInputCapture(tui);
+		// Wrap doRender unconditionally: the fixed-editor rebuild replaces the
+		// chain (setBeforeFixedEditorStart restores it first) and onRebuild
+		// re-applies this wrapper once the compositor owns the terminal.
+		patchToolMouseMotionAfterRender(tui);
+		// The fixed-editor compositor owns its mouse mode; native Pi gets motion only
+		// while mouse interaction is active (rendering mode on + fixed editor).
+		if (!fixedEditorFeatures && toolMouseInteractionActive())
+			tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),
 			invalidate() {},
@@ -1998,6 +2019,21 @@ function applyStyleMode(
 ): void {
 	config.mode = mode;
 	saveConfig();
+	if (mode === "off") {
+		// Native rendering mode: drop hover/click state and fully disable mouse
+		// reporting so the terminal restores its default scrollback wheel scrolling.
+		// (The fixed-editor compositor owns its own reporting when enabled.)
+		hoveredToolCallId = null;
+		setHoveredToolGroup(null);
+		setHoveredToolIo(null, null);
+		scrollButtonVisible = false;
+		scrollButtonHovered = false;
+		pendingScrollMessages = 0;
+		assistantMessageActive = false;
+		if (toolMouseTui && !useFixedEditorFeatures(toolMouseTui)) {
+			toolMouseTui.terminal?.write?.(TOOL_MOUSE_DISABLE);
+		}
+	}
 	refreshCurrentTranscript(compactStyle, ctx, toolGrouping);
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
@@ -2015,7 +2051,7 @@ function modeSettingDescription(mode: CompactStyleMode): string {
 function fixedEditorSettingDescription(enabled: boolean): string {
 	return enabled
 		? "Pinned editor via @tifan/pi-fixed-editor. Mouse capture, 5-row wheel, tool clicks, back-to-bottom button, message count, and Ctrl+End."
-		: "Native scrolling editor; fixed-editor mouse features and button off. Ctrl+End remains enabled.";
+		: "Native scrolling editor; mouse hover/click and wheel reporting off. Ctrl+End remains enabled.";
 }
 
 function excludeRenderersDescription(names: readonly string[]): string {

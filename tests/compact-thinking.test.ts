@@ -274,7 +274,11 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 		);
 
 		// tool_execution_end(Agent): finalize once the subagent returns
-		emit("tool_execution_end", { toolName: "Agent", toolCallId: "c1", result: {}, isError: false }, uiCtx);
+		emit(
+			"tool_execution_end",
+			{ toolName: "Agent", toolCallId: "c1", result: {}, isError: false },
+			uiCtx,
+		);
 		const after = new AssistantMessageComponent(msg, true);
 		after.updateContent(msg);
 		const afterLines = renderText(after);

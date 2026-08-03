@@ -23,37 +23,24 @@ type CompactThinkingOwner = {
 	stop(event?: any, ctx?: any): void;
 };
 
+type UpstreamHandler = (event: any, ctx: any) => void;
+
 const COMPACT_THINKING_OWNER = Symbol.for("pi.ccstyle.compact-thinking-owner");
 
-export function installCompactThinking(
-	pi: ExtensionAPI,
-	initialConfig: CompactThinkingConfig,
-): CompactThinkingController {
-	const owner = {};
-	const host = globalThis as typeof globalThis & {
-		[COMPACT_THINKING_OWNER]?: CompactThinkingOwner;
-	};
-	host[COMPACT_THINKING_OWNER]?.stop();
-
-	const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-	// Upstream requires this file while loading; mirror ccstyle into it and never read it back.
-	mkdirSync(agentDir, { recursive: true });
-	writeFileSync(
-		join(agentDir, "compact-thinking.json"),
-		`${JSON.stringify(initialConfig, null, 2)}\n`,
-		"utf8",
-	);
-
+function loadPatchedUpstream(): {
+	config: CompactThinkingConfig;
+	compactThinking: (api: ExtensionAPI) => void;
+} {
 	// Fork the upstream entry so a running subagent tool keeps the thinking
 	// loading animation until the model emits the next text/thinking boundary.
-	// Upstream finalizes on tool_execution_start, freezing the summary into a
-	// static "Thought for Xs" for the whole subagent run.
+	// Upstream finalizes on tool_execution_start / message_end, freezing the
+	// summary into a static "Thought for Xs" for the whole subagent run.
 	const upstreamRequire = createRequire(import.meta.url);
 	const upstreamIndexPath = upstreamRequire.resolve("pi-compact-thinking/index.ts");
 	const toolStartOriginal = `  pi.on("tool_execution_start", finishThinking);`;
 	const toolStartPatched = `  // Subagent tools can run for minutes: keep the thinking loading animation
-  // alive for the whole execution and only finalize once the model emits the
-  // next text/thinking boundary or the message ends.
+  // alive for the whole execution and only finalize once the tool ends or the
+  // model emits the next text/thinking boundary.
   function resumeAgentThinking(message: AssistantMessage | undefined) {
     if (activeThinking) return;
     const content = message?.content;
@@ -62,12 +49,27 @@ export function installCompactThinking(
     if (index < 0) return;
     startThinking(message, index);
   }
+  function messageHasAgentTool(message: AssistantMessage | undefined) {
+    return (
+      Array.isArray(message?.content) &&
+      message.content.some(
+        (content) =>
+          content?.type === "toolCall" &&
+          (content.name === "Agent" ||
+            content.name === "Agents" ||
+            content.args?.subagent_type != null),
+      )
+    );
+  }
   pi.on("tool_execution_start", (event: any) => {
     if (event.toolName === "Agent" || event.toolName === "Agents") {
       resumeAgentThinking(latestComponent?.lastMessage ?? undefined);
     } else {
       finishThinking();
     }
+  });
+  pi.on("tool_execution_end", (event: any) => {
+    if (event.toolName === "Agent" || event.toolName === "Agents") finishThinking();
   });`;
 	const updateBoundaryOriginal = `    } else if (
       update.type === "text_start" ||
@@ -82,33 +84,33 @@ export function installCompactThinking(
       update.type === "toolcall_start" ||
       update.type === "toolcall_delta"
     ) {
-      if (
-        Array.isArray(event.message?.content) &&
-        event.message.content.some(
-          (content) =>
-            content?.type === "toolCall" &&
-            (content.name === "Agent" ||
-              content.name === "Agents" ||
-              content.args?.subagent_type != null),
-        )
-      ) {
+      if (messageHasAgentTool(event.message)) {
         resumeAgentThinking(event.message);
       } else {
         finishThinking();
       }
     }`;
+	const messageEndOriginal = `  pi.on("message_end", (event) => {
+    if (event.message.role === "assistant") finishThinking();
+  });`;
+	const messageEndPatched = `  pi.on("message_end", (event) => {
+    if (event.message.role !== "assistant") return;
+    // Agent tool runs after message_end; keep the ticker until tool_execution_end
+    // or the next text/thinking boundary.
+    if (messageHasAgentTool(event.message)) return;
+    finishThinking();
+  });`;
+
 	let upstreamIndexSource = readFileSync(upstreamIndexPath, "utf8");
 	if (
 		upstreamIndexSource.includes(toolStartOriginal) &&
-		upstreamIndexSource.includes(updateBoundaryOriginal)
+		upstreamIndexSource.includes(updateBoundaryOriginal) &&
+		upstreamIndexSource.includes(messageEndOriginal)
 	) {
 		upstreamIndexSource = upstreamIndexSource
 			.replace(toolStartOriginal, toolStartPatched)
-			.replace(updateBoundaryOriginal, updateBoundaryPatched);
-	} else {
-		// Upstream changed shape: fall back to the untouched entry so the loader
-		// keeps working; only the subagent animation nicety is lost.
-		upstreamIndexSource = readFileSync(upstreamIndexPath, "utf8");
+			.replace(updateBoundaryOriginal, updateBoundaryPatched)
+			.replace(messageEndOriginal, messageEndPatched);
 	}
 
 	// Reuse Pi's live modules so the upstream prototype patch reaches runtime components.
@@ -127,12 +129,34 @@ export function installCompactThinking(
 			default: (api: ExtensionAPI) => void;
 		}
 	).default;
-	Object.assign(upstreamConfig, initialConfig);
+	return { config: upstreamConfig, compactThinking };
+}
 
-	// Upstream restores completedDurations from sessionManager.getBranch() (the
-	// current leaf path). After compaction or a branch switch, duration entries
-	// of older messages leave that path, so scrolling back renders a bare
-	// "Thinking..." instead of "Thought for Xs". Restore from every entry.
+export function installCompactThinking(
+	pi: ExtensionAPI,
+	initialConfig: CompactThinkingConfig,
+): CompactThinkingController {
+	const owner = {};
+	const host = globalThis as typeof globalThis & {
+		[COMPACT_THINKING_OWNER]?: CompactThinkingOwner;
+	};
+
+	const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+	// Upstream requires this file while loading; mirror ccstyle into it and never read it back.
+	mkdirSync(agentDir, { recursive: true });
+	writeFileSync(
+		join(agentDir, "compact-thinking.json"),
+		`${JSON.stringify(initialConfig, null, 2)}\n`,
+		"utf8",
+	);
+
+	let upstreamConfig: CompactThinkingConfig | undefined;
+	let session: { event: any; ctx: any } | undefined;
+	let active = false;
+	// Stable pi.on wrappers delegate here so activate/reload never double-binds.
+	const delegates = new Map<string, UpstreamHandler>();
+	const boundEvents = new Set<string>();
+
 	const restoreAllDurations = (ctx: any): any => {
 		const sessionManager = ctx?.sessionManager;
 		if (!sessionManager || typeof sessionManager.getEntries !== "function") return ctx;
@@ -145,40 +169,73 @@ export function installCompactThinking(
 		};
 	};
 
-	let session: { event: any; ctx: any } | undefined;
-	let shutdown: ((event: any, ctx: any) => void) | undefined;
-	let stopped = false;
+	const bind = (eventName: string) => {
+		if (boundEvents.has(eventName)) return;
+		boundEvents.add(eventName);
+		pi.on(eventName as any, (e: any, ctx: any) => {
+			if (!active) return;
+			const handler = delegates.get(eventName);
+			if (!handler) return;
+			handler(e, eventName === "session_tree" ? restoreAllDurations(ctx) : ctx);
+		});
+	};
+
 	const stop = (event?: any, ctx?: any) => {
-		if (stopped) return;
-		stopped = true;
+		if (!active) return;
+		active = false;
+		const shutdown = delegates.get("session_shutdown");
+		delegates.clear();
 		shutdown?.(event ?? session?.event ?? {}, ctx ?? session?.ctx ?? { mode: "rpc", ui: {} });
 		if (host[COMPACT_THINKING_OWNER]?.owner === owner) delete host[COMPACT_THINKING_OWNER];
 	};
-	compactThinking({
-		on(event: string, handler: (event: any, ctx: any) => void) {
-			if (event === "session_start") {
-				pi.on(event, (startEvent, ctx) => {
-					session = { event: startEvent, ctx };
-					handler(startEvent, restoreAllDurations(ctx));
-				});
-			} else if (event === "session_shutdown") {
-				shutdown = handler;
-				pi.on(event, (shutdownEvent, ctx) => {
-					if (host[COMPACT_THINKING_OWNER]?.owner === owner) stop(shutdownEvent, ctx);
-				});
-			} else {
-				pi.on(event as any, (e: any, ctx: any) =>
-					handler(e, event === "session_tree" ? restoreAllDurations(ctx) : ctx),
-				);
-			}
-		},
-		appendEntry: (...args: any[]) => (pi.appendEntry as any)(...args),
-	} as unknown as ExtensionAPI);
-	host[COMPACT_THINKING_OWNER] = { owner, stop };
+
+	const activate = (event: any, ctx: any) => {
+		// Headless subagent runtimes share this process. Never steal the parent
+		// TUI prototype patch or kill its thinking ticker.
+		if (ctx?.mode !== "tui") return;
+
+		host[COMPACT_THINKING_OWNER]?.stop(event, ctx);
+		session = { event, ctx };
+
+		const loaded = loadPatchedUpstream();
+		upstreamConfig = loaded.config;
+		Object.assign(upstreamConfig, initialConfig);
+		delegates.clear();
+
+		loaded.compactThinking({
+			on(eventName: string, handler: UpstreamHandler) {
+				if (eventName === "session_start") {
+					// Already inside session_start — run immediately.
+					handler(event, restoreAllDurations(ctx));
+					return;
+				}
+				if (eventName === "session_shutdown") {
+					delegates.set(eventName, handler);
+					return;
+				}
+				delegates.set(eventName, handler);
+				bind(eventName);
+			},
+			appendEntry: (...args: any[]) => (pi.appendEntry as any)(...args),
+		} as unknown as ExtensionAPI);
+
+		active = true;
+		host[COMPACT_THINKING_OWNER] = { owner, stop };
+	};
+
+	pi.on("session_start", (event, ctx) => {
+		session = { event, ctx };
+		activate(event, ctx);
+	});
+	pi.on("session_shutdown", (event, ctx) => {
+		if (host[COMPACT_THINKING_OWNER]?.owner === owner) stop(event, ctx);
+		session = undefined;
+	});
 
 	return {
 		updateConfig(next) {
-			Object.assign(upstreamConfig, next);
+			Object.assign(initialConfig, next);
+			if (upstreamConfig) Object.assign(upstreamConfig, next);
 		},
 	};
 }

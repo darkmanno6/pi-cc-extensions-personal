@@ -2478,9 +2478,10 @@ function singleToolCallSummary(
 	if (AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
 		return { main: `${title} ${oneLine(args.agent_id, Infinity)}`, detail: "" };
 	}
-	if (name === "agent" || name === "agents") {
+	// Agents still uses the ccstyle wrapper; Agent keeps its dedicated renderer.
+	if (name === "agents") {
 		return {
-			main: value(name === "agent" ? "launch agent" : "launch agents", "description", "prompt"),
+			main: value("launch agents", "description", "prompt"),
 			detail: "",
 		};
 	}
@@ -2790,6 +2791,8 @@ const AGENT_FAMILY_TOOL_NAMES = new Set([
 	"get_subagent_result",
 	"steer_subagent",
 ]);
+// pi-subagents 等扩展为 Agent 提供专用渲染器（displayName/运行统计），ccstyle 必须保留，不能 wrap。
+const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
 
 type ToolRenderMethods = {
 	hasRendererDefinition: (...args: any[]) => boolean;
@@ -2878,6 +2881,7 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 	const toolName = String(component.toolName || definition?.name || "");
 	const useCcstyle =
 		patch.mode() === "on" &&
+		!DEDICATED_RENDERER_TOOLS.has(toolName) &&
 		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
 	return useCcstyle;

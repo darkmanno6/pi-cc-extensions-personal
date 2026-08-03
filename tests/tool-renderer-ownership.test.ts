@@ -346,7 +346,7 @@ test("ccstyle is the default renderer and exclusions preserve dedicated renderer
 	assert.equal(preservesOriginalRenderer(undefined, "Agent"), false);
 });
 
-test("Agent uses the same ccstyle renderer as other external tools", async () => {
+test("Agent keeps its dedicated renderer under ccstyle", async () => {
 	const events = new Map<string, Function>();
 	const pi = {
 		registerCommand() {},
@@ -380,12 +380,11 @@ test("Agent uses the same ccstyle renderer as other external tools", async () =>
 		process.cwd(),
 	) as any;
 	component.updateResult({ content: [{ type: "text", text: "raw" }], isError: false });
-	assert.equal(component.children.includes(component.selfRenderContainer), true);
-	assert.equal(component.children.includes(component.contentBox), false);
+	assert.equal(component.children.includes(component.contentBox), true);
+	assert.equal(component.children.includes(component.selfRenderContainer), false);
 	const output = component.render(100).join("\n");
-	assert.match(output, /Agent review changes/);
-	assert.match(output, /1 line returned/);
-	assert.doesNotMatch(output, /agent dedicated/);
+	assert.match(output, /agent dedicated/);
+	assert.doesNotMatch(output, /Agent review changes/);
 	await events.get("session_shutdown")?.({}, ctx);
 });
 

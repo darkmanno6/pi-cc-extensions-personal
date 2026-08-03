@@ -154,6 +154,10 @@ function toolSummary(tool: any): { main: string; detail: string } {
 		return `${titled} ${oneLine(found || fallback)}`;
 	};
 	if (lowerName === "agent" || lowerName === "agents") {
+		const displayName = args.subagent_type ?? args.agent_type ?? args.agent;
+		if (typeof displayName === "string" && displayName) {
+			return { main: `${titled} ${displayName}`, detail: "" };
+		}
 		return {
 			main: value(
 				lowerName === "agent" ? "launch agent" : "launch agents",

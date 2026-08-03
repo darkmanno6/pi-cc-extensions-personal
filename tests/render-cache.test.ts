@@ -137,3 +137,25 @@ test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap
 	assert.match(hoveredInput!, /\x1b\[37m \[show more\]/);
 	assert.match(hoveredOutput!, /\x1b\[90m \[show more\]/);
 });
+
+test("ExpandedToolIoView records exact show-more header rows, not body text", () => {
+	const theme = {
+		fg(_color: string, text: string) {
+			return text;
+		},
+		bold(text: string) {
+			return text;
+		},
+	};
+	// Body text that would false-positive a whole-buffer Input/[show more] scan.
+	const decoy = `note Input [show more]\n${Array.from({ length: 12 }, (_, i) => `out ${i}`).join("\n")}`;
+	const view = new ExpandedToolIoView(theme, "", decoy, false, 3, 3);
+	const lines = view.render(80);
+	const headers = view.showMoreHeaderLineIndexes();
+	assert.deepEqual(headers, [{ section: "output", line: 0 }]);
+	const decoyRow = lines.findIndex(
+		(line, index) => index > 0 && line.includes("Input") && line.includes("[show more]"),
+	);
+	assert.ok(decoyRow > 0, "body still paints the decoy text");
+	assert.ok(!headers.some((h) => h.line === decoyRow));
+});

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { installFixedEditor, installFixedEditorImePatch } from "../extensions/fixed-editor.ts";
+import {
+	getFixedEditorViewport,
+	installFixedEditor,
+	installFixedEditorImePatch,
+} from "../extensions/fixed-editor.ts";
 
 function runtime(initiallyEnabled: boolean) {
 	const events = new Map<string, Function>();
@@ -20,6 +24,7 @@ function runtime(initiallyEnabled: boolean) {
 			setWidget(_key: string, value: unknown) {
 				widgets.push(value);
 			},
+			setFooter() {},
 		},
 	};
 	return { controller, ctx, events, widgets };
@@ -118,8 +123,14 @@ test("npm fixed editor applies IME positioning and widget spacing patches", asyn
 	const probe = factory(tui, {});
 	probe.render(80);
 	await Promise.resolve();
+	tui.render(80);
 	tui.doRender();
 
+	const viewport = getFixedEditorViewport(tui);
+	assert.ok(viewport);
+	assert.equal(viewport.tui, tui);
+	assert.equal(viewport.visibleLines.length, viewport.visibleScrollableRows);
+	assert.ok(viewport.generation > 0);
 	assert.ok(
 		writes.some((data) =>
 			data.includes("\x1b[15;1H\x1b[2Kstatus\x1b[16;1H\x1b[2K\x1b[17;1H\x1b[2K above"),
@@ -132,6 +143,7 @@ test("npm fixed editor applies IME positioning and widget spacing patches", asyn
 		JSON.stringify(writes),
 	);
 	events.get("session_shutdown")?.({}, ctx);
+	assert.equal(getFixedEditorViewport(tui), null);
 });
 
 test("fixed editor can be enabled and disabled during a TUI session", () => {
@@ -142,10 +154,39 @@ test("fixed editor can be enabled and disabled during a TUI session", () => {
 
 		controller.setEnabled(true);
 		assert.equal(typeof widgets.at(-1), "function");
+		const footerHook = ctx.ui.setFooter;
 
 		controller.setEnabled(false);
 		assert.equal(widgets.at(-1), undefined);
+		controller.setEnabled(true);
+		assert.equal(ctx.ui.setFooter, footerHook);
+		controller.setEnabled(false);
 	});
+});
+
+test("footer replacement reprobes the fixed editor cluster", async () => {
+	const write = process.stdout.write;
+	process.stdout.write = (() => true) as typeof process.stdout.write;
+	try {
+		const { ctx, events, widgets } = runtime(true);
+		events.get("session_start")?.({}, ctx);
+		const firstFactory = widgets.at(-1);
+
+		ctx.ui.setFooter();
+		await Promise.resolve();
+
+		assert.equal(widgets.at(-2), undefined);
+		assert.equal(typeof widgets.at(-1), "function");
+		assert.notEqual(widgets.at(-1), firstFactory);
+
+		ctx.ui.setFooter();
+		events.get("session_shutdown")?.({}, ctx);
+		const widgetCount = widgets.length;
+		await Promise.resolve();
+		assert.equal(widgets.length, widgetCount);
+	} finally {
+		process.stdout.write = write;
+	}
 });
 
 test("stale shutdown cannot disable the replacement fixed editor", () => {
@@ -162,4 +203,80 @@ test("stale shutdown cannot disable the replacement fixed editor", () => {
 
 		second.events.get("session_shutdown")?.({}, second.ctx);
 	});
+});
+
+async function installProbe(widgets: unknown[], tui: any): Promise<void> {
+	const factory = widgets.at(-1) as Function | undefined;
+	assert.equal(typeof factory, "function");
+	const probe = factory!(tui, {});
+	probe.render(80);
+	await Promise.resolve();
+}
+
+test("footer rebuild notifies onRebuild after compositor reinstall", async () => {
+	const write = process.stdout.write;
+	process.stdout.write = (() => true) as typeof process.stdout.write;
+	try {
+		const { controller, ctx, events, widgets } = runtime(true);
+		let rebuilds = 0;
+		controller.onRebuild(() => {
+			rebuilds++;
+		});
+		const editor = {
+			focused: true,
+			getText: () => "",
+			setText() {},
+			handleInput() {},
+			render: () => [`editor\x1b_pi:c\x07`],
+			invalidate() {},
+		};
+		const component = (line: string, children: any[] = []) => ({
+			children,
+			render: (width: number) =>
+				children.length > 0 ? children.flatMap((child) => child.render(width)) : [line],
+			invalidate() {},
+		});
+		const tui: any = {
+			children: [
+				component("status"),
+				component("above"),
+				component("", [editor]),
+				component("below"),
+				component("footer"),
+			],
+			focusedComponent: editor,
+			terminal: {
+				columns: 80,
+				rows: 20,
+				write() {},
+			},
+			getShowHardwareCursor: () => false,
+			requestRender() {},
+			render(width: number) {
+				return this.children.flatMap((child: any) => child.render(width));
+			},
+			doRender() {
+				this.terminal.write("root");
+			},
+			addInputListener() {
+				return () => {};
+			},
+			hasOverlay: () => false,
+		};
+
+		events.get("session_start")?.({}, ctx);
+		assert.equal(rebuilds, 0, "activate alone does not notify before install");
+		await installProbe(widgets, tui);
+		assert.equal(rebuilds, 1, "compositor install notifies rebuild");
+
+		ctx.ui.setFooter();
+		await Promise.resolve();
+		assert.equal(rebuilds, 1, "footer queues reinstall without premature notify");
+		await installProbe(widgets, tui);
+		assert.equal(rebuilds, 2, "footer replacement notifies after real reinstall");
+
+		events.get("session_shutdown")?.({}, ctx);
+	} finally {
+		process.stdout.write = write;
+	}
 });

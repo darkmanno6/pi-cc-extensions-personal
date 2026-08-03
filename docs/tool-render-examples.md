@@ -1,13 +1,13 @@
 # 工具 Render 示例（ccstyle）
 
-> 由真实 renderer 驱动生成（`node .tmp-tool-render-demo.ts`），示例已剥离 ANSI。
+> 由真实 renderer 驱动生成（`node docs/.tmp-tool-render-demo.ts`），示例已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.31。renderer 变更后应重跑脚本并同步本文件。
+> 当前版本：ccstyle 0.8.35。renderer 变更后应重跑脚本并同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠋ Bash rg -n 'renderCall' extensions/ --type ts       ← 运行中：Braille 转轮
+ ⠙ Bash rg -n 'renderCall' extensions/ --type ts       ← 运行中：Braille 转轮
    ↳ Pending…                                           ← pending 与完成态同为 3 格缩进
  ✓ Bash rg -n 'renderCall' extensions/ --type ts       ← 完成
    ↳ 2 lines returned • click to show more
@@ -28,10 +28,13 @@
   ✓ Bash rg -n 'renderCall' extensions/
   ├ Input
   │ command: rg -n 'renderCall' extensions/
+  │
   └ Output
     extensions/claude-code-style.ts:2532: renderCall(args, theme,
     context) {
 ```
+
+Input/Output 之间有一个空白 rail 行（`│`）。
 
 ## 4. edit/write rich diff
 
@@ -44,9 +47,8 @@
  ▌  2 │ const threshold = 41;
  ▌  2 │ const threshold = 42;
     3 │ export default run;
+ ▌  4 │ export const version = "0.8.30";
  ──────────────────────────────────────────────
-↳ created                                       ← write 新建
-↳ overwritten                                   ← write 覆盖
 ```
 
 长 diff 提示：
@@ -57,46 +59,87 @@
 
 - hover `click to show more` 时由 muted 切换为白色 text。
 - 点击提示可展开工具；展开后仍受 `expandedPreviewMaxLines` 限制。
+- 展开态下 diff 行数提示为 warning 色（如 `… (13 more diff lines …)`）。
+
+write 新建 / 覆盖：
+
+```text
+↳ created                                       ← write 新建
+────────────────────────────────────────────────
+▌  1 │ const x = 1
+────────────────────────────────────────────────
+
+↳ overwritten                                   ← write 覆盖
+────────────────────────────────────────────────
+▌  1 │ const y = 2
+▌  1 │ const x = 1
+────────────────────────────────────────────────
+```
 
 ## 5. Task 系列
 
 ```text
  ✓ Task List task list
-   ↳ 3 tasks • 1 in progress • 1 pending • 1 completed • click to show more
-   #1 in_progress 重构 renderer                 ← 展开：状态色 #id + status + subject
-   #2 pending 补充测试
-   #3 completed 发布 0.8.29
+   ↳ 3 tasks • 1 in progr…ending • 1 completed • click to show more   ← 收起：状态行按宽度截断
+ #1 in_progress 重构 renderer                 ← 展开：状态色 #id + status + subject
+ #2 pending 补充测试
+ #3 completed 发布 0.8.29
  ✓ Task Create 重构 renderer
    ↳ Created task #1 重构 renderer
  ✓ Task Execute 1 (+2 tasks)
    ↳ Started Tasks #1, #2, #3
- ✓ Task Get 3  /  ✓ Task Output 1  /  ✓ Task Update 3  /  ✓ Task Stop 1
+ ✓ Task Update 3
+   ↳ Updated task #3 发布 0.8.29
+ ✓ Task Stop 1
+   ↳ Stopped Task #1
+ ✓ Task Get 3
+   ↳ 1 line returned • click to show more
+ ✓ Task Output 1
+   ↳ 2 lines returned • click to show more
 ```
 
 ## 6. Agent 家族
 
 ```text
- ✓ Agent 探活 subagent
+ Agent                                            ← Agent 有专用 renderer：无状态图标，展开完整卡片
+ {                                                ← JSON 参数
+   "description": "探活 subagent",
+   "prompt": "…",
+   "subagent_type": "explore",
+   "run_in_background": true
+ }
+ Agent started in background.
+ Agent ID: 7d535698-4ad6-47a
  ✓ Get Subagent Result 7d535698-4ad6-47a
+   ↳ 4 lines returned • click to show more
  ✓ Steer Subagent 7d535698-4ad6-47a
+   ↳ 1 line returned • click to show more
  ✓ Agents 并行调研
+   ↳ 1 line returned • click to show more
 ```
 
 ## 7. 外部工具
 
 ```text
  ✓ Skill ponytail
+   ↳ 1 line returned • click to show more
  ✓ Enter Plan Mode enable read-only planning
+   ↳ 1 line returned                        ← 不可展开：无 click to show more
  ✓ Exit Plan Mode present plan
+   ↳ 1 line returned • click to show more
  ✓ Web Search pi coding agent extension
+   ↳ 3 lines returned • click to show more
  ✓ Fetch Content https://example.com
+   ↳ 1 line returned • click to show more
 ```
 
 ## 8. MCP / 自定义工具
 
 ```text
  ✓ Github Search pi                              ← MCP 标签转为人类可读标题
+   ↳ 1 line returned • click to show more
  ✓ Custom Translate                              ← 驼峰转为空格标题
+   ↳ 1 line returned • click to show more
 ```
 
 ## 9. 工具组（tool-grouping）
@@ -105,9 +148,9 @@
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠋ Read extensions/index.ts
- ├ ⠋ Bash npm test
- └ ⠋ Ffgrep extensions/
+ ├ ⠸ Read extensions/index.ts
+ ├ ⠸ Bash npm test
+ └ ⠸ Ffgrep extensions/
 ```
 
 ### 收起：完成/失败
@@ -126,17 +169,20 @@
  ├ ✓ Read extensions/index.ts
  │ ├ Input
  │ │ path: extensions/index.ts
+ │ │
  │ └ Output
  │   40 lines loaded
  ├ ✓ Bash npm test
  │ ├ Input
  │ │ command: npm test
+ │ │
  │ └ Output
  │   pass 79/79
  └ ✗ Ffgrep extensions/
    ├ Input
    │ path: extensions/
    │ pattern: renderCall
+   │
    └ Output
      no match
 ```
@@ -147,6 +193,7 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - 内部工具使用 `✓`、`✗` 或 Braille loading spinner。
 - 展开区统一绘制完整状态背景，左右和底部各 1 格 padding，无顶部 padding。
 - 外层树在收起/展开时位置不变；Input/Output 树线与上方状态图标对齐。
+- Input/Output 之间各有一个空白 rail 行。
 - 点击展开区任意行、任意列（含底部 padding）均可收起。
 - 组末尾不再额外追加空白行。
 

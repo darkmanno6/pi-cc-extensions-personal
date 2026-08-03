@@ -122,8 +122,11 @@ export default function (pi: ExtensionAPI): void {
 		if (!turnActive || refreshTimer) return;
 		refreshTimer = setTimeout(() => {
 			refreshTimer = null;
-			syncWorkingMessage();
-			scheduleRefreshTick();
+			try {
+				syncWorkingMessage();
+			} finally {
+				scheduleRefreshTick();
+			}
 		}, REFRESH_INTERVAL_MS);
 		refreshTimer.unref?.();
 	}

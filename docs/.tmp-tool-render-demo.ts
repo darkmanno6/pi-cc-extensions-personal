@@ -27,7 +27,7 @@ const pi = {
 	},
 };
 claudeCodeStyleExtension(pi as any, { mode: "on" });
-await events.get("session_start")?.({}, { mode: "print", hasUI: false, ui });
+await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
 
 const WIDTH = 84;
 function tool(name: string, args: any = {}, definition?: any) {

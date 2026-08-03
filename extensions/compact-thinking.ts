@@ -61,6 +61,22 @@ export function installCompactThinking(
 	).default;
 	Object.assign(upstreamConfig, initialConfig);
 
+	// Upstream restores completedDurations from sessionManager.getBranch() (the
+	// current leaf path). After compaction or a branch switch, duration entries
+	// of older messages leave that path, so scrolling back renders a bare
+	// "Thinking..." instead of "Thought for Xs". Restore from every entry.
+	const restoreAllDurations = (ctx: any): any => {
+		const sessionManager = ctx?.sessionManager;
+		if (!sessionManager || typeof sessionManager.getEntries !== "function") return ctx;
+		return {
+			...ctx,
+			sessionManager: {
+				...sessionManager,
+				getBranch: () => sessionManager.getEntries(),
+			},
+		};
+	};
+
 	let session: { event: any; ctx: any } | undefined;
 	let shutdown: ((event: any, ctx: any) => void) | undefined;
 	let stopped = false;
@@ -75,7 +91,7 @@ export function installCompactThinking(
 			if (event === "session_start") {
 				pi.on(event, (startEvent, ctx) => {
 					session = { event: startEvent, ctx };
-					handler(startEvent, ctx);
+					handler(startEvent, restoreAllDurations(ctx));
 				});
 			} else if (event === "session_shutdown") {
 				shutdown = handler;
@@ -83,7 +99,9 @@ export function installCompactThinking(
 					if (host[COMPACT_THINKING_OWNER]?.owner === owner) stop(shutdownEvent, ctx);
 				});
 			} else {
-				pi.on(event as any, handler as any);
+				pi.on(event as any, (e: any, ctx: any) =>
+					handler(e, event === "session_tree" ? restoreAllDurations(ctx) : ctx),
+				);
 			}
 		},
 		appendEntry: (...args: any[]) => (pi.appendEntry as any)(...args),

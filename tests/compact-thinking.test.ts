@@ -81,7 +81,12 @@ test("reload keeps the replacement compact-thinking prototype patch", () => {
 const renderText = (component: any, width = 120): string[] =>
 	component
 		.render(width)
-		.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trim())
+		.map((line: string) =>
+			line
+				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+				.replace(/\x1b\][^\x07]*\x07/g, "")
+				.trim(),
+		)
 		.filter((line: string) => line);
 
 function thinkingMessage(timestamp: number, withAgent = true) {
@@ -94,7 +99,7 @@ function thinkingMessage(timestamp: number, withAgent = true) {
 				thinking: "plan",
 				thinkingSignature: { kind: "agent_summary", title: "Plan", body: "..." },
 			},
-			...(withAgent ? [{ type: "toolCall", toolName: "Agent", args: {} }] : []),
+			...(withAgent ? [{ type: "toolCall", name: "Agent", args: {} }] : []),
 		],
 	};
 }
@@ -130,7 +135,7 @@ test("session tree restores durations from all entries so old messages keep Thou
 
 		const oldTs = Date.now() - 60_000;
 		durationEntry.data.messageTimestamp = oldTs;
-		const msg = thinkingMessage(oldTs);
+		const msg = thinkingMessage(oldTs, false);
 		handlers.get("message_update")?.({
 			message: msg,
 			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
@@ -157,6 +162,85 @@ test("session tree restores durations from all entries so old messages keep Thou
 			`old message keeps its duration after compaction, got: ${lines[0]}`,
 		);
 		assert.ok(!lines.some((line) => line.includes("Thinking...")), "no bare Thinking... fallback");
+	} finally {
+		handlers.get("session_shutdown")?.({}, uiCtx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("Agent tool execution keeps the thinking animation until the next boundary", async () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-agent-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { handlers, pi } = runtime();
+	const uiCtx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [] as any[], getEntries: () => [] as any[] },
+		ui: {
+			theme: { fg: (_c: string, t: string) => t, italic: (t: string) => t, bold: (t: string) => t },
+			setWidget() {},
+			requestRender() {},
+		},
+	};
+	try {
+		installCompactThinking(pi, config);
+		handlers.get("session_start")?.({}, uiCtx);
+
+		const ts = Date.now();
+		const msg = thinkingMessage(ts, true); // thinking + Agent toolCall
+		handlers.get("message_update")?.({
+			message: msg,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		handlers.get("message_update")?.({
+			message: msg,
+			assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
+		});
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		// toolcall_start carries the Agent toolCall: animation must survive
+		handlers.get("message_update")?.({
+			message: msg,
+			assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 },
+		});
+
+		const midAgent = new AssistantMessageComponent(msg, true);
+		midAgent.updateContent(msg);
+		const midLines = renderText(midAgent);
+		assert.ok(
+			midLines.some((line) => line.includes("Thinking")),
+			`during Agent execution the thinking ticker stays active, got: ${midLines[0]}`,
+		);
+		assert.ok(
+			!midLines.some((line) => line.includes("Thought for")),
+			"not finalized while the subagent runs",
+		);
+
+		// tool_execution_start(Agent): keep animating (already active, no-op)
+		handlers.get("tool_execution_start")?.(
+			{ toolName: "Agent", toolCallId: "c1", args: {} },
+			uiCtx,
+		);
+		const duringAgent = new AssistantMessageComponent(msg, true);
+		duringAgent.updateContent(msg);
+		assert.ok(
+			!renderText(duringAgent).some((line) => line.includes("Thought for")),
+			"still not finalized while the subagent runs",
+		);
+
+		// model emits text after the subagent returns: finalize
+		handlers.get("message_update")?.({
+			message: msg,
+			assistantMessageEvent: { type: "text_start", contentIndex: 1 },
+		});
+		const after = new AssistantMessageComponent(msg, true);
+		after.updateContent(msg);
+		const afterLines = renderText(after);
+		assert.ok(
+			afterLines.some((line) => line.startsWith("Thought for")),
+			`finalized once the model continues, got: ${afterLines[0]}`,
+		);
 	} finally {
 		handlers.get("session_shutdown")?.({}, uiCtx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

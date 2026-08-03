@@ -2,7 +2,8 @@ import * as piAi from "@earendil-works/pi-ai";
 import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createJiti } from "jiti";
@@ -43,6 +44,73 @@ export function installCompactThinking(
 		"utf8",
 	);
 
+	// Fork the upstream entry so a running subagent tool keeps the thinking
+	// loading animation until the model emits the next text/thinking boundary.
+	// Upstream finalizes on tool_execution_start, freezing the summary into a
+	// static "Thought for Xs" for the whole subagent run.
+	const upstreamRequire = createRequire(import.meta.url);
+	const upstreamIndexPath = upstreamRequire.resolve("pi-compact-thinking/index.ts");
+	const toolStartOriginal = `  pi.on("tool_execution_start", finishThinking);`;
+	const toolStartPatched = `  // Subagent tools can run for minutes: keep the thinking loading animation
+  // alive for the whole execution and only finalize once the model emits the
+  // next text/thinking boundary or the message ends.
+  function resumeAgentThinking(message: AssistantMessage | undefined) {
+    if (activeThinking) return;
+    const content = message?.content;
+    if (!Array.isArray(content)) return;
+    const index = content.findIndex((item) => item?.type === "thinking");
+    if (index < 0) return;
+    startThinking(message, index);
+  }
+  pi.on("tool_execution_start", (event: any) => {
+    if (event.toolName === "Agent" || event.toolName === "Agents") {
+      resumeAgentThinking(latestComponent?.lastMessage ?? undefined);
+    } else {
+      finishThinking();
+    }
+  });`;
+	const updateBoundaryOriginal = `    } else if (
+      update.type === "text_start" ||
+      update.type === "toolcall_start" ||
+      update.type === "toolcall_delta"
+    ) {
+      finishThinking();
+    }`;
+	const updateBoundaryPatched = `    } else if (update.type === "text_start") {
+      finishThinking();
+    } else if (
+      update.type === "toolcall_start" ||
+      update.type === "toolcall_delta"
+    ) {
+      if (
+        Array.isArray(event.message?.content) &&
+        event.message.content.some(
+          (content) =>
+            content?.type === "toolCall" &&
+            (content.name === "Agent" ||
+              content.name === "Agents" ||
+              content.args?.subagent_type != null),
+        )
+      ) {
+        resumeAgentThinking(event.message);
+      } else {
+        finishThinking();
+      }
+    }`;
+	let upstreamIndexSource = readFileSync(upstreamIndexPath, "utf8");
+	if (
+		upstreamIndexSource.includes(toolStartOriginal) &&
+		upstreamIndexSource.includes(updateBoundaryOriginal)
+	) {
+		upstreamIndexSource = upstreamIndexSource
+			.replace(toolStartOriginal, toolStartPatched)
+			.replace(updateBoundaryOriginal, updateBoundaryPatched);
+	} else {
+		// Upstream changed shape: fall back to the untouched entry so the loader
+		// keeps working; only the subagent animation nicety is lost.
+		upstreamIndexSource = readFileSync(upstreamIndexPath, "utf8");
+	}
+
 	// Reuse Pi's live modules so the upstream prototype patch reaches runtime components.
 	const jiti = createJiti(import.meta.url, {
 		virtualModules: {
@@ -55,7 +123,7 @@ export function installCompactThinking(
 		jiti("pi-compact-thinking/lib/config.ts") as { config: CompactThinkingConfig }
 	).config;
 	const compactThinking = (
-		jiti("pi-compact-thinking/index.ts") as {
+		jiti.evalModule(upstreamIndexSource, { filename: upstreamIndexPath }) as {
 			default: (api: ExtensionAPI) => void;
 		}
 	).default;

@@ -20,16 +20,12 @@ function formatCount(value: number): string {
 
 function estimateTextLength(message: any): number {
 	if (!Array.isArray(message?.content)) return 0;
-	return message.content.reduce(
-		(sum: number, block: any) => {
-			if (block?.type === "text" && typeof block.text === "string")
-				return sum + block.text.length;
-			if (block?.type === "thinking" && block.thinkingSignature?.body)
-				return sum + (block.thinkingSignature.body as string).length;
-			return sum;
-		},
-		0,
-	);
+	return message.content.reduce((sum: number, block: any) => {
+		if (block?.type === "text" && typeof block.text === "string") return sum + block.text.length;
+		if (block?.type === "thinking" && block.thinkingSignature?.body)
+			return sum + (block.thinkingSignature.body as string).length;
+		return sum;
+	}, 0);
 }
 
 function textBlockLengths(message: any): number[] {
@@ -178,10 +174,7 @@ export default function (pi: ExtensionAPI): void {
 			updateProviderUsage(evt.partial);
 		} else if (evt.type === "thinking_delta" || evt.type === "text_delta") {
 			const add = typeof evt.delta === "string" ? evt.delta.length : 0;
-			setTextBlockLength(
-				evt.contentIndex,
-				(responseTextBlockLengths[evt.contentIndex] ?? 0) + add,
-			);
+			setTextBlockLength(evt.contentIndex, (responseTextBlockLengths[evt.contentIndex] ?? 0) + add);
 			updateProviderUsage(evt.partial);
 		} else if (evt.type === "text_end") {
 			setTextBlockLength(

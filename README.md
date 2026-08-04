@@ -17,6 +17,10 @@
   <strong>简体中文</strong> · <a href="./README.en.md">English</a>
 </p>
 
+
+
+
+
 ---
 
 ## 界面预览
@@ -27,12 +31,9 @@
       <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
     </td>
   </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <video src="./assets/readme/demo.mp4" controls width="100%" alt="功能演示"></video>
-    </td>
-  </tr>
 </table>
+
+https://github.com/user-attachments/assets/4ae094d2-7480-484b-a0c8-6e782495ce9f
 
 ## 快速开始
 

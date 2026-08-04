@@ -40,7 +40,7 @@
 
 		"selectedBg": "#13233a",
 		"userMessageBg": "surface",
-		"userMessageText": "text",
+		"userMessageText": "",
 		"customMessageBg": "surface",
 		"customMessageText": "text",
 		"customMessageLabel": "accent",

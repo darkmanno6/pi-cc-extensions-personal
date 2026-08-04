@@ -170,7 +170,10 @@ export function installFixedEditorImePatch(compositorClass: {
 			const wasInstalled = Boolean(this.installed);
 			const result = Reflect.apply(originalInstall, this, args);
 			// Dependents re-wrap doRender only after the compositor actually owns it.
-			if (!wasInstalled && this.installed && !this.disposed) compositorInstallNotify?.();
+			// Read the global each time: the patch survives /reload on the shared
+			// prototype while the owner callback belongs to the live extension module.
+			if (!wasInstalled && this.installed && !this.disposed)
+				getCompositorInstallNotify()?.callback();
 			return result;
 		};
 		prototype[MOUSE_WRITE_PATCH] = true;
@@ -211,9 +214,22 @@ type FixedEditorOwner = {
 const FIXED_EDITOR_OWNER = Symbol.for("pi.ccstyle.fixed-editor-owner");
 const FIXED_EDITOR_FOOTER_HOOK = Symbol.for("pi.ccstyle.fixed-editor-footer-hook");
 
-/** Active owner callback; fired from compositor.install after a fresh install succeeds. */
-let compositorInstallNotify: (() => void) | undefined;
-let compositorInstallNotifyOwner: object | undefined;
+// /reload keeps the same TerminalSplitCompositor.prototype, so the install hook
+// patched by the pre-reload module must read a cross-reload global instead of a
+// module-local variable; otherwise notifyRebuild never fires after reload and
+// dependents (ccstyle mouse input capture) stay unbound.
+const COMPOSITOR_INSTALL_NOTIFY_KEY = Symbol.for("pi.ccstyle.compositor-install-notify");
+
+type CompositorInstallNotify = { owner: object; callback: () => void };
+function getCompositorInstallNotify(): CompositorInstallNotify | undefined {
+	return (globalThis as Record<PropertyKey, unknown>)[COMPOSITOR_INSTALL_NOTIFY_KEY] as
+		| CompositorInstallNotify
+		| undefined;
+}
+function setCompositorInstallNotify(value: CompositorInstallNotify | undefined): void {
+	if (value) (globalThis as Record<PropertyKey, unknown>)[COMPOSITOR_INSTALL_NOTIFY_KEY] = value;
+	else delete (globalThis as Record<PropertyKey, unknown>)[COMPOSITOR_INSTALL_NOTIFY_KEY];
+}
 /** Runs before fixed-editor start/probe so dependents can unwrap doRender before capture. */
 let beforeFixedEditorStart: (() => void) | undefined;
 
@@ -289,10 +305,7 @@ export function installFixedEditor(
 		});
 	};
 	function clearInstallNotify() {
-		if (compositorInstallNotifyOwner === owner) {
-			compositorInstallNotify = undefined;
-			compositorInstallNotifyOwner = undefined;
-		}
+		if (getCompositorInstallNotify()?.owner === owner) setCompositorInstallNotify(undefined);
 	}
 	function deactivate() {
 		fixedEditorState.scrollButtonHitbox = null;
@@ -311,12 +324,14 @@ export function installFixedEditor(
 		if (previous?.owner !== owner) previous?.stop();
 		const currentSession = session;
 		// Register before start/probe so the first real compositor.install notifies us.
-		compositorInstallNotify = () => {
-			if (!active) return;
-			if ((globalThis as any)[FIXED_EDITOR_OWNER]?.owner !== owner) return;
-			notifyRebuild();
-		};
-		compositorInstallNotifyOwner = owner;
+		setCompositorInstallNotify({
+			owner,
+			callback: () => {
+				if (!active) return;
+				if ((globalThis as any)[FIXED_EDITOR_OWNER]?.owner !== owner) return;
+				notifyRebuild();
+			},
+		});
 		// Unwrap outer doRender patches before compositor construction captures it.
 		beforeFixedEditorStart?.();
 		start?.(currentSession.event, currentSession.ctx);

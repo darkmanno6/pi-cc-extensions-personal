@@ -8,3 +8,5 @@ Thumbs.db
 !.env.example
 nul
 .codegraph/
+# Local pi configuration
+.pi/

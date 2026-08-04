@@ -3171,7 +3171,12 @@ export default function (
 		const tui = toolMouseTui;
 		if (!tui) return;
 		if (toolMouseFixedFeaturesEnabled) patchToolMouseInputCapture(tui);
-		patchToolMouseMotionAfterRender(tui);
+		// compositor.install captured the current chain as originalDoRender, so an
+		// already-installed wrapper keeps receiving calls through it — re-wrapping
+		// only when no wrapper is active avoids stacking one per rebuild/reload.
+		if (!(toolMouseRenderPatchTui === tui && toolMouseRenderPatchState?.active)) {
+			patchToolMouseMotionAfterRender(tui);
+		}
 		tui.requestRender?.(true);
 	});
 	const writeExecutionMetadata = installWriteOverride(pi, new WriteExecutionMetadataStore());

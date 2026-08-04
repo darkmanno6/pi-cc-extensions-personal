@@ -21,8 +21,13 @@ function formatCount(value: number): string {
 function estimateTextLength(message: any): number {
 	if (!Array.isArray(message?.content)) return 0;
 	return message.content.reduce(
-		(sum: number, block: any) =>
-			sum + (block?.type === "text" && typeof block.text === "string" ? block.text.length : 0),
+		(sum: number, block: any) => {
+			if (block?.type === "text" && typeof block.text === "string")
+				return sum + block.text.length;
+			if (block?.type === "thinking" && block.thinkingSignature?.body)
+				return sum + (block.thinkingSignature.body as string).length;
+			return sum;
+		},
 		0,
 	);
 }
@@ -34,6 +39,8 @@ function textBlockLengths(message: any): number[] {
 		const block = message.content[index];
 		if (block?.type === "text" && typeof block.text === "string") {
 			lengths[index] = block.text.length;
+		} else if (block?.type === "thinking" && block.thinkingSignature?.body) {
+			lengths[index] = (block.thinkingSignature.body as string).length;
 		}
 	}
 	return lengths;
@@ -166,14 +173,14 @@ export default function (pi: ExtensionAPI): void {
 
 		if (evt.type === "start") {
 			resetResponseTracking(evt.partial);
-		} else if (evt.type === "text_start") {
+		} else if (evt.type === "thinking_start" || evt.type === "text_start") {
 			setTextBlockLength(evt.contentIndex, 0);
 			updateProviderUsage(evt.partial);
-		} else if (evt.type === "text_delta") {
+		} else if (evt.type === "thinking_delta" || evt.type === "text_delta") {
+			const add = typeof evt.delta === "string" ? evt.delta.length : 0;
 			setTextBlockLength(
 				evt.contentIndex,
-				(responseTextBlockLengths[evt.contentIndex] ?? 0) +
-					(typeof evt.delta === "string" ? evt.delta.length : 0),
+				(responseTextBlockLengths[evt.contentIndex] ?? 0) + add,
 			);
 			updateProviderUsage(evt.partial);
 		} else if (evt.type === "text_end") {

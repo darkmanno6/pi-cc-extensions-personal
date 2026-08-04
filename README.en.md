@@ -25,32 +25,11 @@
   <tr>
     <td colspan="2" align="center">
       <img src="./assets/readme/welcome.webp" width="100%" alt="Pi welcome screen">
-      <br>
-      <sub><b>Welcome screen</b><br><code>npm:pi-startup-header</code> with <code>npm:pi-zentui</code></sub>
     </td>
   </tr>
   <tr>
-    <td width="50%" align="center">
-      <img src="./assets/readme/fixed-editor-navigation.webp" width="100%" alt="Tool results, back-to-bottom control, and Ctrl+End in the fixed editor">
-      <br>
-      <sub><b>Fixed-editor workflow</b><br>Tool summaries, expand/collapse, and keyboard navigation</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="./assets/readme/session-reference.webp" width="100%" alt="Selecting a previous Session through at-sign completion">
-      <br>
-      <sub><b>Session references</b><br>Find and inject previous context through completion</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="./assets/readme/context-usage.webp" width="100%" alt="Context window usage breakdown">
-      <br>
-      <sub><b>Context usage</b><br>Inspect usage by category</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="./assets/readme/context-preview.webp" width="100%" alt="Previewing injected context">
-      <br>
-      <sub><b>Context preview</b><br>Inspect the content injected into the model</sub>
+    <td colspan="2" align="center">
+      <video src="./assets/readme/demo.mp4" controls width="100%" alt="Feature demo"></video>
     </td>
   </tr>
 </table>

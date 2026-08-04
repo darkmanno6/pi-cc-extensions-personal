@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  Claude Code 风格界面、固定编辑器、上下文检查，以及 Agent / Session 引用。
+  类 Claude Code 风格界面、固定编辑器、上下文检查，以及 Agent / Session 引用。
 </p>
 
 <p align="center">
@@ -25,32 +25,11 @@
   <tr>
     <td colspan="2" align="center">
       <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
-      <br>
-      <sub><b>欢迎界面</b><br> @ <code>npm:pi-startup-header</code> 与 <code>npm:pi-zentui</code></sub>
     </td>
   </tr>
   <tr>
-    <td width="50%" align="center">
-      <img src="./assets/readme/fixed-editor-navigation.webp" width="100%" alt="Pi fixed-editor 中的工具结果、回到底部按钮与 Ctrl+End 快捷键">
-      <br>
-      <sub><b>固定编辑器工作流</b><br>工具结果摘要、折叠展开与键盘导航</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="./assets/readme/session-reference.webp" width="100%" alt="在 Pi 中通过 @ 补全选择历史 Session">
-      <br>
-      <sub><b>历史 Session 引用</b><br>通过 @ 补全快速找到并引用历史会话</sub>
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" align="center">
-      <img src="./assets/readme/context-usage.webp" width="100%" alt="Pi 上下文窗口用量查看器">
-      <br>
-      <sub><b>上下文用量</b><br>查看 System prompt、Tools、Skills 等占用分布</sub>
-    </td>
-    <td width="50%" align="center">
-      <img src="./assets/readme/context-preview.webp" width="100%" alt="Pi 中展开查看 System Prompt 内容">
-      <br>
-      <sub><b>上下文预览</b><br>按类别展开查看实际注入的上下文内容</sub>
+    <td colspan="2" align="center">
+      <video src="./assets/readme/demo.mp4" controls width="100%" alt="功能演示"></video>
     </td>
   </tr>
 </table>

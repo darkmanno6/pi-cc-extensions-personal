@@ -2,8 +2,10 @@ import * as piAi from "@earendil-works/pi-ai";
 import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createJiti } from "jiti";
 
 export type CompactThinkingConfig = {
@@ -186,7 +188,21 @@ export function installCompactThinking(
 		host[COMPACT_THINKING_OWNER]?.stop(event, ctx);
 		session = { event, ctx };
 
-		const loaded = loadPatchedUpstream();
+		// upstream lib/config.ts 在模块顶层读取 compact-thinking.json，缺失时
+		// 会自建默认配置；预写我们的配置供其读取，加载完成后立即删除，
+		// 不在 .pi/agent 下残留文件（文件原本存在时保持不动）。
+		const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+		const configPath = join(agentDir, "compact-thinking.json");
+		const fileExisted = existsSync(configPath);
+		if (!fileExisted) {
+			writeFileSync(configPath, `${JSON.stringify(initialConfig, null, 2)}\n`, "utf8");
+		}
+		let loaded: ReturnType<typeof loadPatchedUpstream>;
+		try {
+			loaded = loadPatchedUpstream();
+		} finally {
+			if (!fileExisted) rmSync(configPath, { force: true });
+		}
 		upstreamConfig = loaded.config;
 		Object.assign(upstreamConfig, initialConfig);
 		delegates.clear();

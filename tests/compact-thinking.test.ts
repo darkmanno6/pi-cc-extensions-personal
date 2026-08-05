@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -56,6 +56,11 @@ test("compact thinking patches the runtime component with ccstyle config", () =>
 		assert.equal(AssistantMessageComponent.prototype.updateContent, original);
 		emit("session_start", {}, tuiCtx);
 		assert.notEqual(AssistantMessageComponent.prototype.updateContent, original);
+		assert.equal(
+			existsSync(join(dir, "compact-thinking.json")),
+			false,
+			"activate must not leave compact-thinking.json behind",
+		);
 	} finally {
 		emit("session_shutdown", {}, tuiCtx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

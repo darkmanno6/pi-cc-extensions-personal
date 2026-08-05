@@ -579,6 +579,39 @@ test("compact reclaims assistant rendering after a later thinking extension patc
 	}
 });
 
+test("stale compact wrapper breaks downstream restoration cycles", () => {
+	const prototype = AssistantMessageComponent.prototype as any;
+	const originalUpdateContent = prototype.updateContent;
+	const hooks = installCompactStyle({} as any, {
+		getMode: () => "off",
+		getExcludeRenderers: () => [],
+	});
+	const compactUpdateContent = prototype.updateContent;
+	const downstreamRenderer = function (this: any, message: any) {
+		return compactUpdateContent.call(this, message);
+	};
+	const ctx = createContext(createUi());
+
+	try {
+		prototype.updateContent = downstreamRenderer;
+		hooks.onSessionStart({}, ctx);
+		hooks.onSessionShutdown({}, ctx);
+
+		// Mirrors pi-compact-thinking shutdown: it restores the compact wrapper
+		// captured when the downstream renderer was installed.
+		prototype.updateContent = compactUpdateContent;
+		assert.doesNotThrow(
+			() =>
+				new AssistantMessageComponent(
+					assistantMessage([{ type: "text", text: "after reload" }]),
+					true,
+				),
+		);
+	} finally {
+		prototype.updateContent = originalUpdateContent;
+	}
+});
+
 test("compact restores contentText for tools without definitions", () => {
 	let mode: CompactStyleMode = "compact";
 	const ui = createUi();

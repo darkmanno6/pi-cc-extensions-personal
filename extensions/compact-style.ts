@@ -917,7 +917,16 @@ function patchAssistantMessageComponent(
 			return patch.nativeUpdateContent.call(this, message);
 		}
 		if (!patch.active || !installation.active || state.activeInstallation !== installation) {
-			return patch.originalUpdateContent.call(this, message);
+			// A downstream renderer may have captured this wrapper, then been
+			// restored after compact teardown. Mark the pass-through re-entry so
+			// that downstream -> stale compact -> downstream cycles bottom out at
+			// Pi's native renderer instead of overflowing the stack.
+			this[ASSISTANT_REENTRY_KEY] = patch;
+			try {
+				return patch.originalUpdateContent.call(this, message);
+			} finally {
+				delete this[ASSISTANT_REENTRY_KEY];
+			}
 		}
 
 		state.assistantComponents.add(this);

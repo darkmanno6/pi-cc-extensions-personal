@@ -17,20 +17,12 @@
   <strong>简体中文</strong> · <a href="./README.en.md">English</a>
 </p>
 
-
-
-
-
 ---
 
 ## 界面预览
 
 <table>
-  <tr>
-    <td colspan="2" align="center">
-      <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
-    </td>
-  </tr>
+ <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
 </table>
 
 https://github.com/user-attachments/assets/4ae094d2-7480-484b-a0c8-6e782495ce9f
@@ -48,14 +40,13 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 功能
 
-
-| 功能                         | 说明                                                                            | 入口                |
-| ------------------------------ | --------------------------------------------------------------------------------- | --------------------- |
-| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` / `compact` 三种模式 | `/ccstyle` |
-| Fixed editor 交互 | 基于 `@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部 | `/ccstyle` |
-| 上下文检查 | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容 | `/context` |
-| Session 引用                 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@session:`         |
-| 主题                         | 随包提供内置 GitHub Dark Default 主题                                           | `/theme`            |
+| 功能                 | 说明                                                                                  | 入口          |
+| -------------------- | ------------------------------------------------------------------------------------- | ------------- |
+| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` / `compact` 三种模式 | `/ccstyle`  |
+| Fixed editor 交互    | 基于`@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部     | `/ccstyle`  |
+| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                        | `/context`  |
+| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                   | `@session:` |
+| 主题                 | 随包提供内置 GitHub Dark Default 主题                                                 | `/theme`    |
 
 ## 本地开发
 
@@ -75,9 +66,8 @@ pi -e .
 
 ## 推荐搭配
 
-
-| 扩展                          | 用途                                |
-| ------------------------------- | ------------------------------------- |
+| 扩展                            | 用途                                |
+| ------------------------------- | ----------------------------------- |
 | `npm:@tintinweb/pi-subagents` | 并行 SubAgent、后台任务与工作树隔离 |
 | `npm:pi-mcp-adapter`          | 按需发现 MCP 工具，减少上下文占用   |
 | `npm:pi-theme-picker`         | 主题搜索和实时预览                  |

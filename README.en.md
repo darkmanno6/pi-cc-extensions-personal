@@ -125,7 +125,6 @@ Run `/reload` after changing extensions.
 | `npm:pi-mcp-adapter`          | On-demand MCP tool discovery with lower context usage        |
 | `npm:pi-theme-picker`         | Theme search and live preview                                |
 | `npm:@ayulab/pi-rewind`       | Checkpoint-based code or conversation rollback               |
-| `npm:pi-compact-thinking`     | Compact rendering for hidden thinking blocks                 |
 
 ## Credits
 

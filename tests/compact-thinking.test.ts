@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -44,11 +44,10 @@ const headlessCtx = {
 	ui: { theme: {}, setWidget() {}, requestRender() {} },
 };
 
-test("compact thinking patches the runtime component and mirrors ccstyle config", () => {
+test("compact thinking patches the runtime component with ccstyle config", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
 	const { emit, pi } = runtime();
-	writeFileSync(join(dir, "compact-thinking.json"), "invalid", "utf8");
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const original = AssistantMessageComponent.prototype.updateContent;
 	try {
@@ -57,7 +56,6 @@ test("compact thinking patches the runtime component and mirrors ccstyle config"
 		assert.equal(AssistantMessageComponent.prototype.updateContent, original);
 		emit("session_start", {}, tuiCtx);
 		assert.notEqual(AssistantMessageComponent.prototype.updateContent, original);
-		assert.deepEqual(JSON.parse(readFileSync(join(dir, "compact-thinking.json"), "utf8")), config);
 	} finally {
 		emit("session_shutdown", {}, tuiCtx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

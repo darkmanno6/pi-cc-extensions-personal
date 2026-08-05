@@ -2,10 +2,8 @@ import * as piAi from "@earendil-works/pi-ai";
 import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { createJiti } from "jiti";
 
 export type CompactThinkingConfig = {
@@ -140,15 +138,6 @@ export function installCompactThinking(
 	const host = globalThis as typeof globalThis & {
 		[COMPACT_THINKING_OWNER]?: CompactThinkingOwner;
 	};
-
-	const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-	// Upstream requires this file while loading; mirror ccstyle into it and never read it back.
-	mkdirSync(agentDir, { recursive: true });
-	writeFileSync(
-		join(agentDir, "compact-thinking.json"),
-		`${JSON.stringify(initialConfig, null, 2)}\n`,
-		"utf8",
-	);
 
 	let upstreamConfig: CompactThinkingConfig | undefined;
 	let session: { event: any; ctx: any } | undefined;

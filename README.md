@@ -72,7 +72,6 @@ pi -e .
 | `npm:pi-mcp-adapter`          | 按需发现 MCP 工具，减少上下文占用   |
 | `npm:pi-theme-picker`         | 主题搜索和实时预览                  |
 | `npm:@ayulab/pi-rewind`       | 基于 checkpoint 回退代码或对话      |
-| `npm:pi-compact-thinking`     | 紧凑显示隐藏的 thinking 块          |
 
 ## 致谢
 

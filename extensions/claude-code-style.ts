@@ -75,7 +75,7 @@ const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"];
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
 const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
 const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
-const THINKING_ANIMATION_INTERVAL_VALUES = ["30", "60", "90", "120", "180"];
+const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 const EXCLUDE_RENDERER_CANDIDATES = [
 	"bash",

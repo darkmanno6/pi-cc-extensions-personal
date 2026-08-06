@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import claudeCodeStyleExtension, { installToolMouseInteraction } from "../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension, {
+	installToolMouseInteraction,
+} from "../extensions/claude-code-style.ts";
 import { installFixedEditor } from "../extensions/fixed-editor.ts";
 
 // 0.84+ 惰性 Proxy 回归测试：官方 tui 引用（createInteractiveTuiReference）对函数

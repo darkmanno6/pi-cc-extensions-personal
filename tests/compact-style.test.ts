@@ -991,8 +991,7 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	// Section tabs; default Style shows Mode + Exclude tools.
 	assert.ok(
 		panelLines.some(
-			(line: string) =>
-				/Style/.test(line) && /Diff/.test(line) && /Thinking/.test(line),
+			(line: string) => /Style/.test(line) && /Diff/.test(line) && /Thinking/.test(line),
 		),
 	);
 	assert.ok(panelLines.some((line: string) => line.includes("Mode") && line.includes("on")));

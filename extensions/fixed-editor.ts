@@ -207,9 +207,7 @@ if (terminalSplit.TerminalSplitCompositor) {
 	installProxyGuard(terminalSplit.TerminalSplitCompositor);
 }
 
-function installProxyGuard(compositorClass: {
-	prototype: Record<PropertyKey, any>;
-}): void {
+function installProxyGuard(compositorClass: { prototype: Record<PropertyKey, any> }): void {
 	const prototype = compositorClass.prototype;
 	const originalInstall = prototype.install;
 	if (typeof originalInstall !== "function" || prototype[COMPOSITOR_PROXY_GUARD]) return;

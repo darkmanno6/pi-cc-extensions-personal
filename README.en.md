@@ -125,13 +125,17 @@ Run `/reload` after changing extensions.
 
 ## Recommended companions
 
-
-| Extension                     | Purpose                                                      |
-| ------------------------------- | -------------------------------------------------------------- |
-| `npm:@tintinweb/pi-subagents` | Parallel SubAgents, background tasks, and worktree isolation |
-| `npm:pi-mcp-adapter`          | On-demand MCP tool discovery with lower context usage        |
-| `npm:pi-theme-picker`         | Theme search and live preview                                |
-| `npm:@ayulab/pi-rewind`       | Checkpoint-based code or conversation rollback               |
+| Extension                              | Purpose                                              |
+| -------------------------------------- | ---------------------------------------------------- |
+| `npm:@tintinweb/pi-subagents`        | Parallel SubAgents, background tasks, and worktree isolation |
+| `npm:@tintinweb/pi-tasks`            | Claude Code-style task tracking and coordination     |
+| `npm:pi-mcp-adapter`                 | On-demand MCP tool discovery with lower context usage |
+| `npm:@ff-labs/pi-fff`                | FFF-powered fuzzy file and content search (fffind / ffgrep) |
+| `npm:pi-web-access`                  | Web search, URL fetching, GitHub cloning, PDF/video parsing |
+| `npm:pi-theme-picker`                | Theme search and live preview                         |
+| `npm:pi-token-speed`                 | Tokens-per-second measurement via sliding window      |
+| `npm:@narumitw/pi-usage`             | Current-account usage for Codex / Copilot / OpenRouter |
+| `git:github.com/DietrichGebert/ponytail` | Lazy-mode coding: forces the simplest working solution |
 
 ## Credits
 

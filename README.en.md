@@ -22,10 +22,8 @@
 ## Preview
 
 <table>
-  <img src="./assets/readme/welcome.webp" width="100%" alt="Pi welcome screen">
+  <img width="2788" height="1846" alt="demo_new" src="https://github.com/user-attachments/assets/d4f9bb51-a49a-4a34-aa60-006514d37b09" />
 </table>
-
-https://github.com/user-attachments/assets/4ae094d2-7480-484b-a0c8-6e782495ce9f
 
 ## Quick start
 

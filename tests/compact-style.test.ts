@@ -992,23 +992,15 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	assert.ok(
 		panelLines.some(
 			(line: string) =>
-				/Style/.test(line) && /Editor/.test(line) && /Diff/.test(line) && /Thinking/.test(line),
+				/Style/.test(line) && /Diff/.test(line) && /Thinking/.test(line),
 		),
 	);
 	assert.ok(panelLines.some((line: string) => line.includes("Mode") && line.includes("on")));
 	assert.ok(panelLines.some((line: string) => line.includes("rich edit/write diffs")));
 	assert.ok(panelLines.some((line: string) => line.includes("Exclude tools")));
 	assert.ok(panelLines.some((line: string) => line.includes("Tab/Shift+Tab")));
-	// Fixed editor lives on the Editor tab — not on Style.
+	// Fixed editor is sunset on 0.84+: no trace anywhere in the panel.
 	assert.ok(!panelLines.some((line: string) => line.includes("Fixed editor")));
-	// Tab → Editor section
-	panel.handleInput("\t");
-	panelLines = panel.render(80).map((line: string) => line.trimEnd());
-	assert.ok(
-		panelLines.some((line: string) => line.includes("Fixed editor") && line.includes("on")),
-	);
-	assert.ok(panelLines.some((line: string) => line.includes("Mouse capture")));
-	assert.ok(panelLines.some((line: string) => line.includes("Ctrl+End")));
 	// Tab → Diff section
 	panel.handleInput("\t");
 	panelLines = panel.render(80).map((line: string) => line.trimEnd());
@@ -1027,11 +1019,11 @@ test("ccstyle registers compact mode and no ctrl+shift+o shortcut", async () => 
 	assert.ok(panelLines.some((line: string) => line.includes("Preview lines")));
 	assert.ok(panelLines.some((line: string) => line.includes("Animation interval ms")));
 	assert.ok(!panelLines.some((line: string) => line.includes("Diff layout")));
-	// Shift+Tab back to Diff, then Editor.
-	panel.handleInput("\x1b[Z");
+	// Shift+Tab back to Diff.
 	panel.handleInput("\x1b[Z");
 	panelLines = panel.render(80).map((line: string) => line.trimEnd());
-	assert.ok(panelLines.some((line: string) => line.includes("Fixed editor")));
+	assert.ok(panelLines.some((line: string) => line.includes("Diff layout")));
+	assert.ok(!panelLines.some((line: string) => line.includes("Fixed editor")));
 
 	for (const name of [
 		"session_start",

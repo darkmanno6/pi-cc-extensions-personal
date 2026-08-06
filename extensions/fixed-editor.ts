@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 import * as piTui from "@earendil-works/pi-tui";
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { isFullscreenUi, isLazyProxyTui } from "./fullscreen-detect.ts";
 import { createJiti } from "jiti";
 
 type LifecycleHandler = (event: any, ctx: any) => void;
@@ -196,8 +197,27 @@ export function installFixedEditorImePatch(compositorClass: {
 	}
 }
 
+const COMPOSITOR_PROXY_GUARD = Symbol.for("pi.ccstyle.compositor-proxy-guard");
+
 if (terminalSplit.TerminalSplitCompositor) {
 	installFixedEditorImePatch(terminalSplit.TerminalSplitCompositor);
+	// 0.84+ 的 tui 是惰性 Proxy：compositor 构造时捕获的 doRender/render 是
+	// 每次重新解析的包装，install 后执行会解析到 compositor 自身（无限递归）。
+	// 检测到惰性 Proxy 时跳过安装，渲染管线完全交给官方。
+	installProxyGuard(terminalSplit.TerminalSplitCompositor);
+}
+
+function installProxyGuard(compositorClass: {
+	prototype: Record<PropertyKey, any>;
+}): void {
+	const prototype = compositorClass.prototype;
+	const originalInstall = prototype.install;
+	if (typeof originalInstall !== "function" || prototype[COMPOSITOR_PROXY_GUARD]) return;
+	prototype[COMPOSITOR_PROXY_GUARD] = true;
+	prototype.install = function (this: any, ...args: any[]) {
+		if (isLazyProxyTui(this.tui)) return;
+		return Reflect.apply(originalInstall, this, args);
+	};
 }
 
 export type FixedEditorController = {
@@ -320,6 +340,8 @@ export function installFixedEditor(
 	}
 	function activate() {
 		if (!session || session.ctx?.mode !== "tui" || active) return;
+		// fullscreen 复用官方的 sticky editor，固定编辑器让位
+		if (isFullscreenUi(session.ctx)) return;
 		const previous = (globalThis as any)[FIXED_EDITOR_OWNER] as FixedEditorOwner | undefined;
 		if (previous?.owner !== owner) previous?.stop();
 		const currentSession = session;

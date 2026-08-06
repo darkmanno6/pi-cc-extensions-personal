@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getSettingsListTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import { isFullscreenUi, isLazyProxyTui } from "./fullscreen-detect.ts";
 import {
 	installCompactStyle,
 	type CompactStyleHooks,
@@ -227,7 +228,6 @@ function formatExcludeRenderers(names: readonly string[]): string {
 export function formatConfigStatus(source: Config = config): string {
 	return [
 		`mode=${source.mode}`,
-		`fixedEditor=${source.fixedEditorFeatures ? "on" : "off"}`,
 		`exclude=[${source.excludeRenderers.join(", ") || "none"}]`,
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
@@ -1515,6 +1515,8 @@ function renderScrollButton(width: number, theme: any): string[] {
  */
 function patchToolMouseInputCapture(tui: any): void {
 	if (toolMouseInputPatchTui === tui) return;
+	// 0.84+ 惰性 Proxy：捕获 handleInput 会解析到 wrapper 自身（无限递归），跳过。
+	if (isLazyProxyTui(tui)) return;
 
 	restoreToolMouseInputCapture();
 	const originalHandle = tui?.handleInput;
@@ -1722,6 +1724,8 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 	) {
 		return;
 	}
+	// 0.84+ 惰性 Proxy：捕获 doRender 会解析到 wrapper 自身（无限递归），跳过。
+	if (isLazyProxyTui(tui)) return;
 	restoreToolMouseRenderPatch();
 	const original = tui?.doRender;
 	const terminal = tui?.terminal;
@@ -1947,8 +1951,16 @@ export function installToolMouseInteraction(
 
 	toolMouseUi = ctx.ui;
 	toolMouseFixedFeaturesEnabled = fixedEditorFeatures;
+	// 0.84+ 的 tui 是惰性 Proxy：行级 patch（doRender/handleInput）无法安全捕获，
+	// fixed-editor compositor 亦停用 —— 整个工具鼠标交互体系（hover/点击/滚动按钮）
+	// 让位给官方，连 onTerminalInput 监听都不注册。
+	let proxyTui = false;
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
+		if (isLazyProxyTui(tui)) {
+			proxyTui = true;
+			return { render: () => 0, invalidate() {} };
+		}
 		// Root input capture follows the live compositor; onRebuild re-applies it
 		// once the fixed-editor compositor actually owns the terminal.
 		if (useFixedEditorFeatures(tui)) patchToolMouseInputCapture(tui);
@@ -1967,6 +1979,10 @@ export function installToolMouseInteraction(
 		scrollButtonWidget = widget;
 		return widget;
 	});
+	if (proxyTui) {
+		teardownToolMouseInteraction(fixedEditorFeatures);
+		return;
+	}
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
 }
 
@@ -2040,18 +2056,12 @@ function applyStyleMode(
 
 function modeSettingDescription(mode: CompactStyleMode): string {
 	if (mode === "compact") {
-		return "Compact transcript summaries. Fixed editor and diff options below still apply independently.";
+		return "Compact transcript summaries. Diff options below still apply independently.";
 	}
 	if (mode === "off") {
-		return "Pi native tool rendering. Fixed editor and diff options below still apply independently.";
+		return "Pi native tool rendering. Diff options below still apply independently.";
 	}
-	return "Claude Code style with rich edit/write diffs. Tune fixed editor and diff options below.";
-}
-
-function fixedEditorSettingDescription(enabled: boolean): string {
-	return enabled
-		? "Pinned editor via @tifan/pi-fixed-editor. Mouse capture, 5-row wheel, tool clicks, back-to-bottom button, message count, and Ctrl+End."
-		: "Native scrolling editor; mouse hover/click and wheel reporting off. Ctrl+End remains enabled.";
+	return "Claude Code style with rich edit/write diffs. Tune diff options below.";
 }
 
 function excludeRenderersDescription(names: readonly string[]): string {
@@ -2162,7 +2172,6 @@ function renderSectionTabBar(
 async function showCcstylePanel(
 	ctx: any,
 	compactStyle: CompactStyleHooks,
-	fixedEditorController: FixedEditorController,
 	toolGrouping?: ToolGroupingHooks,
 	compactThinking?: CompactThinkingController,
 ): Promise<void> {
@@ -2178,13 +2187,6 @@ async function showCcstylePanel(
 			description: modeSettingDescription(config.mode),
 			currentValue: config.mode,
 			values: ["on", "off", "compact"],
-		};
-		const fixedEditorSetting = {
-			id: "fixedEditorFeatures",
-			label: "Fixed editor",
-			description: fixedEditorSettingDescription(config.fixedEditorFeatures),
-			currentValue: config.fixedEditorFeatures ? "on" : "off",
-			values: ["on", "off"],
 		};
 		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
@@ -2287,17 +2289,6 @@ async function showCcstylePanel(
 					modeSetting.description = modeSettingDescription(value as CompactStyleMode);
 					applyStyleMode(value as CompactStyleMode, ctx, compactStyle, toolGrouping);
 					return;
-				case "fixedEditorFeatures":
-					config.fixedEditorFeatures = value === "on";
-					fixedEditorSetting.description = fixedEditorSettingDescription(
-						config.fixedEditorFeatures,
-					);
-					saveConfig();
-					fixedEditorController.setEnabled(config.fixedEditorFeatures);
-					installToolMouseInteraction(ctx);
-					refreshCurrentTranscript(compactStyle, ctx);
-					ctx.ui.notify(`Fixed editor: ${value}`, "info");
-					return;
 				case "excludeRenderers":
 					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
 					excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
@@ -2366,11 +2357,6 @@ async function showCcstylePanel(
 				id: "style",
 				label: "Style",
 				items: [modeSetting, excludeSetting],
-			},
-			{
-				id: "editor",
-				label: "Editor",
-				items: [fixedEditorSetting],
 			},
 			{
 				id: "diff",
@@ -3189,6 +3175,8 @@ export default function (
 		| undefined;
 	const ensureTuiInstallation = (ctx: any) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
+		// fullscreen 复用官方布局，插件渲染层（工具样式/紧凑模式/分组）让位
+		if (isFullscreenUi(ctx)) return undefined;
 		if (installation) return installation;
 		const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
@@ -3215,23 +3203,25 @@ export default function (
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (!arg || arg === "panel") {
-				const hooks = ensureTuiInstallation(ctx);
-				if (hooks)
-					await showCcstylePanel(
-						ctx,
-						hooks.compactStyle,
-						fixedEditorController,
-						hooks.toolGrouping,
-						compactThinking,
+			if (!arg || arg === "panel" || arg === "on" || arg === "off" || arg === "compact") {
+				if (ctx?.mode !== "tui" || !ctx?.hasUI) {
+					ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
+					return;
+				}
+				if (isFullscreenUi(ctx)) {
+					ctx.ui.notify(
+						"ccstyle 渲染已在 fullscreen 模式下让位给官方 TUI；请切换到 regular 模式后使用 /ccstyle",
+						"warning",
 					);
-				else ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
-				return;
-			}
-			if (arg === "on" || arg === "off" || arg === "compact") {
+					return;
+				}
 				const hooks = ensureTuiInstallation(ctx);
-				if (hooks) applyStyleMode(arg, ctx, hooks.compactStyle, hooks.toolGrouping);
-				else ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
+				if (!hooks) return;
+				if (!arg || arg === "panel") {
+					await showCcstylePanel(ctx, hooks.compactStyle, hooks.toolGrouping, compactThinking);
+				} else {
+					applyStyleMode(arg, ctx, hooks.compactStyle, hooks.toolGrouping);
+				}
 				return;
 			}
 			if (arg === "status") {

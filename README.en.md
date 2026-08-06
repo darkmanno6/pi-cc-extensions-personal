@@ -111,8 +111,17 @@ Run `/reload` after changing extensions.
 ## Compatibility
 
 - Node.js `>=22.19.0`
-- Loaded through `pi.extensions` and `pi.themes` in the root `package.json`
+- Pi `^0.84.0` (loaded through `pi.extensions` and `pi.themes` in the root `package.json`)
+- For Pi 0.80.x and earlier, use an older release of this package (peerDependencies are now `^0.84.0`)
 - If a Pi, TUI, or `@tifan/pi-fixed-editor` update causes display issues, try `/reload` first
+
+### Fullscreen mode & sunset features
+
+- Official `--tui-mode fullscreen` (and runtime switching via `/settings`) is reused as-is: when `tui.mode === "fullscreen"`, the extension stands down and installs no rendering layer (tool styling, compact mode, tool grouping, and the fixed editor are all skipped), leaving fullscreen entirely to the official TUI. Data features (context, session references, autocomplete, etc.) are unaffected.
+- Capabilities that overlap with the official fullscreen TUI are sunset (frozen, kept working only): fixed-editor layout, independently scrollable transcript, etc. — no second implementation.
+- Known boundary: when switching from regular to fullscreen at runtime, per-TUI rendering patches are automatically abandoned with the old TUI instance, but component-level style patches remain active (they do not affect the official layout); for full isolation, start the session in fullscreen mode.
+- Pi 0.84+ wraps the TUI reference in a lazy Proxy (`createInteractiveTuiReference`): capturing `doRender`/`render`/`handleInput` through it resolves to the wrapper itself and recurses infinitely. The extension detects the lazy Proxy and skips line-level rendering patches; `@tifan/pi-fixed-editor`'s compositor is likewise disabled on 0.84+ (Fixed editor interactions are temporarily unavailable; rendering is handled by the official pipeline).
+- The `compact-thinking.json` config file is sunset (no longer read or maintained); compact-thinking settings are managed exclusively by `claude-code-style.json`.
 
 ## Recommended companions
 

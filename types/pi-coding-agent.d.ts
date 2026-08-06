@@ -5,6 +5,7 @@
 declare module "@earendil-works/pi-coding-agent" {
 	export const SessionManager: any;
 	export const CustomEditor: any;
+	export const CustomMessageComponent: any;
 	export const ReadonlyFooterDataProvider: any;
 	export const ToolExecutionComponent: any;
 	export const AssistantMessageComponent: any;
@@ -23,6 +24,10 @@ declare module "@earendil-works/pi-coding-agent" {
 	export function getSettingsListTheme(...args: any[]): any;
 	export function initTheme(...args: any[]): any;
 	export function renderDiff(...args: any[]): any;
+	export function getLanguageFromPath(...args: any[]): any;
+	export function highlightCode(...args: any[]): any;
+	export function withFileMutationQueue(...args: any[]): any;
+	export type EditToolDetails = any;
 	export function keyHint(...args: any[]): any;
 
 	// Catch-all for anything else

@@ -48,7 +48,7 @@ Run `/reload` after installation, then try:
 | Fixed-editor interaction | Powered by `@tifan/pi-fixed-editor`, with runtime toggling, five-row wheel scrolling, tool clicks, and back-to-bottom control | `/ccstyle` |
 | Context inspection | Usage breakdown and previews for the system prompt, tools, skills, and messages | `/context` |
 | Session references        | Search and inject effective context from previous Sessions or existing SubAgents                 | `@session:`         |
-| Theme                     | Includes the GitHub Dark Default theme                                                           | `/theme`            |
+| Theme                     | Bundled GitHub Dark Default and CC Dark themes                                                              | `/theme`            |
 
 ### Output modes
 

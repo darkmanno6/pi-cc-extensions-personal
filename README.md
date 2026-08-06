@@ -44,7 +44,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Fixed editor 交互    | 基于`@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部     | `/ccstyle`  |
 | 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                        | `/context`  |
 | Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                   | `@session:` |
-| 主题                 | 随包提供内置 GitHub Dark Default 主题                                                 | `/theme`    |
+| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark 主题                                     | `/theme`    |
 
 ## 本地开发
 

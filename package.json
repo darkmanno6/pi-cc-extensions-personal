@@ -31,7 +31,8 @@
 			"./extensions/index.ts"
 		],
 		"themes": [
-			"./themes/github-dark-default.json"
+			"./themes/github-dark-default.json",
+			"./themes/cc-dark.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp"
 	},

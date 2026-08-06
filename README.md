@@ -25,7 +25,8 @@
  <img src="./assets/readme/welcome.webp" width="100%" alt="Pi 启动后的欢迎界面">
 </table>
 
-https://github.com/user-attachments/assets/4ae094d2-7480-484b-a0c8-6e782495ce9f
+<img width="683" height="453" alt="demo_10mb" src="https://github.com/user-attachments/assets/1228bc93-f1b8-4ac3-851b-15d0028ddc5a" />
+
 
 ## 快速开始
 

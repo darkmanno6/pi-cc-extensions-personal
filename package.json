@@ -49,8 +49,7 @@
 	"dependencies": {
 		"@shikijs/cli": "^4.0.2",
 		"@tifan/pi-fixed-editor": "^0.2.5",
-		"jiti": "^2.7.0",
-		"pi-compact-thinking": "^0.2.0"
+		"jiti": "^2.7.0"
 	},
 	"bundledDependencies": [
 		"@tifan/pi-fixed-editor"
@@ -66,5 +65,8 @@
 	"devDependencies": {
 		"@biomejs/biome": "2.5.5",
 		"@types/node": "^26.1.1"
-	}
+	},
+	"bundleDependencies": [
+		"@tifan/pi-fixed-editor"
+	]
 }

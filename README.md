@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  类 Claude Code 风格界面、固定编辑器、上下文检查，以及 Agent / Session 引用。
+  类 Claude Code TUI输出风格、固定编辑器、上下文检查，以及 Agent / Session 引用。
 </p>
 
 <p align="center">
@@ -38,13 +38,14 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 功能
 
-| 功能                 | 说明                                                                                  | 入口          |
-| -------------------- | ------------------------------------------------------------------------------------- | ------------- |
+
+| 功能                 | 说明                                                                            | 入口        |
+| ---------------------- | --------------------------------------------------------------------------------- | ------------- |
 | Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` / `compact` 三种模式 | `/ccstyle`  |
-| Fixed editor 交互    | 基于`@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部     | `/ccstyle`  |
-| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                        | `/context`  |
-| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                   | `@session:` |
-| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark 主题                                     | `/theme`    |
+| Fixed editor 交互    | 基于`@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部 | `/ccstyle`  |
+| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                  | `/context`  |
+| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@session:` |
+| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark 主题                                  | `/theme`    |
 
 ## 本地开发
 
@@ -73,17 +74,17 @@ pi -e .
 
 ## 推荐搭配
 
-| 扩展                              | 用途                                          |
-| --------------------------------- | --------------------------------------------- |
-| `npm:@tintinweb/pi-subagents`   | 并行 SubAgent、后台任务与工作树隔离           |
-| `npm:@tintinweb/pi-tasks`       | Claude Code 风格任务跟踪与协调                |
-| `npm:pi-mcp-adapter`            | 按需发现 MCP 工具，减少上下文占用             |
-| `npm:@ff-labs/pi-fff`           | 模糊文件与内容检索（fffind / ffgrep）         |
-| `npm:pi-web-access`             | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析 |
-| `npm:pi-theme-picker`           | 主题搜索和实时预览                            |
-| `npm:pi-token-speed`            | 滑窗测量 tokens/s                             |
-| `npm:@narumitw/pi-usage`        | 查看当前账号用量（Codex / Copilot / OpenRouter） |
-| `git:github.com/DietrichGebert/ponytail` | 极简编码：强制最懒但有效的方案          |
+
+| 扩展                                     | 用途                                             |
+| ------------------------------------------ | -------------------------------------------------- |
+| `npm:@tintinweb/pi-subagents`            | 并行 SubAgent、后台任务与工作树隔离              |
+| `npm:@tintinweb/pi-tasks`                | Claude Code 风格任务跟踪与协调                   |
+| `npm:pi-mcp-adapter`                     | 按需发现 MCP 工具，减少上下文占用                |
+| `npm:@ff-labs/pi-fff`                    | 模糊文件与内容检索（fffind / ffgrep）            |
+| `npm:pi-web-access`                      | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析    |
+| `npm:pi-theme-picker`                    | 主题搜索和实时预览                               |
+| `npm:@narumitw/pi-usage`                 | 查看当前账号用量（Codex / Copilot / OpenRouter） |
+| `git:github.com/DietrichGebert/ponytail` | 极简编码：强制最懒但有效的方案                   |
 
 ## 致谢
 

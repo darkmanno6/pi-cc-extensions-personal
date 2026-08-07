@@ -8,18 +8,6 @@ import { createJiti } from "jiti";
 type LifecycleHandler = (event: any, ctx: any) => void;
 type FixedEditorExtension = (pi: ExtensionAPI) => void;
 
-// Upstream publishes TS only. Nested jiti must reuse Pi's live modules — peer
-// deps are not resolvable from ~/.pi/agent/npm/node_modules/pi-cc-extensions.
-const jiti = createJiti(import.meta.url, {
-	virtualModules: {
-		"@earendil-works/pi-coding-agent": piCodingAgent,
-		"@earendil-works/pi-tui": piTui,
-	},
-});
-// Match pi-fixed-editor's own `.js` import specifier; Jiti caches `.ts` separately.
-const terminalSplit = jiti("@tifan/pi-fixed-editor/src/terminal-split.js") as {
-	TerminalSplitCompositor?: { prototype: Record<PropertyKey, any> };
-};
 export type FixedEditorHitbox = { row: number; startCol: number; endCol: number };
 export type FixedEditorViewportSnapshot = {
 	tui: object;
@@ -61,48 +49,104 @@ function clearFixedEditorViewport(): void {
 	fixedEditorState.viewports = new WeakMap();
 }
 
-const FIXED_EDITOR_SPACING_PATCH = Symbol.for("pi.ccstyle.fixed-editor-spacing-patch");
-const clusterModule = jiti("@tifan/pi-fixed-editor/src/cluster.js") as {
-	renderFixedEditorCluster?: (input: any) => any;
+type UpstreamFixedEditor = {
+	start?: LifecycleHandler;
+	shutdown?: LifecycleHandler;
 };
-if (!(clusterModule as any)[FIXED_EDITOR_SPACING_PATCH] && clusterModule.renderFixedEditorCluster) {
-	const renderCluster = clusterModule.renderFixedEditorCluster;
-	const padWidgets = (lines: string[] | undefined) =>
-		lines?.map((line) => (line.length > 0 && !line.includes("Ctrl+End") ? ` ${line}` : line));
-	clusterModule.renderFixedEditorCluster = (input) => {
-		const aboveWidgetLines = padWidgets(input.aboveWidgetLines);
-		const result = renderCluster({
-			...input,
-			// pi-fixed-editor strips Pi's leading widget spacer; restore it below the spinner.
-			aboveWidgetLines:
-				input.statusLines?.length && aboveWidgetLines?.length
-					? ["", ...aboveWidgetLines]
-					: aboveWidgetLines,
-			belowWidgetLines: padWidgets(input.belowWidgetLines),
-		});
-		const buttonRow = result.lines.findIndex((line: string) => line.includes("Ctrl+End"));
-		if (buttonRow < 0) {
-			fixedEditorState.scrollButtonHitbox = null;
-		} else {
-			const plain = result.lines[buttonRow]
-				.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
-				.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-			const start = plain.indexOf("[");
-			fixedEditorState.scrollButtonHitbox = {
-				row: input.terminalRows - result.lines.length + buttonRow + 1,
-				startCol: visibleWidth(plain.slice(0, Math.max(0, start))) + 1,
-				endCol: visibleWidth(plain.trimEnd()),
-			};
-		}
-		return result;
-	};
-	(clusterModule as any)[FIXED_EDITOR_SPACING_PATCH] = true;
-}
-const loaded = jiti("@tifan/pi-fixed-editor/src/index.ts") as {
-	default?: FixedEditorExtension;
-};
-const fixedEditor = loaded.default ?? (loaded as unknown as FixedEditorExtension);
 
+// 上游按需加载：0.84+ 的 tui 是惰性 Proxy（installFixedEditor 用
+// isLazyProxySession 探测），fixed-editor 整体停用 —— 连上游包都不解析，
+// jiti 失败或包缺失都不影响主流程。
+let upstreamLoaded = false;
+let upstream: UpstreamFixedEditor | undefined;
+function loadUpstream(): UpstreamFixedEditor | undefined {
+	if (upstreamLoaded) return upstream;
+	upstreamLoaded = true;
+	try {
+		// Upstream publishes TS only. Nested jiti must reuse Pi's live modules — peer
+		// deps are not resolvable from ~/.pi/agent/npm/node_modules/pi-cc-extensions.
+		const jiti = createJiti(import.meta.url, {
+			virtualModules: {
+				"@earendil-works/pi-coding-agent": piCodingAgent,
+				"@earendil-works/pi-tui": piTui,
+			},
+		});
+		// Match pi-fixed-editor's own `.js` import specifier; Jiti caches `.ts` separately.
+		const terminalSplit = jiti("@tifan/pi-fixed-editor/src/terminal-split.js") as {
+			TerminalSplitCompositor?: { prototype: Record<PropertyKey, any> };
+		};
+
+		const FIXED_EDITOR_SPACING_PATCH = Symbol.for("pi.ccstyle.fixed-editor-spacing-patch");
+		const clusterModule = jiti("@tifan/pi-fixed-editor/src/cluster.js") as {
+			renderFixedEditorCluster?: (input: any) => any;
+		};
+		if (
+			!(clusterModule as any)[FIXED_EDITOR_SPACING_PATCH] &&
+			clusterModule.renderFixedEditorCluster
+		) {
+			const renderCluster = clusterModule.renderFixedEditorCluster;
+			const padWidgets = (lines: string[] | undefined) =>
+				lines?.map((line) => (line.length > 0 && !line.includes("Ctrl+End") ? ` ${line}` : line));
+			clusterModule.renderFixedEditorCluster = (input) => {
+				const aboveWidgetLines = padWidgets(input.aboveWidgetLines);
+				const result = renderCluster({
+					...input,
+					// pi-fixed-editor strips Pi's leading widget spacer; restore it below the spinner.
+					aboveWidgetLines:
+						input.statusLines?.length && aboveWidgetLines?.length
+							? ["", ...aboveWidgetLines]
+							: aboveWidgetLines,
+					belowWidgetLines: padWidgets(input.belowWidgetLines),
+				});
+				const buttonRow = result.lines.findIndex((line: string) => line.includes("Ctrl+End"));
+				if (buttonRow < 0) {
+					fixedEditorState.scrollButtonHitbox = null;
+				} else {
+					const plain = result.lines[buttonRow]
+						.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, "")
+						.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+					const start = plain.indexOf("[");
+					fixedEditorState.scrollButtonHitbox = {
+						row: input.terminalRows - result.lines.length + buttonRow + 1,
+						startCol: visibleWidth(plain.slice(0, Math.max(0, start))) + 1,
+						endCol: visibleWidth(plain.trimEnd()),
+					};
+				}
+				return result;
+			};
+			(clusterModule as any)[FIXED_EDITOR_SPACING_PATCH] = true;
+		}
+		const loaded = jiti("@tifan/pi-fixed-editor/src/index.ts") as {
+			default?: FixedEditorExtension;
+		};
+		const fixedEditor = loaded.default ?? (loaded as unknown as FixedEditorExtension);
+
+		if (terminalSplit.TerminalSplitCompositor) {
+			installFixedEditorImePatch(terminalSplit.TerminalSplitCompositor);
+			// 0.84+ 的 tui 是惰性 Proxy：compositor 构造时捕获的 doRender/render 是
+			// 每次重新解析的包装，install 后执行会解析到 compositor 自身（无限递归）。
+			// 检测到惰性 Proxy 时跳过安装，渲染管线完全交给官方。
+			installProxyGuard(terminalSplit.TerminalSplitCompositor);
+		}
+
+		let start: LifecycleHandler | undefined;
+		let shutdown: LifecycleHandler | undefined;
+		fixedEditor({
+			on(event: string, handler: LifecycleHandler) {
+				if (event === "session_start") start = handler;
+				if (event === "session_shutdown") shutdown = handler;
+			},
+		} as unknown as ExtensionAPI);
+
+		upstream = { start, shutdown };
+	} catch (error) {
+		console.error("pi-cc-extensions: failed to load @tifan/pi-fixed-editor", error);
+		upstream = undefined;
+	}
+	return upstream;
+}
+
+const COMPOSITOR_PROXY_GUARD = Symbol.for("pi.ccstyle.compositor-proxy-guard");
 const IME_CURSOR_PATCH = Symbol.for("pi.ccstyle.fixed-editor-ime-cursor-patch");
 const VIEWPORT_PATCH = Symbol.for("pi.ccstyle.fixed-editor-viewport-patch");
 const MOUSE_WRITE_PATCH = Symbol.for("pi.ccstyle.fixed-editor-mouse-write-patch");
@@ -197,16 +241,6 @@ export function installFixedEditorImePatch(compositorClass: {
 	}
 }
 
-const COMPOSITOR_PROXY_GUARD = Symbol.for("pi.ccstyle.compositor-proxy-guard");
-
-if (terminalSplit.TerminalSplitCompositor) {
-	installFixedEditorImePatch(terminalSplit.TerminalSplitCompositor);
-	// 0.84+ 的 tui 是惰性 Proxy：compositor 构造时捕获的 doRender/render 是
-	// 每次重新解析的包装，install 后执行会解析到 compositor 自身（无限递归）。
-	// 检测到惰性 Proxy 时跳过安装，渲染管线完全交给官方。
-	installProxyGuard(terminalSplit.TerminalSplitCompositor);
-}
-
 function installProxyGuard(compositorClass: { prototype: Record<PropertyKey, any> }): void {
 	const prototype = compositorClass.prototype;
 	const originalInstall = prototype.install;
@@ -277,20 +311,41 @@ function observeFooterReplacement(ui: any, listener: () => void): () => void {
 	};
 }
 
+const LAZY_PROXY_PROBE_KEY = "cc-lazy-proxy-probe";
+
+/**
+ * 测试钩子：会话未激活时直接加载上游。懒加载下 patch 仅在 activate 时执行，
+ * 直接 new 上游 compositor / 调用上游 cluster 的测试需要显式触发。
+ */
+export function loadFixedEditorUpstreamForTests(): void {
+	loadUpstream();
+}
+
+/** 探测当前会话的 TUI 是否为 0.84+ 惰性 Proxy（与 isFullscreenUi 同模式）。 */
+function isLazyProxySession(ctx: any): boolean {
+	if (typeof ctx?.ui?.setWidget !== "function") return false;
+	let proxyTui = false;
+	try {
+		ctx.ui.setWidget(LAZY_PROXY_PROBE_KEY, (tui: any) => {
+			proxyTui = isLazyProxyTui(tui);
+			return { render: () => [], invalidate() {} };
+		});
+	} catch {
+		// 探测失败按 regular 处理，避免误伤
+	}
+	try {
+		ctx.ui.setWidget(LAZY_PROXY_PROBE_KEY, undefined);
+	} catch {
+		// 忽略
+	}
+	return proxyTui;
+}
+
 /** Adds runtime on/off control around pi-fixed-editor's session lifecycle. */
 export function installFixedEditor(
 	pi: ExtensionAPI,
 	initiallyEnabled: boolean,
 ): FixedEditorController {
-	let start: LifecycleHandler | undefined;
-	let shutdown: LifecycleHandler | undefined;
-	fixedEditor({
-		on(event: string, handler: LifecycleHandler) {
-			if (event === "session_start") start = handler;
-			if (event === "session_shutdown") shutdown = handler;
-		},
-	} as unknown as ExtensionAPI);
-
 	const owner = {};
 	let enabled = initiallyEnabled;
 	let active = false;
@@ -340,6 +395,11 @@ export function installFixedEditor(
 		if (!session || session.ctx?.mode !== "tui" || active) return;
 		// fullscreen 复用官方的 sticky editor，固定编辑器让位
 		if (isFullscreenUi(session.ctx)) return;
+		// 0.84+ 的 tui 是惰性 Proxy：fixed-editor 整体停用，不加载上游包。
+		if (isLazyProxySession(session.ctx)) return;
+		const loadedUpstream = loadUpstream();
+		if (!loadedUpstream?.start || !loadedUpstream.shutdown) return;
+		const { start, shutdown } = loadedUpstream;
 		const previous = (globalThis as any)[FIXED_EDITOR_OWNER] as FixedEditorOwner | undefined;
 		if (previous?.owner !== owner) previous?.stop();
 		const currentSession = session;

@@ -42,13 +42,13 @@ Run `/reload` after installation, then try:
 ## Features
 
 
-| Feature                   | Description                                                                                      | Entry point         |
-| --------------------------- | -------------------------------------------------------------------------------------------------- | --------------------- |
-| Claude Code-style output | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `off` / `compact` modes | `/ccstyle` |
-| Fixed-editor interaction | Powered by `@tifan/pi-fixed-editor`, with runtime toggling, five-row wheel scrolling, tool clicks, and back-to-bottom control | `/ccstyle` |
-| Context inspection | Usage breakdown and previews for the system prompt, tools, skills, and messages | `/context` |
-| Session references        | Search and inject effective context from previous Sessions or existing SubAgents                 | `@session:`         |
-| Theme                     | Bundled GitHub Dark Default and CC Dark themes                                                              | `/theme`            |
+| Feature                  | Description                                                                                                                  | Entry point |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| Claude Code-style output | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` / `compact` modes                                    | `/ccstyle`  |
+| Fixed-editor interaction | Powered by`@tifan/pi-fixed-editor`, with runtime toggling, five-row wheel scrolling, tool clicks, and back-to-bottom control | `/ccstyle`  |
+| Context inspection       | Usage breakdown and previews for the system prompt, tools, skills, and messages                                              | `/context`  |
+| Session references       | Search and inject effective context from previous Sessions or existing SubAgents                                             | `@session:` |
+| Theme                    | Bundled GitHub Dark Default and CC Dark themes                                                                               | `/theme`    |
 
 ### Output modes
 
@@ -125,17 +125,17 @@ Run `/reload` after changing extensions.
 
 ## Recommended companions
 
-| Extension                              | Purpose                                              |
-| -------------------------------------- | ---------------------------------------------------- |
-| `npm:@tintinweb/pi-subagents`        | Parallel SubAgents, background tasks, and worktree isolation |
-| `npm:@tintinweb/pi-tasks`            | Claude Code-style task tracking and coordination     |
-| `npm:pi-mcp-adapter`                 | On-demand MCP tool discovery with lower context usage |
-| `npm:@ff-labs/pi-fff`                | FFF-powered fuzzy file and content search (fffind / ffgrep) |
-| `npm:pi-web-access`                  | Web search, URL fetching, GitHub cloning, PDF/video parsing |
-| `npm:pi-theme-picker`                | Theme search and live preview                         |
-| `npm:pi-token-speed`                 | Tokens-per-second measurement via sliding window      |
-| `npm:@narumitw/pi-usage`             | Current-account usage for Codex / Copilot / OpenRouter |
-| `git:github.com/DietrichGebert/ponytail` | Lazy-mode coding: forces the simplest working solution |
+
+| Extension                                | Purpose                                                      |
+| ------------------------------------------ | -------------------------------------------------------------- |
+| `npm:@tintinweb/pi-subagents`            | Parallel SubAgents, background tasks, and worktree isolation |
+| `npm:@tintinweb/pi-tasks`                | Claude Code-style task tracking and coordination             |
+| `npm:pi-mcp-adapter`                     | On-demand MCP tool discovery with lower context usage        |
+| `npm:@ff-labs/pi-fff`                    | FFF-powered fuzzy file and content search (fffind / ffgrep)  |
+| `npm:pi-web-access`                      | Web search, URL fetching, GitHub cloning, PDF/video parsing  |
+| `npm:pi-theme-picker`                    | Theme search and live preview                                |
+| `npm:@narumitw/pi-usage`                 | Current-account usage for Codex / Copilot / OpenRouter       |
+| `git:github.com/DietrichGebert/ponytail` | Lazy-mode coding: forces the simplest working solution       |
 
 ## Credits
 

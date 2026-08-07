@@ -18,6 +18,7 @@ import {
 	getFixedEditorScrollButtonHitbox,
 	installFixedEditor,
 	installFixedEditorImePatch,
+	loadFixedEditorUpstreamForTests,
 	setBeforeFixedEditorStart,
 } from "../extensions/fixed-editor.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grouping.ts";
@@ -166,6 +167,9 @@ test("tool click uses fixed-editor visible rows without previousViewportTop", as
 	};
 
 	claudeCodeStyleExtension(pi as any, { fixedEditorFeatures: true });
+	// 懒加载：上游 patch 仅在会话激活时执行；本测试的 session_start mock 只保留
+	// 最后一个 handler，显式触发加载以保证 hitbox/compositor patch 生效。
+	loadFixedEditorUpstreamForTests();
 	await events.get("session_start")?.({}, { mode: "tui", hasUI: true, ui });
 	class SnapshotCompositor {
 		tui = tui;
@@ -832,6 +836,9 @@ test("fixed editor restores motion reporting after the right-click menu pause", 
 	const { TerminalSplitCompositor } = createJiti(import.meta.url)(
 		"@tifan/pi-fixed-editor/src/terminal-split.js",
 	) as { TerminalSplitCompositor: new (options: any) => any };
+	// 懒加载：上游 patch 仅在会话激活时执行，本测试直接使用上游 compositor，
+	// 显式触发加载以应用 MOUSE_WRITE_PATCH（1002h→1003h）。
+	loadFixedEditorUpstreamForTests();
 	const compositor = new TerminalSplitCompositor({
 		tui,
 		terminal,

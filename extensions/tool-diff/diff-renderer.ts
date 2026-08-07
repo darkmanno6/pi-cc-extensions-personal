@@ -2319,13 +2319,18 @@ function applyLineLimit(
 		DIFF_WIDTH_OPS,
 	);
 
+	const clickLabel = "click to show more";
+	const clickIndex = hintText.lastIndexOf(clickLabel);
+	const styledHint =
+		hovered && !expanded && clickIndex >= 0
+			? theme.fg("muted", hintText.slice(0, clickIndex)) +
+				theme.fg("text", clickLabel) +
+				theme.fg("muted", hintText.slice(clickIndex + clickLabel.length))
+			: theme.fg(expanded ? "warning" : "muted", hintText);
 	return [
 		...shown.map((row) => clampDiffLineToWidth(row.text, width)),
 		renderDiffSpacerLine(width),
-		clampDiffLineToWidth(
-			theme.fg(expanded ? "warning" : hovered ? "text" : "muted", hintText),
-			width,
-		),
+		clampDiffLineToWidth(styledHint, width),
 	];
 }
 

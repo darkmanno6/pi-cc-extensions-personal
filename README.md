@@ -45,7 +45,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Fixed editor 交互    | 基于`@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部 | `/ccstyle`  |
 | 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                  | `/context`  |
 | Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@session:` |
-| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark 主题                                  | `/theme`    |
+| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark、CC Light 主题                        | `/theme`    |
 
 ## 本地开发
 
@@ -66,10 +66,10 @@ pi -e .
 
 ### Fullscreen 模式与日落功能
 
-- 官方 `--tui-mode fullscreen`（及 `/settings` 运行时切换）复用官方布局：插件在 `tui.mode === "fullscreen"` 时自动让位，不安装任何渲染层（工具样式、紧凑模式、工具分组、固定编辑器均跳过），fullscreen 完全由官方 TUI 提供。数据类功能（context、session 引用、自动补全等）不受影响。
-- 与官方 fullscreen 重叠的能力已日落（冻结开发、仅维持可用）：固定编辑器布局、独立滚动 transcript 等不再二次实现。
+- 官方 `--tui-mode fullscreen`（及 `/settings` 运行时切换）复用官方布局，`/ccstyle` 的渲染层（工具样式、紧凑模式、工具分组）为原型与组件级 patch，随官方布局同样生效，无需切换到 regular。
+- fullscreen 下已适配 fixed-editor 的交互能力：工具卡点击展开/折叠、回到底部按钮（`[ ↓ Back to bottom · Ctrl+End ]`，滚轮/PageUp/官方滚动键离开底部时显示）；滚动条拖动、文本选择、OSC8 链接点击等官方能力完整保留。
+- 固定编辑器布局与独立滚动 transcript 已日落（冻结开发、仅维持可用）：`@tifan/pi-fixed-editor` 的 compositor 在 0.84+ 停用（惰性 Proxy 无法安全捕获 doRender/render/handleInput），渲染由官方管线接管；regular 模式不启用鼠标上报，终端回滚（滚轮）保持原生。
 - 已知边界：运行时从 regular 切换到 fullscreen 时，插件行级渲染 patch 随旧 TUI 实例自动失效，但组件级样式 patch 仍生效（不影响官方布局）；如需完全隔离，建议以 fullscreen 模式启动会话。
-- Pi 0.84+ 的 TUI 引用是惰性 Proxy（`createInteractiveTuiReference`），通过它捕获 `doRender`/`render`/`handleInput` 会解析到包装自身形成无限递归。插件检测到惰性 Proxy 后跳过行级渲染 patch；`@tifan/pi-fixed-editor` 的 compositor 因同样原因在 0.84+ 下停用（Fixed editor 交互功能暂时不可用，渲染由官方管线接管）。
 - `compact-thinking.json` 配置文件已日落（不再读取、不再兼容），compact-thinking 的配置统一由 `claude-code-style.json` 管控。
 
 ## 推荐搭配

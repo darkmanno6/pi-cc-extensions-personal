@@ -3,34 +3,45 @@ import test from "node:test";
 
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import claudeCodeStyleExtension, {
+	ExpandedToolIoView,
 	installToolMouseInteraction,
+	SHOW_MORE_LABEL,
 } from "../extensions/claude-code-style.ts";
-import { installFixedEditor } from "../extensions/fixed-editor.ts";
+import { showTextPreview } from "../extensions/context.ts";
+import { ToolGroupComponent } from "../extensions/tool-grouping.ts";
 
-// 0.84+ 惰性 Proxy 回归测试：官方 tui 引用（createInteractiveTuiReference）对函数
-// 属性每次 get 返回新包装。通过 proxy 捕获 doRender/handleInput 会解析到 wrapper
-// 自身形成无限递归 —— 插件必须跳过所有"捕获后包装"类 patch，compositor 安装亦然。
+// 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
+// doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
 
 initTheme("dark");
 
-/** 模拟官方 0.84.0 的惰性 Proxy（createInteractiveTuiReference 语义）。 */
-function createLazyProxy(renderer: any) {
+/** 精确模拟 Pi 0.84.1 createInteractiveTuiReference 的 renderer 重绑语义。 */
+function createLazyProxy(getRenderer: () => any) {
 	return new Proxy(
 		{},
 		{
-			get: (_t, p) => {
-				const tui = renderer;
-				const v = Reflect.get(tui, p, tui);
-				if (typeof v !== "function") return v;
+			get: (_target, property) => {
+				const tui = getRenderer();
+				const value = Reflect.get(tui, property, tui);
+				if (typeof value !== "function") return value;
+				let methodTui = tui;
+				let method = value;
 				return (...args: any[]) => {
-					const m = Reflect.get(tui, p, tui);
-					if (typeof m !== "function") throw new TypeError(`not callable: ${String(p)}`);
-					return Reflect.apply(m, tui, args);
+					const currentTui = getRenderer();
+					if (currentTui !== methodTui) {
+						const currentMethod = Reflect.get(currentTui, property, currentTui);
+						if (typeof currentMethod !== "function") {
+							throw new TypeError(`not callable: ${String(property)}`);
+						}
+						methodTui = currentTui;
+						method = currentMethod;
+					}
+					return Reflect.apply(method, methodTui, args);
 				};
 			},
-			set: (_t, p, v) => Reflect.set(renderer, p, v),
-			has: (_t, p) => Reflect.has(renderer, p),
-			getPrototypeOf: () => Reflect.getPrototypeOf(renderer),
+			set: (_target, property, value) => Reflect.set(getRenderer(), property, value),
+			has: (_target, property) => Reflect.has(getRenderer(), property),
+			getPrototypeOf: () => Reflect.getPrototypeOf(getRenderer()),
 		},
 	);
 }
@@ -54,54 +65,545 @@ function theme() {
 	return { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
 }
 
-test("lazy-proxy tui: doRender/handleInput patches stand down (no recursion)", async () => {
-	class Renderer {
-		mode = "regular";
-		doRenderCalls = 0;
-		requestRender() {}
+function createTool(toolCallId: string) {
+	return {
+		toolCallId,
+		expanded: false,
+		renderCalls: 0,
+		setExpanded(value: boolean) {
+			this.expanded = value;
+		},
+		invalidate() {},
+		render() {
+			this.renderCalls++;
+			return ["✓ Bash(echo ok)", "  └ 1 line output (ctrl+o expand / click)"];
+		},
+	};
+}
+
+function createRenderer(mode: "regular" | "fullscreen", children: any[], terminal: any) {
+	return {
+		mode,
+		children,
+		previousViewportTop: 0,
+		doRenderCalls: 0,
+		terminal,
+		requestRender() {},
 		render(width: number) {
-			return ["line"];
-		}
+			return this.children.flatMap((child: any) => child.render(width));
+		},
 		doRender() {
 			this.doRenderCalls++;
 			this.render(80);
-		}
-		handleInput(_data: string) {}
-	}
-	const renderer = new Renderer();
-	const tui = createLazyProxy(renderer);
-	let terminalInputCalls = 0;
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		ui: {
-			theme: theme(),
-			setStatus() {},
-			requestRender() {},
-			setWidget(_key: string, content: any) {
-				if (typeof content === "function") content(tui, theme());
-			},
-			onTerminalInput() {
-				terminalInputCalls++;
-				return () => {};
-			},
-			notify() {},
-			setFooter() {},
 		},
-	} as any;
+		handleInput(_data: string) {},
+	};
+}
 
+/** 带写入记录的终端 fixture：writes 收集插件写出的所有序列。 */
+function createTerminalFixture() {
+	const writes: string[] = [];
+	const terminal = {
+		columns: 80,
+		rows: 24,
+		write(data: string) {
+			writes.push(data);
+		},
+	};
+	return { terminal, writes };
+}
+
+function createUi(tui: any) {
+	let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
+	let widget: any;
+	let terminalInputCalls = 0;
+	const notifications: string[] = [];
+	return {
+		ctx: {
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				theme: theme(),
+				setStatus() {},
+				requestRender() {},
+				setWidget(_key: string, content: any) {
+					if (typeof content === "function") widget = content(tui, theme());
+				},
+				onTerminalInput(handler: typeof inputHandler) {
+					terminalInputCalls++;
+					inputHandler = handler;
+					return () => {
+						if (inputHandler === handler) inputHandler = undefined;
+					};
+				},
+				notify(message: string) {
+					notifications.push(message);
+				},
+				setFooter() {},
+			},
+		} as any,
+		get inputHandler() {
+			return inputHandler;
+		},
+		get widget() {
+			return widget;
+		},
+		get terminalInputCalls() {
+			return terminalInputCalls;
+		},
+		get notifications() {
+			return notifications;
+		},
+	};
+}
+
+test("lazy-proxy tui: regular stands down without mouse reporting (terminal scrollback preserved)", async () => {
+	const tool = createTool("tool-1");
+	const { terminal, writes } = createTerminalFixture();
+	let renderer = createRenderer("regular", [tool], terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
 	const { pi, events } = runtime();
 	claudeCodeStyleExtension(pi as any, { mode: "on", fixedEditorFeatures: true });
-	await events.get("session_start")?.({}, ctx);
+	await events.get("session_start")?.({}, ui.ctx);
 
-	// 渲染不应递归：proxy 捕获的包装不得被安装为 doRender/handleInput。
+	assert.equal(ui.terminalInputCalls, 1);
+	// regular lazy proxy 不启用任何 reporting：终端回滚（滚轮）必须保持原生行为。
+	assert.ok(!writes.some((value) => value.includes("?1000h")), "no click reporting in regular");
+	assert.ok(!writes.some((value) => value.includes("?1003h")), "no motion reporting in regular");
+	assert.equal((globalThis as any)[Symbol.for("pi.ccstyle.fixed-editor-owner")], undefined);
+
+	// 不得捕获回写惰性 Proxy 方法，也不得递归。
 	renderer.doRender();
 	renderer.handleInput("x");
 	assert.equal(renderer.doRenderCalls, 1);
 
-	// 整个工具鼠标交互体系不启动：不注册 onTerminalInput 监听。
-	assert.equal(terminalInputCalls, 0);
+	// 无 reporting：SGR 点击不会到达扩展（终端不产生），handler 对键盘/其他输入让位。
+	const hintCol = tool.render()[1].indexOf("/ click") + 1;
+	assert.equal(ui.inputHandler?.(`\x1b[<0;${hintCol};2M`), undefined);
+	assert.equal(tool.expanded, false);
 
-	// compositor install 被拦截：FixedEditorOwner 未建立，compositor 不接管渲染。
-	assert.equal((globalThis as any)[Symbol.for("pi.ccstyle.fixed-editor-owner")], undefined);
+	installToolMouseInteraction({}, false);
+	assert.ok(
+		!writes.some((value) => value.includes("?1000l") && value.includes("?1006l")),
+		"teardown does not touch terminal mouse modes it never enabled",
+	);
+});
+
+/** 官方 TuiAltScreen 布局树的最小模型：leaf box 是容器（documentContainer/
+ * widgetContainer），工具卡与按钮在其 children 内，按行定位。 */
+function fullscreenLayout(tool: any, widget: any, scrollbarVisible = false) {
+	const tools = Array.isArray(tool) ? tool : [tool];
+	const toolLines = tools.flatMap((t: any) => t.render(80));
+	const docContainer: any = { children: tools };
+	const toolBox = {
+		component: docContainer,
+		rect: { x: 0, y: 0, width: 80, height: toolLines.length },
+		clip: { x: 0, y: 0, width: 80, height: 20 },
+		children: [],
+		lines: toolLines,
+	};
+	const widgetLines = widget ? widget.render(80) : [];
+	const widgetContainer: any = { children: widget ? [widget] : [] };
+	const widgetBox = {
+		component: widgetContainer,
+		rect: { x: 0, y: 20, width: 80, height: Math.max(1, widgetLines.length) },
+		clip: { x: 0, y: 20, width: 80, height: 4 },
+		children: [],
+		lines: widgetLines,
+	};
+	const scrollBox = {
+		component: null,
+		rect: { x: 0, y: 0, width: 80, height: 20 },
+		clip: { x: 0, y: 0, width: 80, height: 20 },
+		children: [toolBox],
+		scrollView: {
+			isScrollbarVisible: scrollbarVisible,
+			scrollTop: 0,
+			isFollowingEnd: true,
+			// 与官方一致：滚动条可见时内容宽度让出最后一列。
+			getContentWidth: (width: number) => (scrollbarVisible ? Math.max(1, width - 1) : width),
+		},
+		scrollContentLines: toolBox.lines,
+	};
+	const dockBox = {
+		component: null,
+		rect: { x: 0, y: 20, width: 80, height: 4 },
+		clip: { x: 0, y: 20, width: 80, height: 4 },
+		children: [widgetBox],
+	};
+	return {
+		root: {
+			component: null,
+			rect: { x: 0, y: 0, width: 80, height: 24 },
+			clip: { x: 0, y: 0, width: 80, height: 24 },
+			children: [scrollBox, dockBox],
+		},
+		primaryScrollView: scrollBox.scrollView,
+	};
+}
+
+class FullscreenRenderer {
+	mode = "fullscreen";
+	children: any[];
+	terminal: any;
+	officialInputs: string[] = [];
+	currentLayout: any;
+	scrollBottomCalls = 0;
+	renderCalls = 0;
+	wheelScrollLines = 1;
+
+	constructor(tool: any, widget: any, terminal: any) {
+		this.children = [tool];
+		this.terminal = terminal;
+		this.currentLayout = fullscreenLayout(tool, widget);
+	}
+
+	// 官方链：原型方法，实例包装后作为 original 放行目标。
+	handleViewportInput(data: string) {
+		this.officialInputs.push(data);
+		return { consume: true };
+	}
+
+	requestRender() {
+		this.renderCalls++;
+	}
+
+	render(width: number) {
+		return this.children.flatMap((child: any) => child.render(width));
+	}
+
+	hasOverlay() {
+		return false;
+	}
+
+	scrollToBottom() {
+		this.scrollBottomCalls++;
+		this.currentLayout.primaryScrollView.isFollowingEnd = true;
+	}
+
+	getPrimaryScrollView() {
+		return this.currentLayout.primaryScrollView;
+	}
+
+	get isFollowingOutput() {
+		return this.currentLayout.primaryScrollView.isFollowingEnd;
+	}
+}
+
+test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async () => {
+	const tool = createTool("tool-fullscreen");
+	const { terminal, writes } = createTerminalFixture();
+	let renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	// 用用户真实配置安装（fixedEditorFeatures=false）：点击体系独立于该开关。
+	installToolMouseInteraction(ui.ctx, false);
+
+	assert.equal(renderer.wheelScrollLines, 3, "fullscreen native wheel step is raised to 3");
+	assert.ok(
+		!writes.some((value) => value.includes("?1000h")),
+		"fullscreen mouse modes belong to official",
+	);
+	// 工具卡左键点击：collapsed 展开（wrapper 消费，官方不收到）。
+	tui.handleViewportInput(`\x1b[<0;20;2M`);
+	assert.equal(tool.expanded, true);
+	assert.equal(renderer.officialInputs.length, 0, "click consumed before official chain");
+	assert.deepEqual(ui.widget.render(), []);
+
+	// 二次点击（正文行）：整卡折叠。
+	tui.handleViewportInput(`\x1b[<0;20;2M`);
+	assert.equal(tool.expanded, false);
+
+	// hover：先经过 dock，再到 collapsed 工具行；dock 空缓存不得污染同一布局的工具缓存。
+	tui.handleViewportInput(`\x1b[<32;20;22M`);
+	const renderCallsBefore = renderer.renderCalls;
+	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	assert.equal(renderer.officialInputs.length, 2, "motion reaches official chain");
+	assert.ok(renderer.renderCalls > renderCallsBefore, "hover state change triggers render");
+	// 同位置再 hover：状态无变化，不重复渲染。
+	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	assert.equal(renderer.renderCalls, renderCallsBefore + 1, "unchanged hover skips render");
+	// hover 移出工具行：清除高亮状态。
+	tui.handleViewportInput(`\x1b[<32;20;22M`);
+	assert.ok(renderer.renderCalls > renderCallsBefore + 1, "hover leave clears state");
+
+	// 滚动后 leaf.localRow 已是文档行，不得再次叠加 scrollTop。
+	const filler = {
+		render: () => Array.from({ length: 50 }, (_, i) => `history ${i}`),
+	};
+	const scrolledLayout = fullscreenLayout([filler, tool], null);
+	const scrollBox = scrolledLayout.root.children[0];
+	scrollBox.scrollView.scrollTop = 50;
+	scrollBox.children[0].rect.y = -50;
+	renderer.currentLayout = scrolledLayout;
+	const scrolledHoverRenders = renderer.renderCalls;
+	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	assert.ok(
+		renderer.renderCalls > scrolledHoverRenders,
+		"scrolled tool hover uses document row once",
+	);
+
+	// single-expand：展开 A 后再点 B，A 自动收起。
+	const toolA = createTool("tool-a");
+	const toolB = createTool("tool-b");
+	renderer = new FullscreenRenderer([toolA, toolB], ui.widget, terminal);
+	ui.widget.render(); // 官方每帧渲染 dock → 新 renderer 重装 wrapper
+	const tui2 = createLazyProxy(() => renderer);
+	renderer.currentLayout = fullscreenLayout([toolA, toolB], null);
+	tui2.handleViewportInput(`\x1b[<0;20;1M`);
+	assert.equal(toolA.expanded, true, "first click expands A");
+	tui2.handleViewportInput(`\x1b[<0;20;3M`);
+	assert.equal(toolA.expanded, false, "expanding B collapses A");
+	assert.equal(toolB.expanded, true);
+
+	// 回到底部按钮：滚动离开底部后按钮可见，点击触发 scrollToBottom。
+	renderer = new FullscreenRenderer(tool, ui.widget, terminal);
+
+	// 非工具区域（dock 行）：放行官方。
+	tui.handleViewportInput(`\x1b[<0;20;22M`);
+	assert.equal(renderer.officialInputs.length, 1, "dock click reaches official chain");
+
+	// 滚动条列：放行官方拖动。
+	renderer.currentLayout = fullscreenLayout(tool, null, true);
+	tui.handleViewportInput(`\x1b[<0;80;2M`);
+	assert.equal(renderer.officialInputs.length, 2, "scrollbar column reaches official chain");
+
+	// 含 OSC8 链接行（普通/参数化）：放行官方 URL 点击。
+	for (const [toolId, linkLine] of [
+		["tool-url", `  \x1b]8;;https://x\x07link\x1b]8;;\x07`],
+		["tool-url-param", `  \x1b]8;id=42;https://x\x07link\x1b]8;;\x07`],
+	] as const) {
+		renderer.currentLayout = fullscreenLayout(
+			{ ...createTool(toolId), render: () => ["✓ url", linkLine] },
+			null,
+		);
+		const officialBefore = renderer.officialInputs.length;
+		tui.handleViewportInput(`\x1b[<0;10;2M`);
+		assert.equal(
+			renderer.officialInputs.length,
+			officialBefore + 1,
+			`OSC8 link row reaches official chain (${toolId})`,
+		);
+	}
+
+	// show-more：expanded 工具卡渲染截断 Input/Output 头，点击 [show more] 打开预览。
+	const longOutput = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
+	const ioView = new ExpandedToolIoView(theme(), "arg: 1", longOutput, false, 3, 3);
+	ioView.render(80); // 触发截断状态与 show-more 头行记录
+	const showMoreTool = createTool("tool-show-more");
+	showMoreTool.expanded = true;
+	showMoreTool.resultRendererComponent = ioView;
+	showMoreTool.render = () => ioView.render(80);
+	renderer = new FullscreenRenderer(showMoreTool, ui.widget, terminal);
+	ui.widget.render(); // 官方每帧渲染 dock → 新 renderer 重装 wrapper
+	renderer.currentLayout = fullscreenLayout(showMoreTool, null);
+	const ioLines = ioView.render(80);
+	const moreHeader = ioView.showMoreHeaderLineIndexes()[0];
+	const moreRow = moreHeader.line;
+	const moreCol = ioLines[moreRow].indexOf(SHOW_MORE_LABEL) + 1;
+	const notifiedBefore = ui.notifications.length;
+	const officialBeforeShowMore = renderer.officialInputs.length;
+	tui.handleViewportInput(`\x1b[<0;${moreCol};${moreRow + 1}M`);
+	assert.ok(
+		ui.notifications.length > notifiedBefore,
+		"show-more click opens the preview (custom unavailable → notify)",
+	);
+	assert.equal(moreHeader.section, "output");
+	assert.equal(
+		renderer.officialInputs.length,
+		officialBeforeShowMore,
+		"show-more click consumed, official untouched",
+	);
+
+	// 回到底部按钮：滚动离开底部后按钮可见，点击触发 scrollToBottom。
+	renderer = new FullscreenRenderer(tool, ui.widget, terminal);
+	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
+	renderer.currentLayout.primaryScrollView.scrollTop = 50;
+	ui.widget.render(80); // renderer 切换后重新安装点击包装
+	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：同步按钮显隐
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "wheel away from bottom shows the button");
+	tui.handleViewportInput(`\x1b[<0;40;21M`);
+	assert.equal(renderer.scrollBottomCalls, 1, "button click scrolls to bottom");
+	assert.deepEqual(ui.widget.render(80), []);
+
+	// 按钮 hover：motion 到按钮行高亮（accent → text），离开恢复。
+	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
+	renderer.currentLayout.primaryScrollView.scrollTop = 50;
+	ui.widget.render(80);
+	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：按钮重新出现
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	renderer.currentLayout = fullscreenLayout(tool, ui.widget, false); // 重建布局（按钮行已可见）
+	tui.handleViewportInput(`\x1b[<32;40;21M`); // motion 到按钮行
+	assert.ok(
+		ui.widget.render(80)[0]?.includes("<text>[ ↓"),
+		"button hover switches label to text color",
+	);
+	tui.handleViewportInput(`\x1b[<32;10;21M`); // motion 移出按钮行
+	assert.ok(ui.widget.render(80)[0]?.includes("<accent>[ ↓"), "hover leave restores accent color");
+
+	// 键盘滚动（官方 PageUp）：同样同步按钮显隐（官方消费按键，扩展监听器无法补偿）。
+	renderer.currentLayout.primaryScrollView.isFollowingEnd = false;
+	renderer.currentLayout.primaryScrollView.scrollTop = 30;
+	ui.widget.render(80);
+	tui.handleViewportInput("\x1b[5~"); // PageUp
+	await new Promise<void>((resolve) => process.nextTick(resolve));
+	assert.ok(ui.widget.render(80)[0]?.includes("↓"), "PageUp away from bottom shows the button");
+	ui.inputHandler?.("\x1b[8^"); // Ctrl+End 官方不消费，经 onTerminalInput 回到底部
+	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
+	assert.deepEqual(ui.widget.render(80), []);
+	installToolMouseInteraction({}, false);
+	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
+});
+
+test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => {
+	const patch = { groups: new Set(), theme: { fg: (_color: string, text: string) => text } };
+	const group = new ToolGroupComponent(patch as any);
+	const first = Object.assign(createTool("group-1"), {
+		toolName: "read",
+		result: { isError: false },
+	});
+	const second = Object.assign(createTool("group-2"), {
+		toolName: "bash",
+		result: { isError: false },
+	});
+	group.addTool(first);
+	group.addTool(second);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(group, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx, false);
+
+	const hintCol = group.render(80)[1].indexOf("click to show more") + 1;
+	tui.handleViewportInput(`\x1b[<32;${hintCol};2M`);
+	assert.equal((group as any).hintHovered, true, "group hint hover is enabled");
+	tui.handleViewportInput(`\x1b[<32;1;2M`);
+	assert.equal((group as any).hintHovered, false, "moving outside hint clears hover");
+	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
+	assert.equal((group as any).expanded, true, "group click expands all children");
+	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
+	assert.equal((group as any).expanded, false, "second group click collapses all children");
+	installToolMouseInteraction({}, false);
+});
+
+test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components", () => {
+	const tool = createTool("tool-foreign-renderer");
+	tool.expanded = true;
+	tool.resultRendererComponent = { render: () => ["third-party result"] };
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx, false);
+
+	assert.doesNotThrow(() => tui.handleViewportInput(`\x1b[<32;20;2M`));
+	assert.equal(renderer.officialInputs.length, 1, "motion still reaches official chain");
+	installToolMouseInteraction({}, false);
+});
+
+test("lazy-proxy tui: fullscreen text preview receives mouse before official selection", async () => {
+	const tool = createTool("tool-overlay");
+	const terminal = { columns: 80, rows: 24, write() {} };
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	renderer.hasOverlay = () => true;
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx, false);
+
+	let component: any;
+	const preview = showTextPreview(
+		{
+			ui: {
+				custom: async (factory: any) =>
+					await new Promise<void>((resolve) => {
+						component = factory(tui, theme(), null, resolve);
+					}),
+			},
+		} as any,
+		"Output",
+		"hello",
+	);
+	const result = tui.handleViewportInput(`\x1b[<0;67;4M`);
+	assert.equal(result, undefined, "preview mouse continues to the focused custom component");
+	assert.equal(
+		renderer.officialInputs.length,
+		0,
+		"official selection does not consume preview mouse",
+	);
+	component.handleInput("\x1b");
+	await preview;
+	installToolMouseInteraction({}, false);
+});
+
+test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership", () => {
+	const tool = createTool("tool-switch");
+	const { terminal, writes } = createTerminalFixture();
+	let renderer = new FullscreenRenderer(tool, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx, true);
+
+	assert.ok(!writes.some((value) => value.includes("?1000h")), "initial fullscreen is untouched");
+	const hintCol = tool.render()[1].indexOf("/ click") + 1;
+	assert.equal(ui.inputHandler?.(`\x1b[<0;${hintCol};2M`), undefined);
+	assert.equal(tool.expanded, false);
+	assert.deepEqual(ui.widget.render(), []);
+
+	// fullscreen → regular：渲染层/上报均让位，插件不写任何 mouse reporting。
+	renderer = createRenderer("regular", [tool], terminal);
+	ui.widget.render();
+	assert.ok(!writes.some((value) => value.includes("?1000h")), "regular never enables reporting");
+
+	// regular → fullscreen：官方先启用自己的模式；插件不得发送 disable 或遗留 1003。
+	renderer = createRenderer("fullscreen", [tool], terminal);
+	writes.push("OFFICIAL:\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+	const writesBeforeFullscreenRender = writes.length;
+	ui.widget.render();
+	assert.equal(writes.length, writesBeforeFullscreenRender);
+	assert.ok(!writes.some((value) => value.includes("?1003h")));
+
+	// fullscreen stop 后切回 regular：官方关闭其模式；插件仍不写上报，保持终端原生回滚。
+	writes.push("OFFICIAL:\x1b[?1006l\x1b[?1002l\x1b[?1000l");
+	renderer = createRenderer("regular", [tool], terminal);
+	ui.widget.render();
+	assert.ok(
+		!writes.some((value) => value.includes("?1000h") && !value.startsWith("OFFICIAL")),
+		"back to regular stays reporting-free",
+	);
+
+	// 当前 fullscreen teardown 不能误关官方 mouse mode。
+	renderer = createRenderer("fullscreen", [tool], terminal);
+	ui.widget.render();
+	const writesBeforeTeardown = writes.length;
+	installToolMouseInteraction({}, false);
+	assert.equal(writes.length, writesBeforeTeardown);
+});
+
+test("lazy-proxy frame capture rolls back partial render wrappers on failure", () => {
+	const first = createTool("tool-first");
+	const originalRender = first.render;
+	let reads = 0;
+	const hostile = {
+		toolCallId: "tool-hostile",
+		expanded: false,
+		setExpanded() {},
+		invalidate() {},
+		get render() {
+			reads++;
+			if (reads > 1) throw new Error("render getter failed");
+			return () => ["✓ hostile", "  └ 1 line output (ctrl+o expand / click)"];
+		},
+	};
+	const { terminal, writes } = createTerminalFixture();
+	let renderer = createRenderer("regular", [first, hostile], terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx, true);
+
+	assert.equal(ui.inputHandler?.("\x1b[<0;20;2M"), undefined);
+	assert.equal(first.render, originalRender, "earlier component render is restored after failure");
+	assert.ok(first.render().every((line) => !line.includes("\x1b_cc:")));
+	installToolMouseInteraction({}, false);
 });

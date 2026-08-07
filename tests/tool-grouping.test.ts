@@ -185,6 +185,14 @@ test("group status and tool labels use the injected active theme", () => {
 		assert.match(rendered, /<toolTitle>Bash /);
 
 		const group = parent.children[0] as ToolGroupComponent;
+		group.setHintHovered(true);
+		const hovered = group.render(200).join("\n");
+		assert.match(
+			hovered,
+			/<dim>•<\/dim> <text>click to show more<\/text>/,
+			"hover highlights text without highlighting the dot",
+		);
+		assert.doesNotMatch(hovered, /<text>•/);
 		group.setExpanded(true);
 		const expanded = group.render(200).join("\n");
 		assert.equal(expanded.match(/✓/g)?.length, 2, "expanded children keep one check each");

@@ -5,7 +5,8 @@ import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
 
 // fullscreen 冒烟测试：官方 fullscreen TUI（mode === "fullscreen"）下，
-// 插件渲染层必须让位 —— 不安装全局工具渲染 patch、不激活固定编辑器。
+// 渲染层（工具样式/紧凑模式/分组）为原型与组件级 patch，随官方布局生效；
+// 固定编辑器 compositor 仍让位官方 sticky editor。
 
 const FIXED_EDITOR_OWNER = Symbol.for("pi.ccstyle.fixed-editor-owner");
 
@@ -45,7 +46,7 @@ function ctxWithTuiMode(mode: string) {
 	} as any;
 }
 
-test("fullscreen session: rendering layer stands down", async () => {
+test("fullscreen session: rendering layer installs, fixed editor stands down", async () => {
 	const toolPrototype = ToolExecutionComponent.prototype as any;
 	const original = {
 		hasRendererDefinition: toolPrototype.hasRendererDefinition,
@@ -57,11 +58,9 @@ test("fullscreen session: rendering layer stands down", async () => {
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
 	await events.get("session_start")?.({}, ctxWithTuiMode("fullscreen"));
 
-	// 全局工具渲染 patch 未安装
-	assert.equal(toolPrototype.hasRendererDefinition, original.hasRendererDefinition);
-	assert.equal(toolPrototype.getRenderShell, original.getRenderShell);
-	assert.equal(toolPrototype.getCallRenderer, original.getCallRenderer);
-	assert.equal(toolPrototype.getResultRenderer, original.getResultRenderer);
+	// 渲染层安装：/ccstyle 在 fullscreen 下同样可用（组件级 patch 随官方布局生效）
+	assert.notEqual(toolPrototype.getRenderShell, original.getRenderShell);
+	assert.notEqual(toolPrototype.getCallRenderer, original.getCallRenderer);
 	// 固定编辑器未激活
 	assert.equal((globalThis as any)[FIXED_EDITOR_OWNER], undefined);
 });

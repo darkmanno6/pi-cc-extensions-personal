@@ -32,7 +32,8 @@
 		],
 		"themes": [
 			"./themes/github-dark-default.json",
-			"./themes/cc-dark.json"
+			"./themes/cc-dark.json",
+			"./themes/cc-light.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp",
 		"video": "https://github.com/user-attachments/assets/debf76ea-a9dc-4f34-977f-aae344a9a7f8"
@@ -50,6 +51,7 @@
 	"dependencies": {
 		"@shikijs/cli": "^4.0.2",
 		"@tifan/pi-fixed-editor": "^0.2.5",
+		"grok-mermaid": "^0.2.2",
 		"jiti": "^2.7.0"
 	},
 	"bundledDependencies": [

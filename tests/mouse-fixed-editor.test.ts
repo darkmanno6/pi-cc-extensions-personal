@@ -509,7 +509,9 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		assert.ok(headerRow >= 0);
 		const hintColumn = tui.previousLines[headerRow].indexOf("click to show more") + 1;
 		inputHandler?.(`\x1b[<32;${hintColumn};${headerRow + 1}M`);
-		assert.match(group.render(100)[headerRow], /\x1b\[37m• click to show more\x1b\[39m/);
+		const hoveredHeader = group.render(100)[headerRow];
+		assert.match(hoveredHeader, /• \x1b\[37mclick to show more\x1b\[39m/);
+		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);
 		assert.equal(inputHandler?.(`\x1b[<0;${hintColumn};${headerRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, true);
 

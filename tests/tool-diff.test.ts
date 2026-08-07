@@ -102,7 +102,8 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
 	assert.match(hint(), /\x1b\[90m/, "resting edit hint uses muted color");
 	hovered = true;
-	assert.match(hint(), /\x1b\[97m/, "hovered edit hint uses white text color");
+	assert.match(hint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+	assert.doesNotMatch(hint(), /\x1b\[97m[^\n]*•/, "edit separator dot stays muted");
 
 	hovered = false;
 	const writeComponent = renderWriteDiffResult(
@@ -121,7 +122,8 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 		output(writeComponent).find((line) => line.includes("click to show more")) ?? "";
 	assert.match(writeHint(), /\x1b\[90m/, "resting write hint uses muted color");
 	hovered = true;
-	assert.match(writeHint(), /\x1b\[97m/, "hovered write hint uses white text color");
+	assert.match(writeHint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+	assert.doesNotMatch(writeHint(), /\x1b\[97m[^\n]*•/, "write separator dot stays muted");
 });
 
 test("diff indicator mode live-updates on the same component via config getter", () => {

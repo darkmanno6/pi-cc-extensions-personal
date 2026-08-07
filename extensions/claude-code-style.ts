@@ -7,7 +7,7 @@ import {
 	type CompactStyleMode,
 } from "./compact-style.ts";
 import type { CompactThinkingConfig, CompactThinkingController } from "./compact-thinking.ts";
-import { showTextPreview } from "./context.ts";
+import { hasActiveTextPreview, showTextPreview } from "./context.ts";
 import {
 	getFixedEditorScrollButtonHitbox,
 	getFixedEditorViewport,
@@ -34,6 +34,7 @@ import {
 import {
 	SettingsList,
 	Text,
+	getKeybindings,
 	matchesKey,
 	truncateToWidth,
 	visibleWidth,
@@ -1130,7 +1131,11 @@ function useFixedEditorFeatures(tui: any): boolean {
  * the fixed editor, Pi's native TUI has no mouse handling, so any reporting mode leaves
  * the wheel in a dead zone — native mode must leave reporting off entirely. */
 function toolMouseInteractionActive(): boolean {
-	return config.mode !== "off" && toolMouseFixedFeaturesEnabled;
+	if (config.mode === "off") return false;
+	// 惰性 Proxy 的点击/回到底部体系独立于 fixed-editor 开关（compositor 停用时
+	// fixedEditorFeatures 配置为 false 也不应禁用 fullscreen 工具点击）。
+	if (isLazyProxyTui(toolMouseTui)) return true;
+	return toolMouseFixedFeaturesEnabled;
 }
 
 function formatShortcut(shortcut: string): string {
@@ -1174,7 +1179,18 @@ function isScrollNavigationInput(data: string): boolean {
 		matchesKey(data, "pageUp") ||
 		matchesKey(data, "pageDown") ||
 		ZENTUI_PAGE_UP_INPUT.test(data) ||
-		ZENTUI_PAGE_DOWN_INPUT.test(data)
+		ZENTUI_PAGE_DOWN_INPUT.test(data) ||
+		// 官方 fullscreen viewport 的可滚动键（half-page/prompt/top/bottom）。
+		[
+			"tui.altScreen.pageUp",
+			"tui.altScreen.pageDown",
+			"tui.altScreen.halfPageUp",
+			"tui.altScreen.halfPageDown",
+			"tui.altScreen.previousPrompt",
+			"tui.altScreen.nextPrompt",
+			"tui.altScreen.top",
+			"tui.altScreen.bottom",
+		].some((key) => getKeybindings().matches(data, key))
 	) {
 		return true;
 	}
@@ -1229,6 +1245,8 @@ function renderFixedScrollableRootTail(tui: any, width: number, matchLength: num
 }
 
 function isFixedEditorAtBottom(tui: any): boolean {
+	// 惰性 Proxy fullscreen：官方 viewport 以 isFollowingOutput 判定是否在底部。
+	if (fullscreenLazyTui(tui)) return isFullscreenAtBottom(tui);
 	if (!useFixedEditorFeatures(tui)) return true;
 	const visibleLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
 	if (visibleLines.length === 0) return true;
@@ -1257,7 +1275,7 @@ function hideScrollButton(tui: any): void {
 
 function scheduleScrollButtonSync(tui: any, data: string): void {
 	if (
-		!useFixedEditorFeatures(tui) ||
+		(!useFixedEditorFeatures(tui) && !fullscreenLazyTui(tui)) ||
 		!toolMouseInteractionActive() ||
 		!isScrollNavigationInput(data) ||
 		scrollButtonSyncScheduled
@@ -1271,7 +1289,8 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 		// Pi renders on its own frame timer. Inspect the resulting viewport before
 		// showing the button so empty or non-scrollable transcripts never flash it.
 		const rendered = tui.previousLines !== previousLines;
-		if (!rendered && attempt < 4) {
+		// fullscreen 下 isFollowingOutput 是即时状态，无需等待官方帧渲染。
+		if (!rendered && attempt < 4 && !fullscreenLazyTui(tui)) {
 			scrollButtonSyncScheduled = true;
 			const timer = setTimeout(() => check(attempt + 1), 16);
 			if (typeof timer === "object" && timer !== null && "unref" in timer) {
@@ -1290,7 +1309,8 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 }
 
 function updateScrollButtonFromInput(tui: any, data: string): void {
-	if (!useFixedEditorFeatures(tui) || !toolMouseInteractionActive()) return;
+	if ((!useFixedEditorFeatures(tui) && !fullscreenLazyTui(tui)) || !toolMouseInteractionActive())
+		return;
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
@@ -1419,16 +1439,19 @@ function tryOpenToolIoShowMore(region: InteractionRegion): boolean {
 }
 
 function setHoveredToolIo(view: ExpandedToolIoView | null, section: ToolIoSection | null): boolean {
-	if (view === hoveredToolIoView && section === hoveredToolIoSection) return false;
-	if (hoveredToolIoView) {
+	// resultRendererComponent 可能是 Text/第三方 renderer；reload 后也可能残留旧实例。
+	const nextView = isExpandedToolIoView(view) ? view : null;
+	const nextSection = nextView ? section : null;
+	if (nextView === hoveredToolIoView && nextSection === hoveredToolIoSection) return false;
+	if (isExpandedToolIoView(hoveredToolIoView)) {
 		hoveredToolIoView.setHoveredSection(null);
 		ioViewInvalidators.get(hoveredToolIoView)?.();
 	}
-	hoveredToolIoView = view;
-	hoveredToolIoSection = section;
-	if (view) {
-		view.setHoveredSection(section);
-		ioViewInvalidators.get(view)?.();
+	hoveredToolIoView = nextView;
+	hoveredToolIoSection = nextSection;
+	if (nextView) {
+		nextView.setHoveredSection(nextSection);
+		ioViewInvalidators.get(nextView)?.();
 	}
 	return true;
 }
@@ -1493,7 +1516,11 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 }
 
 function renderScrollButton(width: number, theme: any): string[] {
-	if (!scrollButtonVisible || !useFixedEditorFeatures(toolMouseTui)) return [];
+	if (
+		!scrollButtonVisible ||
+		(!useFixedEditorFeatures(toolMouseTui) && !fullscreenLazyTui(toolMouseTui))
+	)
+		return [];
 	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
 	const messageText =
 		pendingScrollMessages > 0
@@ -1505,6 +1532,384 @@ function renderScrollButton(width: number, theme: any): string[] {
 	);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
+}
+
+/** 惰性 Proxy 官方 fullscreen（TuiAltScreen）判定。 */
+function fullscreenLazyTui(tui: any): boolean {
+	return isLazyProxyTui(tui) && tui.mode === "fullscreen";
+}
+
+/** 官方 fullscreen：是否已跟随 transcript 底部（按钮隐藏条件）。 */
+function isFullscreenAtBottom(tui: any): boolean {
+	const following = tui.isFollowingOutput ?? tui.getPrimaryScrollView?.()?.isFollowingEnd ?? true;
+	return Boolean(following);
+}
+
+const FULLSCREEN_VIEWPORT_PATCH = Symbol("ccstyle.fullscreen-viewport-patch");
+const FULLSCREEN_WHEEL_SCROLL_ORIGINAL = Symbol("ccstyle.fullscreen-wheel-scroll-original");
+const FULLSCREEN_WHEEL_SCROLL_LINES = 3;
+
+/** 布局树点查询：返回 (x,y) 处最深含行 leaf box（屏幕行 → 组件局部行）。 */
+function fullscreenLeafAt(
+	layout: any,
+	x: number,
+	y: number,
+): { box: any; localRow: number } | null {
+	const root = layout?.root;
+	if (!root) return null;
+	let best: { box: any; localRow: number } | null = null;
+	let bestDepth = -1;
+	const visit = (box: any, depth: number) => {
+		if (!box) return;
+		const clip = box.clip;
+		if (!clip || x < clip.x || x >= clip.x + clip.width || y < clip.y || y >= clip.y + clip.height)
+			return;
+		const isLeaf = !Array.isArray(box.children) || box.children.length === 0;
+		if (
+			isLeaf &&
+			y >= box.rect.y &&
+			y < box.rect.y + Math.max(1, box.rect.height) &&
+			depth > bestDepth
+		) {
+			best = { box, localRow: Math.max(0, y - box.rect.y) };
+			bestDepth = depth;
+		}
+		for (const child of box.children ?? []) visit(child, depth + 1);
+	};
+	visit(root, 0);
+	return best;
+}
+
+/** 点击列是否为官方滚动条列（放行官方拖动）。 */
+function isScrollbarColumnAt(layout: any, x: number): boolean {
+	let hit = false;
+	const visit = (box: any) => {
+		if (hit || !box) return;
+		if (box.scrollView?.isScrollbarVisible && x === box.rect.x + box.rect.width - 1) {
+			hit = true;
+			return;
+		}
+		for (const child of box.children ?? []) visit(child);
+	};
+	visit(layout?.root);
+	return hit;
+}
+
+/**
+ * 布局 leaf box 的组件通常是容器（documentContainer/dock 容器等），工具卡与
+ * widget 在其 children 内。按局部行遍历组件树，定位实际命中的子组件。
+ */
+function componentAtLocalRow(
+	component: any,
+	localRow: number,
+	width: number,
+): { component: any; row: number } | null {
+	if (
+		isToolExecutionComponent(component) ||
+		component instanceof ToolGroupComponent ||
+		component === scrollButtonWidget
+	) {
+		return { component, row: localRow };
+	}
+	if (!Array.isArray(component.children)) return null;
+	let offset = 0;
+	for (const child of component.children) {
+		let lines: string[] = [];
+		try {
+			const rendered = child.render?.(width);
+			if (Array.isArray(rendered)) lines = rendered.map((line) => String(line));
+		} catch {
+			lines = [];
+		}
+		if (localRow < offset + lines.length) {
+			return (
+				componentAtLocalRow(child, localRow - offset, width) ?? {
+					component: child,
+					row: localRow - offset,
+				}
+			);
+		}
+		offset += lines.length;
+	}
+	return null;
+}
+
+/** fullscreen single-expand：group 作为整体，不继续递归其内部工具。 */
+function collectFullscreenToolCards(component: any, out: any[], seen = new Set<any>()): void {
+	if (!component || typeof component !== "object" || seen.has(component)) return;
+	seen.add(component);
+	if (isToolExecutionComponent(component) || component instanceof ToolGroupComponent) {
+		out.push(component);
+		return;
+	}
+	if (!Array.isArray(component.children)) return;
+	for (const child of component.children) collectFullscreenToolCards(child, out, seen);
+}
+
+/**
+ * 官方 fullscreen 工具卡点击（对齐 fixed-editor 体验）：collapsed 整卡点击展开
+ * （有且仅保持一个展开：展开前收起其他工具卡），expanded 整卡二次点击收起，
+ * 截断头 [show more] 打开全量预览；回到底部按钮 scrollToBottom。
+ * 滚动条列、含 OSC8 链接行、非工具区域放行官方。
+ */
+function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
+	const layout = tui.currentLayout;
+	if (!layout?.root) return false;
+	// 官方事件坐标 0-based；SGR packet 1-based。
+	const x = packet.col - 1;
+	const y = packet.row - 1;
+	if (isScrollbarColumnAt(layout, x)) return false;
+	const hit = fullscreenLeafAt(layout, x, y);
+	if (!hit) return false;
+	const width = Math.max(1, Number(tui.terminal?.columns) || 80);
+	// 布局树用 scroll 的 contentWidth 渲染内容（滚动条占用时 = width-1）；
+	// 行号定位必须用同一宽度，否则换行差异导致组件行错位。
+	const contentWidth =
+		typeof hit.box.scrollView?.getContentWidth === "function"
+			? Math.max(1, hit.box.scrollView.getContentWidth(width))
+			: width;
+	const target = componentAtLocalRow(hit.box.component, hit.localRow, contentWidth);
+	if (!target) return false;
+	const component = target.component;
+	// 回到底部按钮：按组件引用命中，不依赖渲染行缓存。
+	if (scrollButtonVisible && component === scrollButtonWidget) {
+		tui.scrollToBottom?.();
+		hideScrollButton(tui);
+		return true;
+	}
+	const line = hit.box.lines?.[hit.localRow];
+	if (typeof line !== "string" || /\x1b]8;[^;]*;/.test(line)) return false;
+	const isTool = isToolExecutionComponent(component);
+	const isGroup = component instanceof ToolGroupComponent;
+	if (!isTool && !isGroup) return false;
+	if (!component.expanded) {
+		// single-expand：展开前收起其他已展开工具卡/group。
+		const others: any[] = [];
+		collectFullscreenToolCards(hit.box.component, others);
+		for (const other of others) {
+			if (other !== component && other.expanded) {
+				other.setExpanded(false);
+				other.invalidate?.();
+			}
+		}
+		component.setExpanded(true);
+	} else {
+		// 普通工具截断头 [show more]：打开全量预览（不收起）。
+		const view = isTool ? component.resultRendererComponent : null;
+		if (isExpandedToolIoView(view)) {
+			const plain = stripTerminalSequencesPreservingLayout(line);
+			const section = view.matchShowMoreLine(plain);
+			if (section) {
+				const box = view.showMoreHitbox(plain);
+				if (box && x + 1 >= box.startCol && x + 1 <= box.endCol) {
+					return tryOpenToolIoShowMore({
+						kind: "show-more",
+						row: 0,
+						startCol: box.startCol,
+						endCol: box.endCol,
+						component,
+						view,
+						section,
+					});
+				}
+			}
+		}
+		// 整卡二次点击：收起（对齐 fixed-editor toggle 语义）。
+		component.setExpanded(false);
+	}
+	// 对齐 fixed-editor：点击后清 hover 高亮。
+	hoveredToolCallId = null;
+	setHoveredToolGroup(null);
+	setHoveredToolIo(null, null);
+	component.invalidate?.();
+	tui.requestRender?.();
+	return true;
+}
+
+type ComponentRowHit = { component: any; row: number };
+
+/** hover 与点击共用组件定位；同一布局下按容器/宽度/行缓存，避免 motion 重复渲染。 */
+let fullscreenHoverCacheLayout: unknown = null;
+let fullscreenHoverComponentCache = new WeakMap<object, Map<string, ComponentRowHit | null>>();
+
+function cachedFullscreenComponentAtRow(
+	layout: any,
+	container: any,
+	row: number,
+	width: number,
+): ComponentRowHit | null {
+	if (!container || typeof container !== "object") return null;
+	if (fullscreenHoverCacheLayout !== layout) {
+		fullscreenHoverCacheLayout = layout;
+		fullscreenHoverComponentCache = new WeakMap();
+	}
+	let rows = fullscreenHoverComponentCache.get(container);
+	if (!rows) {
+		rows = new Map();
+		fullscreenHoverComponentCache.set(container, rows);
+	}
+	const key = `${width}:${row}`;
+	if (rows.has(key)) return rows.get(key) ?? null;
+	const hit = componentAtLocalRow(container, row, width);
+	rows.set(key, hit);
+	return hit;
+}
+
+/** fullscreen 鼠标悬停目标。 */
+type FullscreenHoverTarget =
+	| { kind: "button" }
+	| { kind: "group"; component: ToolGroupComponent }
+	| {
+			kind: "tool";
+			component: any;
+			view: ExpandedToolIoView | null;
+			section: ToolIoSection | null;
+	  };
+
+/**
+ * fullscreen 悬停高亮（对齐 fixed-editor）：collapsed 卡 [click to show more] hint、
+ * expanded 卡截断头 [show more]、回到底部按钮。motion 不 consume，官方链照常。
+ */
+function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
+	if (packet.final !== "M") return;
+	const layout = tui.currentLayout;
+	if (!layout?.root) return;
+	const x = packet.col - 1;
+	const y = packet.row - 1;
+	let target: FullscreenHoverTarget | null = null;
+	const hit = fullscreenLeafAt(layout, x, y);
+	if (hit) {
+		const line = hit.box.lines?.[hit.localRow];
+		// 回到底部按钮：渲染行文本 + 列区间识别（零组件树开销）。
+		if (typeof line === "string" && scrollButtonVisible && line.includes("[ ↓")) {
+			const plain = stripTerminalSequencesPreservingLayout(line);
+			const idx = plain.indexOf("[ ↓");
+			if (idx >= 0 && x >= idx && x <= idx + plain.length - 1) {
+				target = { kind: "button" };
+			}
+		} else if (typeof line === "string" && !/\x1b]8;/.test(line)) {
+			const width = Math.max(1, Number(tui.terminal?.columns) || 80);
+			const contentWidth =
+				typeof hit.box.scrollView?.getContentWidth === "function"
+					? Math.max(1, hit.box.scrollView.getContentWidth(width))
+					: width;
+			// 与点击共用同一定位算法，避免 hover 自建行段与真实组件树错位。
+			const componentHit = cachedFullscreenComponentAtRow(
+				layout,
+				hit.box.component,
+				hit.localRow,
+				contentWidth,
+			);
+			const component = componentHit?.component;
+			const hintBox = collapsedHintHitbox(line);
+			const overHint = Boolean(
+				hintBox && packet.col >= hintBox.startCol && packet.col <= hintBox.endCol,
+			);
+			if (component instanceof ToolGroupComponent) {
+				if (overHint) target = { kind: "group", component };
+			} else if (isToolExecutionComponent(component)) {
+				let view: ExpandedToolIoView | null = null;
+				let section: ToolIoSection | null = null;
+				if (component.expanded) {
+					const resultView = component.resultRendererComponent;
+					if (isExpandedToolIoView(resultView)) {
+						view = resultView;
+						const plain = stripTerminalSequencesPreservingLayout(line);
+						const candidate = view.matchShowMoreLine(plain);
+						if (candidate) {
+							const box = view.showMoreHitbox(plain);
+							if (box && x + 1 >= box.startCol && x + 1 <= box.endCol) {
+								section = candidate;
+							}
+						}
+					}
+					target = { kind: "tool", component, view, section };
+				} else if (overHint) {
+					target = { kind: "tool", component, view, section };
+				}
+			}
+		}
+	}
+	applyFullscreenHover(tui, target);
+}
+
+/** 悬停状态变化才触发渲染（motion 事件密集，状态不变跳过）。 */
+function applyFullscreenHover(tui: any, target: FullscreenHoverTarget | null): void {
+	let changed = false;
+	const nextCallId =
+		target?.kind === "tool" && !target.component.expanded
+			? (target.component.toolCallId ?? null)
+			: null;
+	if (nextCallId !== hoveredToolCallId) {
+		hoveredToolCallId = nextCallId;
+		changed = true;
+	}
+	const nextGroup = target?.kind === "group" ? target.component : null;
+	if (setHoveredToolGroup(nextGroup)) changed = true;
+	const nextView = target?.kind === "tool" ? target.view : null;
+	const nextSection = target?.kind === "tool" ? target.section : null;
+	if (setHoveredToolIo(nextView, nextSection)) changed = true;
+	const nextButton = target?.kind === "button";
+	if (nextButton !== scrollButtonHovered) {
+		scrollButtonHovered = nextButton;
+		changed = true;
+	}
+	if (changed) tui.requestRender?.();
+}
+
+/**
+ * 实例级包装 TuiAltScreen.handleViewportInput（惰性 Proxy 安全）：
+ * 原型方法取 original（绕开 proxy 函数包装），实例 own property 装 wrapper
+ * （constructor arrow 动态查找命中）。仅在 fullscreen 且无 overlay 时先消费
+ * 工具卡左键点击，其余全部放行官方 selection/scrollbar/URL/键盘链。
+ */
+function patchFullscreenViewportInput(tui: any): void {
+	if (tui[FULLSCREEN_VIEWPORT_PATCH] || !isLazyProxyTui(tui)) return;
+	const proto = Object.getPrototypeOf(tui);
+	const original = proto?.handleViewportInput;
+	if (typeof original !== "function") return;
+	// 官方原生 routeWheel 已完整处理嵌套 ScrollView；只调整默认步进 1 → 3。
+	if (typeof tui.wheelScrollLines === "number") {
+		tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL] = tui.wheelScrollLines;
+		tui.wheelScrollLines = FULLSCREEN_WHEEL_SCROLL_LINES;
+	}
+	tui[FULLSCREEN_VIEWPORT_PATCH] = true;
+	tui.handleViewportInput = function (this: any, data: string) {
+		if (toolMouseInteractionActive() && tui.mode === "fullscreen") {
+			// 滚动输入（wheel/pageUp/end 等）后同步回到底部按钮显隐；
+			// 官方 viewport 会消费键盘，扩展监听器无法补偿，必须在这里调度。
+			scheduleScrollButtonSync(tui, data);
+			const packets = parseSgrMousePackets(data);
+			// 官方 fullscreen 会消费全部鼠标；文本预览 overlay 活动时放行给 focused
+			// custom component，使 [esc] 点击和滚轮可用。
+			if (packets && tui.hasOverlay?.() && hasActiveTextPreview()) return undefined;
+			if (packets && !tui.hasOverlay?.()) {
+				for (const packet of packets) {
+					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
+						return { consume: true };
+					}
+					if ((packet.code & 32) !== 0 && packet.final === "M") {
+						handleFullscreenToolHover(tui, packet);
+					}
+				}
+			}
+		}
+		return Reflect.apply(original, this, [data]);
+	};
+}
+
+function restoreFullscreenViewportInput(tui: any): void {
+	if (!tui || !tui[FULLSCREEN_VIEWPORT_PATCH]) return;
+	const proto = Object.getPrototypeOf(tui);
+	if (typeof proto?.handleViewportInput === "function") {
+		tui.handleViewportInput = proto.handleViewportInput;
+	}
+	const originalWheelScrollLines = tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL];
+	if (typeof originalWheelScrollLines === "number") {
+		tui.wheelScrollLines = originalWheelScrollLines;
+		tui[FULLSCREEN_WHEEL_SCROLL_ORIGINAL] = undefined;
+	}
+	tui[FULLSCREEN_VIEWPORT_PATCH] = false;
 }
 
 /**
@@ -1682,6 +2087,71 @@ function buildInteractionFrame(
 	return { regions };
 }
 
+/**
+ * 临时包装 outermost 工具/组件的 render 注入零宽 marker，返回待 restore 列表。
+ * 调用方必须用 restoreRenderOverride 立即还原（同一次渲染内有效）。
+ */
+function wrapToolRendersForFrame(
+	outermost: any[],
+	renderedTools: FrameToolRender[],
+	idToComponent: Map<number, any>,
+): Array<{ target: any; descriptor?: PropertyDescriptor }> {
+	const restores: Array<{ target: any; descriptor?: PropertyDescriptor }> = [];
+	let nextId = 0;
+	try {
+		for (const component of outermost) {
+			const originalRender = component.render;
+			if (typeof originalRender !== "function") continue;
+			const id = nextId++;
+			idToComponent.set(id, component);
+			const wrappedRender = function (this: any, ...renderArgs: any[]) {
+				let contentBoxLines = 0;
+				const box = component.contentBox;
+				let boxRestore: { target: any; descriptor?: PropertyDescriptor } | undefined;
+				if (
+					box &&
+					Array.isArray(component.children) &&
+					component.children.includes(box) &&
+					typeof box.render === "function"
+				) {
+					const boxOriginal = box.render;
+					const boxWrapped = function (this: any, ...boxArgs: any[]) {
+						const boxLines = Reflect.apply(boxOriginal, this, boxArgs);
+						if (Array.isArray(boxLines)) contentBoxLines = boxLines.length;
+						return boxLines;
+					};
+					const boxDescriptor = defineRenderOverride(box, boxWrapped);
+					if (boxDescriptor !== undefined || box.render === boxWrapped) {
+						boxRestore = { target: box, descriptor: boxDescriptor };
+					}
+				}
+				try {
+					const lines = Reflect.apply(originalRender, this, renderArgs);
+					if (!Array.isArray(lines)) return lines;
+					renderedTools.push({
+						component,
+						lines: lines.map((line) => String(line)),
+						contentBoxLines,
+					});
+					return lines.map((line, row) => `${line}${toolFrameMarker(id, row)}`);
+				} finally {
+					if (boxRestore) restoreRenderOverride(boxRestore.target, boxRestore.descriptor);
+				}
+			};
+			const descriptor = defineRenderOverride(component, wrappedRender);
+			if (descriptor !== undefined || component.render === wrappedRender) {
+				restores.push({ target: component, descriptor });
+			}
+		}
+		return restores;
+	} catch (error) {
+		for (const { target, descriptor } of restores.reverse()) {
+			restoreRenderOverride(target, descriptor);
+		}
+		throw error;
+	}
+}
+
 function defineRenderOverride(
 	target: any,
 	wrapped: (...args: any[]) => any,
@@ -1743,54 +2213,9 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 			idToView: new Map(),
 			nextId: 0,
 		};
-		const restores: Array<{ target: any; descriptor?: PropertyDescriptor }> = [];
 		const outermost: any[] = [];
 		collectToolComponents(this, outermost);
-		let nextId = 0;
-		for (const component of outermost) {
-			const originalRender = component.render;
-			if (typeof originalRender !== "function") continue;
-			const id = nextId++;
-			idToComponent.set(id, component);
-			const wrappedRender = function (this: any, ...renderArgs: any[]) {
-				let contentBoxLines = 0;
-				const box = component.contentBox;
-				let boxRestore: { target: any; descriptor?: PropertyDescriptor } | undefined;
-				if (
-					box &&
-					Array.isArray(component.children) &&
-					component.children.includes(box) &&
-					typeof box.render === "function"
-				) {
-					const boxOriginal = box.render;
-					const boxWrapped = function (this: any, ...boxArgs: any[]) {
-						const boxLines = Reflect.apply(boxOriginal, this, boxArgs);
-						if (Array.isArray(boxLines)) contentBoxLines = boxLines.length;
-						return boxLines;
-					};
-					const boxDescriptor = defineRenderOverride(box, boxWrapped);
-					if (boxDescriptor !== undefined || box.render === boxWrapped) {
-						boxRestore = { target: box, descriptor: boxDescriptor };
-					}
-				}
-				try {
-					const lines = Reflect.apply(originalRender, this, renderArgs);
-					if (!Array.isArray(lines)) return lines;
-					renderedTools.push({
-						component,
-						lines: lines.map((line) => String(line)),
-						contentBoxLines,
-					});
-					return lines.map((line, row) => `${line}${toolFrameMarker(id, row)}`);
-				} finally {
-					if (boxRestore) restoreRenderOverride(boxRestore.target, boxRestore.descriptor);
-				}
-			};
-			const descriptor = defineRenderOverride(component, wrappedRender);
-			if (descriptor !== undefined || component.render === wrappedRender) {
-				restores.push({ target: component, descriptor });
-			}
-		}
+		const restores = wrapToolRendersForFrame(outermost, renderedTools, idToComponent);
 		let placements: FrameToolPlacement[] = [];
 		const originalTuiRender = typeof this.render === "function" ? this.render : null;
 		let tuiRenderDescriptor: PropertyDescriptor | undefined;
@@ -1856,6 +2281,17 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
 	if (!toolMouseTui) return undefined;
+	// 惰性 Proxy fullscreen：鼠标由 handleViewportInput 包装消费（官方链之前），
+	// 此处只处理键盘（鼠标事件在官方 listener 已被 consume，到不了这里）。
+	if (fullscreenLazyTui(toolMouseTui)) {
+		scheduleScrollButtonSync(toolMouseTui, data);
+		if (isScrollBottomInput(data)) {
+			toolMouseTui.scrollToBottom?.();
+			hideScrollButton(toolMouseTui);
+			return { consume: true };
+		}
+		return undefined;
+	}
 	if (
 		toolMouseInputPatchTui === toolMouseTui &&
 		toolMouseTui.handleInput === toolMouseInputPatchWrapper
@@ -1913,7 +2349,9 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
 	try {
-		if (!nextFixedEditorFeatures) {
+		// 惰性 Proxy 不启用任何 reporting（regular 会破坏终端回滚，fullscreen 归官方）；
+		// 只有 fixed-editor compositor 路径需要在此释放 reporting。
+		if (!isLazyProxyTui(toolMouseTui) && !nextFixedEditorFeatures) {
 			toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	} catch {
@@ -1926,6 +2364,7 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 	}
 	restoreToolMouseInputCapture();
 	restoreToolMouseRenderPatch();
+	restoreFullscreenViewportInput(toolMouseTui);
 	scrollButtonVisible = false;
 	scrollButtonHovered = false;
 	scrollButtonWidget = null;
@@ -1952,14 +2391,24 @@ export function installToolMouseInteraction(
 	toolMouseUi = ctx.ui;
 	toolMouseFixedFeaturesEnabled = fixedEditorFeatures;
 	// 0.84+ 的 tui 是惰性 Proxy：行级 patch（doRender/handleInput）无法安全捕获，
-	// fixed-editor compositor 亦停用 —— 整个工具鼠标交互体系（hover/点击/滚动按钮）
-	// 让位给官方，连 onTerminalInput 监听都不注册。
-	let proxyTui = false;
+	// fixed-editor compositor 亦停用。regular 模式仍保留工具点击/hover —— 按鼠标
+	// 输入即时捕获 native frame 映射；fullscreen 完全让位。
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
 		if (isLazyProxyTui(tui)) {
-			proxyTui = true;
-			return { render: () => 0, invalidate() {} };
+			// 惰性 Proxy：不启用任何 mouse reporting（regular 会破坏终端回滚，
+			// fullscreen 官方已启用）。fullscreen 工具卡点击/回到底部按钮由
+			// handleViewportInput 实例包装提供；widget render 时重检查 renderer
+			// 替换（switchTuiMode 新建实例后重新安装包装）。
+			patchFullscreenViewportInput(tui);
+			scrollButtonWidget = {
+				render: (width: number) => {
+					patchFullscreenViewportInput(tui);
+					return renderScrollButton(width, theme);
+				},
+				invalidate() {},
+			};
+			return scrollButtonWidget;
 		}
 		// Root input capture follows the live compositor; onRebuild re-applies it
 		// once the fixed-editor compositor actually owns the terminal.
@@ -1979,10 +2428,6 @@ export function installToolMouseInteraction(
 		scrollButtonWidget = widget;
 		return widget;
 	});
-	if (proxyTui) {
-		teardownToolMouseInteraction(fixedEditorFeatures);
-		return;
-	}
 	toolMouseInputUnsubscribe = ctx.ui.onTerminalInput(handleToolMouseInput);
 }
 
@@ -2046,7 +2491,9 @@ function applyStyleMode(
 		scrollButtonHovered = false;
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
-		if (toolMouseTui && !useFixedEditorFeatures(toolMouseTui)) {
+		// 惰性 Proxy（regular/fullscreen）不持有 reporting：regular 保终端回滚，
+		// fullscreen 归官方所有，均不能在此关闭。
+		if (toolMouseTui && !useFixedEditorFeatures(toolMouseTui) && !isLazyProxyTui(toolMouseTui)) {
 			toolMouseTui.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	}
@@ -2761,8 +3208,9 @@ function createCcstyleTool(
 						? `${outputLines} ${lineWord} ${action}`
 						: "Done";
 			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
-			const hint = expandable ? theme.fg("muted", " • click to show more") : "";
-			const hoveredHint = expandable ? theme.fg("text", " • click to show more") : "";
+			const hintPrefix = expandable ? theme.fg("muted", " • ") : "";
+			const hint = expandable ? hintPrefix + theme.fg("muted", "click to show more") : "";
+			const hoveredHint = expandable ? hintPrefix + theme.fg("text", "click to show more") : "";
 			if (expanded) {
 				return renderExpandedToolResult(
 					text || "",
@@ -3165,7 +3613,7 @@ export default function (
 		}
 		tui.requestRender?.(true);
 	});
-	const writeExecutionMetadata = installWriteOverride(pi, new WriteExecutionMetadataStore());
+	const writeExecutionMetadata = new WriteExecutionMetadataStore();
 	let installation:
 		| {
 				globalToolRendering: GlobalToolRenderPatch;
@@ -3175,8 +3623,9 @@ export default function (
 		| undefined;
 	const ensureTuiInstallation = (ctx: any) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
-		// fullscreen 复用官方布局，插件渲染层（工具样式/紧凑模式/分组）让位
-		if (isFullscreenUi(ctx)) return undefined;
+		// 渲染层（工具样式/紧凑模式/分组）是原型与组件级 patch，fullscreen 官方布局
+		// 同样渲染这些组件，因此两种模式都安装；fixed-editor compositor 仍由
+		// installFixedEditor 内部按 fullscreen 让位。
 		if (installation) return installation;
 		const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
@@ -3208,13 +3657,6 @@ export default function (
 					ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 					return;
 				}
-				if (isFullscreenUi(ctx)) {
-					ctx.ui.notify(
-						"ccstyle 渲染已在 fullscreen 模式下让位给官方 TUI；请切换到 regular 模式后使用 /ccstyle",
-						"warning",
-					);
-					return;
-				}
 				const hooks = ensureTuiInstallation(ctx);
 				if (!hooks) return;
 				if (!arg || arg === "panel") {
@@ -3233,25 +3675,31 @@ export default function (
 	});
 
 	pi.on("session_start", async (event, ctx) => {
+		// 延迟到 session_start 注册 write override：加载阶段 getAllTools 不可用且其他扩展
+		// 尚未注册工具，无法检测外部 write 所有者（如 pi-spark），直接注册会与对方撞名。
+		// session_start 时所有扩展已加载完毕，installWriteOverride 内部会检测并让位。
+		installWriteOverride(pi, writeExecutionMetadata);
 		const hooks = ensureTuiInstallation(ctx);
+		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
+		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
+		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		hooks.compactStyle.onSessionStart(event, ctx);
 		pendingScrollMessages = 0;
 		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
-		installToolMouseInteraction(ctx);
 		scheduleSessionRender(hooks.compactStyle.refresh);
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
 		const hooks = ensureTuiInstallation(ctx);
+		// Compaction rebuilds the transcript without session_start. Rebind after
+		// other TUI extensions may have replaced the root input dispatcher.
+		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		hooks.compactStyle.onSessionCompact(event, ctx);
-		// Compaction rebuilds the transcript without session_start. Rebind after
-		// other TUI extensions may have replaced the root input dispatcher.
-		installToolMouseInteraction(ctx);
 		scheduleSessionRender(hooks.compactStyle.refresh);
 	});
 
@@ -3295,6 +3743,9 @@ export default function (
 
 	pi.on("session_shutdown", async (event, ctx) => {
 		writeExecutionMetadata.clear();
+		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
+		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
+		teardownToolMouseInteraction();
 		const current = installation;
 		if (
 			!current ||
@@ -3303,7 +3754,6 @@ export default function (
 		)
 			return;
 		current.compactStyle.onSessionShutdown(event, ctx);
-		teardownToolMouseInteraction();
 		deactivateGlobalToolRendering(current.globalToolRendering);
 		current.toolGrouping.shutdown();
 		deactivateLegacyCompactionRendering();

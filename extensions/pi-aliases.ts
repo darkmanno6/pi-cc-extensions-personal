@@ -5,9 +5,6 @@
  *   /clear → /new  (start a new session)
  *   /exit  → /quit (exit pi)
  *
- * Install:
- *   pi install npm:pi-aliases
- *   pi install git:github.com/xRyul/pi-aliases
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

@@ -12,9 +12,9 @@ import claudeCodeStyleExtension, {
 
 initTheme("dark");
 
-test("claude-code-style initialization only registers the write override", async () => {
+test("claude-code-style registers the write override at session_start", async () => {
 	const registeredTools: unknown[] = [];
-	const events = new Map<string, Function>();
+	const events = new Map<string, Function[]>();
 	const pi = {
 		registerTool(tool: unknown) {
 			registeredTools.push(tool);
@@ -22,17 +22,29 @@ test("claude-code-style initialization only registers the write override", async
 		registerCommand() {},
 		registerShortcut() {},
 		on(name: string, handler: Function) {
-			events.set(name, handler);
+			const list = events.get(name) ?? [];
+			list.push(handler);
+			events.set(name, list);
 		},
+	};
+	const emit = async (name: string, event: unknown, ctx: unknown) => {
+		for (const handler of events.get(name) ?? []) await handler(event, ctx);
 	};
 
 	claudeCodeStyleExtension(pi as any);
 
+	// 加载阶段不注册 write override：此时其他扩展（如 pi-spark）尚未加载，
+	// 直接注册会与对方撞名。延迟到 session_start 后所有扩展已就绪再注册。
+	assert.deepEqual(
+		registeredTools.map((tool: any) => tool.name),
+		[],
+	);
+	await emit("session_start", {}, { mode: "print", hasUI: false });
 	assert.deepEqual(
 		registeredTools.map((tool: any) => tool.name),
 		["write"],
 	);
-	await events.get("session_shutdown")?.({}, { ui: { setStatus() {} } });
+	await emit("session_shutdown", {}, { ui: { setStatus() {} } });
 });
 
 test("expanded ccstyle tools use Pi's native background card", async () => {

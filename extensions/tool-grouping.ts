@@ -311,7 +311,8 @@ export class ToolGroupComponent extends Container {
 		if (overall === "pending") scheduleGroupAnimation(this.patch);
 		const overallColor = overall === "pending" ? "accent" : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
-		const hint = fg(this.hintHovered ? "text" : "dim", "• click to show more");
+		// 圆点保持 dim；hover 只高亮可点击文字。
+		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", "click to show more")}`;
 		const lines = [
 			"",
 			truncateToWidth(

@@ -1,14 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-	CustomMessageComponent,
-	ToolExecutionComponent,
-	initTheme,
-} from "@earendil-works/pi-coding-agent";
+import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
-import subagentNotificationExtension from "../extensions/subagent-notification.ts";
 import { ToolGroupComponent } from "../extensions/tool-grouping.ts";
 
 initTheme("dark");
@@ -108,14 +103,10 @@ test("stale TUI shutdown leaves the replacement runtime active", async () => {
 test("headless runtimes do not replace or shut down main TUI patches", async () => {
 	const containerPrototype = Container.prototype as any;
 	const toolPrototype = ToolExecutionComponent.prototype as any;
-	const customPrototype = CustomMessageComponent.prototype as any;
 	const originalContainerAdd = containerPrototype.addChild;
 	const originalToolCallRenderer = toolPrototype.getCallRenderer;
-	const originalCustomRender = customPrototype.render;
 	const mainStyle = runtime();
-	const mainNotification = runtime();
 	const headlessStyle = runtime();
-	const headlessNotification = runtime();
 	const theme = {
 		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
 	};
@@ -132,21 +123,15 @@ test("headless runtimes do not replace or shut down main TUI patches", async () 
 
 	try {
 		claudeCodeStyleExtension(mainStyle.pi as any, { mode: "on" });
-		subagentNotificationExtension(mainNotification.pi as any);
 		await mainStyle.events.get("session_start")?.({}, tuiCtx);
-		await mainNotification.events.get("session_start")?.({}, tuiCtx);
 
 		const mainContainerAdd = containerPrototype.addChild;
 		const mainToolCallRenderer = toolPrototype.getCallRenderer;
-		const mainCustomRender = customPrototype.render;
 		assert.notEqual(mainContainerAdd, originalContainerAdd);
 		assert.notEqual(mainToolCallRenderer, originalToolCallRenderer);
-		assert.notEqual(mainCustomRender, originalCustomRender);
 
 		claudeCodeStyleExtension(headlessStyle.pi as any, { mode: "on" });
-		subagentNotificationExtension(headlessNotification.pi as any);
 		await headlessStyle.events.get("session_start")?.({}, headlessCtx);
-		await headlessNotification.events.get("session_start")?.({}, headlessCtx);
 		for (const name of [
 			"session_compact",
 			"message_start",
@@ -163,13 +148,10 @@ test("headless runtimes do not replace or shut down main TUI patches", async () 
 		}
 		assert.equal(containerPrototype.addChild, mainContainerAdd);
 		assert.equal(toolPrototype.getCallRenderer, mainToolCallRenderer);
-		assert.equal(customPrototype.render, mainCustomRender);
 
 		await headlessStyle.events.get("session_shutdown")?.({}, headlessCtx);
-		await headlessNotification.events.get("session_shutdown")?.({}, headlessCtx);
 		assert.equal(containerPrototype.addChild, mainContainerAdd);
 		assert.equal(toolPrototype.getCallRenderer, mainToolCallRenderer);
-		assert.equal(customPrototype.render, mainCustomRender);
 
 		const parent = new Container() as any;
 		for (const name of ["read", "bash"]) {
@@ -189,11 +171,8 @@ test("headless runtimes do not replace or shut down main TUI patches", async () 
 		assert.match(parent.children[0].render(100).join("\n"), /<success>●<\/success>/);
 	} finally {
 		await headlessStyle.events.get("session_shutdown")?.({}, headlessCtx);
-		await headlessNotification.events.get("session_shutdown")?.({}, headlessCtx);
 		await mainStyle.events.get("session_shutdown")?.({}, tuiCtx);
-		await mainNotification.events.get("session_shutdown")?.({}, tuiCtx);
 		containerPrototype.addChild = originalContainerAdd;
 		toolPrototype.getCallRenderer = originalToolCallRenderer;
-		customPrototype.render = originalCustomRender;
 	}
 });

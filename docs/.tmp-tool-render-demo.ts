@@ -4,9 +4,9 @@ import { Container, Spacer } from "@earendil-works/pi-tui";
 import {
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
-} from "./extensions/tool-diff/index.ts";
-import { installToolGrouping } from "./extensions/tool-grouping.ts";
-import claudeCodeStyleExtension from "./extensions/claude-code-style.ts";
+} from "../extensions/tool-diff/index.ts";
+import { installToolGrouping } from "../extensions/tool-grouping.ts";
+import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
 
 initTheme("dark");
 const ui = {

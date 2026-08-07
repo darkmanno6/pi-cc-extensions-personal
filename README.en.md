@@ -48,7 +48,7 @@ Run `/reload` after installation, then try:
 | Fixed-editor interaction | Powered by`@tifan/pi-fixed-editor`, with runtime toggling, five-row wheel scrolling, tool clicks, and back-to-bottom control | `/ccstyle`  |
 | Context inspection       | Usage breakdown and previews for the system prompt, tools, skills, and messages                                              | `/context`  |
 | Session references       | Search and inject effective context from previous Sessions or existing SubAgents                                             | `@session:` |
-| Theme                    | Bundled GitHub Dark Default and CC Dark themes                                                                               | `/theme`    |
+| Theme                    | Bundled GitHub Dark Default, CC Dark, and CC Light themes                                                                     | `/theme`    |
 
 ### Output modes
 
@@ -117,10 +117,10 @@ Run `/reload` after changing extensions.
 
 ### Fullscreen mode & sunset features
 
-- Official `--tui-mode fullscreen` (and runtime switching via `/settings`) is reused as-is: when `tui.mode === "fullscreen"`, the extension stands down and installs no rendering layer (tool styling, compact mode, tool grouping, and the fixed editor are all skipped), leaving fullscreen entirely to the official TUI. Data features (context, session references, autocomplete, etc.) are unaffected.
-- Capabilities that overlap with the official fullscreen TUI are sunset (frozen, kept working only): fixed-editor layout, independently scrollable transcript, etc. — no second implementation.
+- Official `--tui-mode fullscreen` (and runtime switching via `/settings`) reuses the official layout; `/ccstyle`'s rendering layer (tool styling, compact mode, tool grouping) is prototype/component-level patching and applies to the official layout as well — no need to switch to regular.
+- Fullscreen adapts the fixed-editor interactions: click a collapsed tool card to expand, click the first row of an expanded card to collapse, and a back-to-bottom button (`[ ↓ Back to bottom · Ctrl+End ]`) appears when scrolling away from the bottom (wheel/PageUp/official scroll keys). Official capabilities (scrollbar dragging, text selection, OSC8 link clicks) are fully preserved.
+- The fixed-editor layout and independently scrollable transcript are sunset (frozen, kept working only): `@tifan/pi-fixed-editor`'s compositor is disabled on 0.84+ (the lazy Proxy cannot safely capture doRender/render/handleInput); rendering is handled by the official pipeline, and regular mode does not enable mouse reporting so terminal scrollback keeps its native wheel behavior.
 - Known boundary: when switching from regular to fullscreen at runtime, per-TUI rendering patches are automatically abandoned with the old TUI instance, but component-level style patches remain active (they do not affect the official layout); for full isolation, start the session in fullscreen mode.
-- Pi 0.84+ wraps the TUI reference in a lazy Proxy (`createInteractiveTuiReference`): capturing `doRender`/`render`/`handleInput` through it resolves to the wrapper itself and recurses infinitely. The extension detects the lazy Proxy and skips line-level rendering patches; `@tifan/pi-fixed-editor`'s compositor is likewise disabled on 0.84+ (Fixed editor interactions are temporarily unavailable; rendering is handled by the official pipeline).
 - The `compact-thinking.json` config file is sunset (no longer read or maintained); compact-thinking settings are managed exclusively by `claude-code-style.json`.
 
 ## Recommended companions

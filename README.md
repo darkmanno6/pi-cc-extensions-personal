@@ -22,9 +22,10 @@
 ## 界面预览
 
 <table>
-  <img width="2788" height="1846" alt="demo_new" src="https://github.com/user-attachments/assets/d4f9bb51-a49a-4a34-aa60-006514d37b09" />
+  <img width="100%" alt="demo_new" src="https://github.com/user-attachments/assets/d4f9bb51-a49a-4a34-aa60-006514d37b09" />
 </table>
 
+https://github.com/user-attachments/assets/debf76ea-a9dc-4f34-977f-aae344a9a7f8
 ## 快速开始
 
 ```bash

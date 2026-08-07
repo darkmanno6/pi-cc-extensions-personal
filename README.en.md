@@ -42,29 +42,17 @@ Run `/reload` after installation, then try:
 ## Features
 
 
-| Feature                  | Description                                                                                                                  | Entry point |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| Claude Code-style output | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` modes                                        | `/ccstyle`  |
-| Fullscreen mouse interaction | Tool card/group click-to-toggle, `[show more]` previews, and a back-to-bottom button | `/ccstyle`  |
-| Context inspection       | Usage breakdown and previews for the system prompt, tools, skills, and messages                                              | `/context`  |
-| Session references       | Search and inject effective context from previous Sessions or existing SubAgents                                             | `@session:` |
-| Theme                    | Bundled GitHub Dark Default, CC Dark, and CC Light themes                                                                     | `/theme`    |
+| Feature                      | Description                                                                         | Entry point |
+| ------------------------------ | ------------------------------------------------------------------------------------- | ------------- |
+| Claude Code-style output     | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` modes       | `/ccstyle`  |
+| Fullscreen mouse interaction | Tool card/group click-to-toggle,`[show more]` previews, and a back-to-bottom button | `/ccstyle`  |
+| Context inspection           | Usage breakdown and previews for the system prompt, tools, skills, and messages     | `/context`  |
+| Session references           | Search and inject effective context from previous Sessions or existing SubAgents    | `@session:` |
+| Theme                        | Bundled CC Dark and CC Light themes                                            | `/theme`    |
 
-### Output modes
+## Configuration
 
-
-| Mode      | Behavior                                                              |
-| ----------- | ----------------------------------------------------------------------- |
-| `on`      | Claude Code-style tool output with rich diffs for`edit` and `write`   |
-| `off`     | Native Pi renderers                                                   |
-
-```text
-/ccstyle on
-/ccstyle off
-/ccstyle status
-```
-
-Configuration is stored in `~/.pi/agent/claude-code-style.json`:
+`/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json`:
 
 ```json
 {
@@ -73,8 +61,10 @@ Configuration is stored in `~/.pi/agent/claude-code-style.json`:
 }
 ```
 
-- `excludeRenderers` uses exact tool names. `Agent` always keeps its dedicated renderer.
-- Run `/reload` after editing the file manually.
+- `mode`: `on` enables Claude Code-style output (tool summaries, expand/collapse, rich edit/write diffs); `off` restores Pi's native rendering.
+- `excludeRenderers` uses exact tool names; `Agent` always keeps its dedicated renderer.
+
+Run `/ccstyle panel` to adjust every option interactively; run `/reload` after editing the file manually.
 
 ### `@` references
 

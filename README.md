@@ -45,24 +45,11 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、`[show more]` 预览、回到底部按钮       | `/ccstyle`  |
 | 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容      | `/context`  |
 | Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                 | `@session:` |
-| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark、CC Light 主题            | `/theme`    |
+| 主题                 | 随包提供内置 CC Dark、CC Light 主题                                 | `/theme`    |
 
-### 输出模式
+## 配置
 
-
-| 模式  | 行为                                                    |
-| ------- | --------------------------------------------------------- |
-| `on`  | Claude Code 风格工具输出，`edit` / `write` 带 rich diff |
-| `off` | Pi 原生渲染                                             |
-
-```text
-/ccstyle on
-/ccstyle off
-/ccstyle status
-/ccstyle panel   # 交互式设置面板（模式、Diff、thinking 选项）
-```
-
-配置保存在 `~/.pi/agent/claude-code-style.json`：
+`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置：
 
 ```json
 {
@@ -71,8 +58,10 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
-- `excludeRenderers` 使用精确工具名；`Agent` 始终保留其专用渲染器。
-- 手动修改配置后执行 `/reload`。
+- `mode`：`on` 启用 Claude Code 风格输出（工具摘要、折叠展开、rich edit/write diff）；`off` 恢复 Pi 原生渲染。
+- `excludeRenderers`：使用精确工具名指定走原生渲染的工具；`Agent` 始终保留其专用渲染器。
+
+运行 `/ccstyle panel` 可交互调整全部选项；手动修改配置后执行 `/reload`。
 
 ## 本地开发
 

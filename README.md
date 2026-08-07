@@ -51,7 +51,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 `/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置：
 
-```json
+```js
 {
   "mode": "on",                            // on：Claude Code 风格输出；off：Pi 原生渲染
   "excludeRenderers": [],                  // 走原生渲染的工具名列表（精确匹配），Agent 始终保留专用渲染器

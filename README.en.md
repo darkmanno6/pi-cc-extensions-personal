@@ -54,7 +54,7 @@ Run `/reload` after installation, then try:
 
 `/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json`:
 
-```json
+```js
 {
   "mode": "on",                            // on: Claude Code-style output; off: Pi native rendering
   "excludeRenderers": [],                  // exact tool names that keep their native renderer; Agent always keeps its dedicated renderer

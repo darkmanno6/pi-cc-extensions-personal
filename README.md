@@ -49,7 +49,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 配置
 
-`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置（全部字段均可省略）：
+`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置：
 
 ```json
 {
@@ -66,8 +66,6 @@ pi install git:github.com/minuque/pi-cc-extensions
   "animationIntervalMs": 90                // thinking 标题动画间隔（毫秒）
 }
 ```
-
-运行 `/ccstyle panel` 可交互调整全部选项；手动修改配置后执行 `/reload`。
 
 ## 本地开发
 

@@ -49,17 +49,37 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 配置
 
-`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置：
+`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置（全部字段均可省略）：
 
 ```json
 {
   "mode": "on",
-  "excludeRenderers": []
+  "excludeRenderers": [],
+  "diffViewMode": "auto",
+  "diffIndicatorMode": "bars",
+  "diffSplitMinWidth": 120,
+  "diffCollapsedLines": 24,
+  "diffWordWrap": true,
+  "expandedPreviewMaxLines": 40,
+  "useSummaryTitlesAsThinkingTitle": true,
+  "previewLines": 3,
+  "animationIntervalMs": 90
 }
 ```
 
-- `mode`：`on` 启用 Claude Code 风格输出（工具摘要、折叠展开、rich edit/write diff）；`off` 恢复 Pi 原生渲染。
-- `excludeRenderers`：使用精确工具名指定走原生渲染的工具；`Agent` 始终保留其专用渲染器。
+| 字段                          | 说明                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------- |
+| `mode`                        | `on`：Claude Code 风格输出；`off`：Pi 原生渲染                         |
+| `excludeRenderers`            | 走原生渲染的工具名列表（精确匹配）；`Agent` 始终保留专用渲染器           |
+| `diffViewMode`                | diff 布局：`auto` / `split` / `unified`                                 |
+| `diffIndicatorMode`           | diff 变更指示：`bars` / `classic` / `none`                              |
+| `diffSplitMinWidth`           | 自动布局下使用左右分栏的最小终端宽度                                    |
+| `diffCollapsedLines`          | 折叠时展示的 diff 行数，超出显示展开提示（Ctrl+O / 点击）               |
+| `diffWordWrap`                | 长 diff 行是否换行（否则截断）                                          |
+| `expandedPreviewMaxLines`     | 展开后输出/diff 正文的最大行数                                           |
+| `useSummaryTitlesAsThinkingTitle` | 用最新 provider 摘要作为思考标题                                     |
+| `previewLines`                | thinking 预览行数，`0` 隐藏预览正文                                     |
+| `animationIntervalMs`         | thinking 标题动画间隔（毫秒）                                            |
 
 运行 `/ccstyle panel` 可交互调整全部选项；手动修改配置后执行 `/reload`。
 

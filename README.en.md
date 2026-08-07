@@ -52,17 +52,37 @@ Run `/reload` after installation, then try:
 
 ## Configuration
 
-`/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json`:
+`/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json` (every field is optional):
 
 ```json
 {
   "mode": "on",
-  "excludeRenderers": []
+  "excludeRenderers": [],
+  "diffViewMode": "auto",
+  "diffIndicatorMode": "bars",
+  "diffSplitMinWidth": 120,
+  "diffCollapsedLines": 24,
+  "diffWordWrap": true,
+  "expandedPreviewMaxLines": 40,
+  "useSummaryTitlesAsThinkingTitle": true,
+  "previewLines": 3,
+  "animationIntervalMs": 90
 }
 ```
 
-- `mode`: `on` enables Claude Code-style output (tool summaries, expand/collapse, rich edit/write diffs); `off` restores Pi's native rendering.
-- `excludeRenderers` uses exact tool names; `Agent` always keeps its dedicated renderer.
+| Field                        | Description                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------- |
+| `mode`                        | `on`: Claude Code-style output; `off`: Pi native rendering                      |
+| `excludeRenderers`            | Exact tool names that keep their native renderer; `Agent` always keeps its dedicated renderer |
+| `diffViewMode`                | Diff layout: `auto` / `split` / `unified`                                       |
+| `diffIndicatorMode`           | Diff change indicators: `bars` / `classic` / `none`                             |
+| `diffSplitMinWidth`           | Minimum terminal width before auto layout uses side-by-side columns             |
+| `diffCollapsedLines`          | Diff body lines shown when collapsed; beyond that shows the expand hint (Ctrl+O / click) |
+| `diffWordWrap`                | Whether long diff lines wrap (otherwise truncated)                              |
+| `expandedPreviewMaxLines`     | Maximum body lines for expanded output/diff                                     |
+| `useSummaryTitlesAsThinkingTitle` | Use the latest provider summary as the active thinking title                 |
+| `previewLines`                | Thinking preview lines; `0` hides the preview body                              |
+| `animationIntervalMs`         | Thinking title animation interval in ms                                         |
 
 Run `/ccstyle panel` to adjust every option interactively; run `/reload` after editing the file manually.
 

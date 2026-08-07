@@ -52,7 +52,7 @@ Run `/reload` after installation, then try:
 
 ## Configuration
 
-`/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json` (every field is optional):
+`/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json`:
 
 ```json
 {
@@ -69,8 +69,6 @@ Run `/reload` after installation, then try:
   "animationIntervalMs": 90                // thinking title animation interval in ms
 }
 ```
-
-Run `/ccstyle panel` to adjust every option interactively; run `/reload` after editing the file manually.
 
 ### `@` references
 

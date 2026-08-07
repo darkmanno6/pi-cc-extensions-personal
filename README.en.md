@@ -56,33 +56,19 @@ Run `/reload` after installation, then try:
 
 ```json
 {
-  "mode": "on",
-  "excludeRenderers": [],
-  "diffViewMode": "auto",
-  "diffIndicatorMode": "bars",
-  "diffSplitMinWidth": 120,
-  "diffCollapsedLines": 24,
-  "diffWordWrap": true,
-  "expandedPreviewMaxLines": 40,
-  "useSummaryTitlesAsThinkingTitle": true,
-  "previewLines": 3,
-  "animationIntervalMs": 90
+  "mode": "on",                            // on: Claude Code-style output; off: Pi native rendering
+  "excludeRenderers": [],                  // exact tool names that keep their native renderer; Agent always keeps its dedicated renderer
+  "diffViewMode": "auto",                  // diff layout: auto / split / unified
+  "diffIndicatorMode": "bars",             // diff change indicators: bars / classic / none
+  "diffSplitMinWidth": 120,                // min terminal width before auto layout uses side-by-side columns
+  "diffCollapsedLines": 24,                // diff body lines shown when collapsed; beyond that shows the expand hint (Ctrl+O / click)
+  "diffWordWrap": true,                    // whether long diff lines wrap (otherwise truncated)
+  "expandedPreviewMaxLines": 40,           // max body lines for expanded output/diff
+  "useSummaryTitlesAsThinkingTitle": true, // use the latest provider summary as the active thinking title
+  "previewLines": 3,                       // thinking preview lines; 0 hides the preview body
+  "animationIntervalMs": 90                // thinking title animation interval in ms
 }
 ```
-
-| Field                        | Description                                                                  |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| `mode`                        | `on`: Claude Code-style output; `off`: Pi native rendering                      |
-| `excludeRenderers`            | Exact tool names that keep their native renderer; `Agent` always keeps its dedicated renderer |
-| `diffViewMode`                | Diff layout: `auto` / `split` / `unified`                                       |
-| `diffIndicatorMode`           | Diff change indicators: `bars` / `classic` / `none`                             |
-| `diffSplitMinWidth`           | Minimum terminal width before auto layout uses side-by-side columns             |
-| `diffCollapsedLines`          | Diff body lines shown when collapsed; beyond that shows the expand hint (Ctrl+O / click) |
-| `diffWordWrap`                | Whether long diff lines wrap (otherwise truncated)                              |
-| `expandedPreviewMaxLines`     | Maximum body lines for expanded output/diff                                     |
-| `useSummaryTitlesAsThinkingTitle` | Use the latest provider summary as the active thinking title                 |
-| `previewLines`                | Thinking preview lines; `0` hides the preview body                              |
-| `animationIntervalMs`         | Thinking title animation interval in ms                                         |
 
 Run `/ccstyle panel` to adjust every option interactively; run `/reload` after editing the file manually.
 

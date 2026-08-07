@@ -4,8 +4,10 @@ import { default as enhance } from "../extensions/markdown-enhance.ts";
 
 const transformers: Array<(md: string, ctx?: object) => string> = [];
 enhance({ registerMarkdownTransformer: (fn) => transformers.push(fn) } as never);
-const run = (md: string, ctx = { messageType: "assistant", isStreaming: false, availableWidth: 100 }) =>
-	transformers.reduce((acc, fn) => fn(acc, ctx), md);
+const run = (
+	md: string,
+	ctx = { messageType: "assistant", isStreaming: false, availableWidth: 100 },
+) => transformers.reduce((acc, fn) => fn(acc, ctx), md);
 
 test("mermaid 方言渲染", () => {
 	assert.ok(run("```sequenceDiagram\nA->>B: hi\n```").includes("┌"));
@@ -40,7 +42,10 @@ test("宽度不足框装", () => {
 
 test("流式跳过", () => {
 	const md = "```mermaid\ngraph LR\nA --> B\n```";
-	assert.strictEqual(run(md, { messageType: "assistant", isStreaming: true, availableWidth: 100 }), md);
+	assert.strictEqual(
+		run(md, { messageType: "assistant", isStreaming: true, availableWidth: 100 }),
+		md,
+	);
 });
 
 test("admonition 转换", () => {
@@ -99,7 +104,10 @@ test("已有链接/图片保护", () => {
 
 test("含括号 URL 保留（括号平衡）", () => {
 	const out = run("见 https://en.wikipedia.org/wiki/A_(B) 结束");
-	assert.ok(out.includes("[https://en.wikipedia.org/wiki/A_(B)](https://en.wikipedia.org/wiki/A_(B))"), JSON.stringify(out));
+	assert.ok(
+		out.includes("[https://en.wikipedia.org/wiki/A_(B)](https://en.wikipedia.org/wiki/A_(B))"),
+		JSON.stringify(out),
+	);
 });
 
 test("代码块内 URL 不动", () => {

@@ -1,20 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getSettingsListTheme, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { isFullscreenUi, isLazyProxyTui } from "./fullscreen-detect.ts";
-import {
-	installCompactStyle,
-	type CompactStyleHooks,
-	type CompactStyleMode,
-} from "./compact-style.ts";
 import type { CompactThinkingConfig, CompactThinkingController } from "./compact-thinking.ts";
 import { hasActiveTextPreview, showTextPreview } from "./context.ts";
-import {
-	getFixedEditorScrollButtonHitbox,
-	getFixedEditorViewport,
-	installFixedEditor,
-	setBeforeFixedEditorStart,
-	type FixedEditorController,
-} from "./fixed-editor.ts";
 import {
 	installToolGrouping,
 	ToolGroupComponent,
@@ -48,14 +36,15 @@ import { inspect } from "node:util";
 /**
  * Claude Code Style for pi.
  *
- * This is the package's only entry point. Compact transcript rendering lives in
- * the internal compact-style module and is routed by the mode below.
+ * This is the package's only entry point. Tool rendering (summaries, rich
+ * edit/write diffs, expand/collapse) is applied via prototype-level patches.
  */
+
+export type CompactStyleMode = "on" | "off";
 
 export type Config = {
 	mode: CompactStyleMode;
 	excludeRenderers: string[];
-	fixedEditorFeatures: boolean;
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
@@ -94,7 +83,6 @@ const EXCLUDE_RENDERER_CANDIDATES = [
 export const DEFAULT_CONFIG: Config = {
 	mode: "on",
 	excludeRenderers: [],
-	fixedEditorFeatures: true,
 	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
@@ -142,8 +130,9 @@ function nearestPreset(value: number, presets: readonly string[]): string {
 export function normalizeConfig(input: unknown): Config {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
 	const mode = source.mode;
+	// mode=compact 已日落：旧配置回退到 on（Claude Code 风格）。
 	const migratedMode: CompactStyleMode =
-		mode === "on" || mode === "off" || mode === "compact"
+		mode === "on" || mode === "off"
 			? mode
 			: typeof source.enabled === "boolean"
 				? source.enabled
@@ -159,11 +148,9 @@ export function normalizeConfig(input: unknown): Config {
 				),
 			]
 		: [];
-	const fixedEditorFeatures = source.fixedEditorFeatures !== false;
 	return {
 		mode: migratedMode,
 		excludeRenderers,
-		fixedEditorFeatures,
 		diffViewMode: pickEnum(source.diffViewMode, DIFF_VIEW_MODES, DEFAULT_CONFIG.diffViewMode),
 		diffIndicatorMode: pickEnum(
 			source.diffIndicatorMode,
@@ -250,12 +237,7 @@ function loadConfig(): Config {
 			? (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>)
 			: {};
 		const normalized = normalizeConfig(source);
-		if (
-			typeof source.enabled === "boolean" &&
-			source.mode !== "on" &&
-			source.mode !== "off" &&
-			source.mode !== "compact"
-		) {
+		if (typeof source.enabled === "boolean" && source.mode !== "on" && source.mode !== "off") {
 			try {
 				writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
 			} catch {
@@ -988,18 +970,9 @@ const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
 const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
-const ZENTUI_WHEEL_ROWS = 3;
-const FIXED_EDITOR_WHEEL_ROWS = 5;
 let toolMouseTui: any = null;
 let toolMouseUi: any = null;
-let toolMouseFixedFeaturesEnabled = false;
-let wheelExtraRowRemainder = 0;
-let lastWheelDirection: "up" | "down" | null = null;
-let collapseCompensationRemainder = 0;
 let toolMouseInputUnsubscribe: (() => void) | null = null;
-let toolMouseInputPatchTui: any = null;
-let toolMouseInputPatchOriginalHandle: ((...args: any[]) => any) | null = null;
-let toolMouseInputPatchWrapper: ((...args: any[]) => any) | null = null;
 let toolMouseRenderPatchTui: any = null;
 let toolMouseRenderPatchOriginal: ((...args: any[]) => any) | null = null;
 let toolMouseRenderPatchWrapper: ((...args: any[]) => any) | null = null;
@@ -1008,8 +981,6 @@ let toolMouseRawWrite: ((data: string) => unknown) | null = null;
 let scrollButtonVisible = false;
 let scrollButtonHovered = false;
 let scrollButtonWidget: any = null;
-let pendingScrollMessages = 0;
-let assistantMessageActive = false;
 let scrollButtonSyncScheduled = false;
 let sessionRenderTimer: ReturnType<typeof setTimeout> | null = null;
 let hoveredToolCallId: string | null = null;
@@ -1114,28 +1085,10 @@ function extractToolFramePlacements(
 /** Summary markers used by Pi and ccstyle; unlike the trailing hint, these survive truncation. */
 const COLLAPSED_TOOL_SUMMARY = /^\s*(?:↳|└|⎿|●|✓|✗|…)/;
 
-function isFixedEditorTui(tui: any): boolean {
-	const terminal = tui?.terminal;
-	if (!terminal) return false;
-	const ownRows = Object.getOwnPropertyDescriptor(terminal, "rows");
-	const prototype = Object.getPrototypeOf(terminal);
-	const inheritedRows = prototype ? Object.getOwnPropertyDescriptor(prototype, "rows") : undefined;
-	return typeof ownRows?.get === "function" && ownRows.get !== inheritedRows?.get;
-}
-
-function useFixedEditorFeatures(tui: any): boolean {
-	return toolMouseFixedFeaturesEnabled && isFixedEditorTui(tui);
-}
-
-/** Mouse hover/click affordances need ccstyle rendering AND the fixed editor. Without
- * the fixed editor, Pi's native TUI has no mouse handling, so any reporting mode leaves
- * the wheel in a dead zone — native mode must leave reporting off entirely. */
 function toolMouseInteractionActive(): boolean {
 	if (config.mode === "off") return false;
-	// 惰性 Proxy 的点击/回到底部体系独立于 fixed-editor 开关（compositor 停用时
-	// fixedEditorFeatures 配置为 false 也不应禁用 fullscreen 工具点击）。
 	if (isLazyProxyTui(toolMouseTui)) return true;
-	return toolMouseFixedFeaturesEnabled;
+	return true;
 }
 
 function formatShortcut(shortcut: string): string {
@@ -1160,18 +1113,6 @@ function wheelDirection(data: string): "up" | "down" | null {
 		if (baseButton === 65) return "down";
 	}
 	return null;
-}
-
-/** Return how often Zentui's 3-row wheel handler should receive this event. */
-export function fixedEditorWheelDispatchCount(direction: "up" | "down"): number {
-	if (lastWheelDirection !== direction) {
-		lastWheelDirection = direction;
-		wheelExtraRowRemainder = 0;
-	}
-	wheelExtraRowRemainder += FIXED_EDITOR_WHEEL_ROWS - ZENTUI_WHEEL_ROWS;
-	if (wheelExtraRowRemainder < ZENTUI_WHEEL_ROWS) return 1;
-	wheelExtraRowRemainder -= ZENTUI_WHEEL_ROWS;
-	return 2;
 }
 
 function isScrollNavigationInput(data: string): boolean {
@@ -1203,79 +1144,22 @@ function isScrollNavigationInput(data: string): boolean {
 	);
 }
 
-function directRenderLines(component: any, width: number): string[] {
-	try {
-		const lines = component?.render?.(width);
-		return Array.isArray(lines) ? lines : [];
-	} catch {
-		return [];
-	}
-}
-
-/** Index just before the fixed editor cluster in the TUI child list. */
-function fixedScrollableRootEnd(tui: any): number {
-	const children = Array.isArray(tui?.children) ? tui.children : [];
-	const editorIndex = children.findIndex((child: any) =>
-		containsEditorLike(child, tui.focusedComponent),
-	);
-	return editorIndex >= 2 ? editorIndex - 2 : children.length;
-}
-
-/**
- * Last N stripped lines of the scrollable root (after trimming trailing blanks).
- * Walks children backwards and stops once the tail is fully determined, so long
- * transcripts with many sibling nodes do not re-render the whole tree on scroll.
- */
-function renderFixedScrollableRootTail(tui: any, width: number, matchLength: number): string[] {
-	const children = Array.isArray(tui?.children) ? tui.children : [];
-	const end = fixedScrollableRootEnd(tui);
-	const collected: string[] = [];
-	for (let index = end - 1; index >= 0; index--) {
-		const lines = directRenderLines(children[index], width).map((line) =>
-			stripTerminalSequences(String(line)),
-		);
-		collected.unshift(...lines);
-		let meaningful = collected.length;
-		while (meaningful > 0 && collected[meaningful - 1] === "") meaningful--;
-		if (meaningful >= matchLength) break;
-	}
-	while (collected.length > 0 && collected[collected.length - 1] === "") collected.pop();
-	if (collected.length === 0) return [];
-	return collected.slice(-Math.min(matchLength, collected.length));
-}
-
-function isFixedEditorAtBottom(tui: any): boolean {
+function isAtTranscriptBottom(tui: any): boolean {
 	// 惰性 Proxy fullscreen：官方 viewport 以 isFollowingOutput 判定是否在底部。
 	if (fullscreenLazyTui(tui)) return isFullscreenAtBottom(tui);
-	if (!useFixedEditorFeatures(tui)) return true;
-	const visibleLines = Array.isArray(tui?.previousLines) ? tui.previousLines : [];
-	if (visibleLines.length === 0) return true;
-	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
-	const expected = renderFixedScrollableRootTail(tui, width, 3);
-	if (expected.length === 0) return true;
-
-	// previousLines contains both the scrollable root and Zentui's fixed cluster.
-	// Locate the root tail within that full frame instead of requiring it to be
-	// the frame suffix; otherwise status/editor/footer rows keep the button alive.
-	const visible = visibleLines.map((line: unknown) => stripTerminalSequences(String(line)));
-	const matchLength = expected.length;
-	for (let end = matchLength; end <= visible.length; end++) {
-		if (expected.every((line, index) => line === visible[end - matchLength + index])) return true;
-	}
-	return false;
+	return true;
 }
 
 function hideScrollButton(tui: any): void {
-	const changed = scrollButtonVisible || scrollButtonHovered || pendingScrollMessages > 0;
+	const changed = scrollButtonVisible || scrollButtonHovered;
 	scrollButtonVisible = false;
 	scrollButtonHovered = false;
-	pendingScrollMessages = 0;
 	if (changed) tui.requestRender?.();
 }
 
 function scheduleScrollButtonSync(tui: any, data: string): void {
 	if (
-		(!useFixedEditorFeatures(tui) && !fullscreenLazyTui(tui)) ||
+		!fullscreenLazyTui(tui) ||
 		!toolMouseInteractionActive() ||
 		!isScrollNavigationInput(data) ||
 		scrollButtonSyncScheduled
@@ -1298,8 +1182,7 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 			}
 			return;
 		}
-		const nextVisible = !isFixedEditorAtBottom(tui);
-		if (!nextVisible) pendingScrollMessages = 0;
+		const nextVisible = !isAtTranscriptBottom(tui);
 		if (nextVisible !== scrollButtonVisible) {
 			scrollButtonVisible = nextVisible;
 			tui.requestRender?.();
@@ -1309,8 +1192,7 @@ function scheduleScrollButtonSync(tui: any, data: string): void {
 }
 
 function updateScrollButtonFromInput(tui: any, data: string): void {
-	if ((!useFixedEditorFeatures(tui) && !fullscreenLazyTui(tui)) || !toolMouseInteractionActive())
-		return;
+	if (!fullscreenLazyTui(tui) || !toolMouseInteractionActive()) return;
 	if (matchesKey(data, "enter") || matchesKey(data, "return")) hideScrollButton(tui);
 }
 
@@ -1324,70 +1206,6 @@ function renderComponentTree(component: any, width: number): string[] {
 	}
 	if (!Array.isArray(component.children)) return [];
 	return component.children.flatMap((child: any) => renderComponentTree(child, width));
-}
-
-function containsEditorLike(component: any, focused: any, seen = new Set<any>()): boolean {
-	if (!component || typeof component !== "object" || seen.has(component)) return false;
-	seen.add(component);
-	if (component === focused) return true;
-	if (
-		typeof component.getText === "function" &&
-		typeof component.setText === "function" &&
-		typeof component.handleInput === "function"
-	)
-		return true;
-	return (
-		Array.isArray(component.children) &&
-		component.children.some((child: any) => containsEditorLike(child, focused, seen))
-	);
-}
-
-function isScrollButtonAtScreenRow(_tui: any, packet: SgrMousePacket): boolean {
-	return interactionRegionAt(packet)?.kind === "scroll-bottom";
-}
-
-function jumpToBottomWithoutSubmit(tui: any): boolean {
-	const originalHandle = toolMouseInputPatchTui === tui ? toolMouseInputPatchOriginalHandle : null;
-	if (!originalHandle) return false;
-
-	// Route Enter through Pi's normal listener chain so pi-zentui can update its
-	// private scroll offset, but suppress the focused editor for this synthetic
-	// dispatch so clicking the button never submits the current input.
-	const focused = tui.focusedComponent;
-	try {
-		tui.focusedComponent = null;
-		Reflect.apply(originalHandle, tui, ["\r"]);
-	} finally {
-		tui.focusedComponent = focused;
-	}
-	hideScrollButton(tui);
-	return true;
-}
-
-function handleScrollButtonClick(tui: any, packet: SgrMousePacket): boolean {
-	if (!isScrollButtonAtScreenRow(tui, packet)) return false;
-	return jumpToBottomWithoutSubmit(tui);
-}
-
-function scheduleCollapseViewportCompensation(
-	tui: any,
-	removedRows: number,
-	packet: SgrMousePacket,
-): void {
-	if (removedRows <= 0 || !useFixedEditorFeatures(tui)) return;
-	const originalHandle = toolMouseInputPatchTui === tui ? toolMouseInputPatchOriginalHandle : null;
-	if (!originalHandle) return;
-
-	process.nextTick(() => {
-		if (toolMouseTui !== tui || toolMouseInputPatchOriginalHandle !== originalHandle) return;
-		const targetRows = removedRows + collapseCompensationRemainder;
-		const dispatches = Math.max(0, Math.round(targetRows / ZENTUI_WHEEL_ROWS));
-		collapseCompensationRemainder = targetRows - dispatches * ZENTUI_WHEEL_ROWS;
-		const wheelDown = `\x1b[<65;${packet.col};${packet.row}M`;
-		for (let index = 0; index < dispatches; index++) {
-			Reflect.apply(originalHandle, tui, [wheelDown]);
-		}
-	});
 }
 
 const ioViewInvalidators = new WeakMap<ExpandedToolIoView, () => void>();
@@ -1489,21 +1307,18 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const region = interactionRegionAt(packet);
 	if (!region) return false;
-	if (region.kind === "scroll-bottom") return jumpToBottomWithoutSubmit(tui);
+	if (region.kind === "scroll-bottom") return false;
 	if (region.kind === "show-more") return tryOpenToolIoShowMore(region);
 	const component = region.component;
 	if (!component) return false;
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
 	if (region.kind === "expanded-card") {
-		const previousHeight = renderComponentTree(component, width).length;
 		component.setExpanded(false);
 		hoveredToolCallId = null;
 		setHoveredToolGroup(null);
 		setHoveredToolIo(null, null);
 		component.invalidate?.();
-		const nextHeight = renderComponentTree(component, width).length;
 		tui.requestRender?.();
-		scheduleCollapseViewportCompensation(tui, previousHeight - nextHeight, packet);
 		return true;
 	}
 	component.setExpanded(true);
@@ -1516,19 +1331,11 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 }
 
 function renderScrollButton(width: number, theme: any): string[] {
-	if (
-		!scrollButtonVisible ||
-		(!useFixedEditorFeatures(toolMouseTui) && !fullscreenLazyTui(toolMouseTui))
-	)
-		return [];
+	if (!scrollButtonVisible || !fullscreenLazyTui(toolMouseTui)) return [];
 	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
-	const messageText =
-		pendingScrollMessages > 0
-			? `${pendingScrollMessages} new message${pendingScrollMessages === 1 ? "" : "s"}`
-			: "Back to bottom";
 	const label = theme.fg(
 		scrollButtonHovered ? "text" : "accent",
-		`[ ↓ ${messageText} · ${shortcut} ]`,
+		`[ ↓ Back to bottom · ${shortcut} ]`,
 	);
 	const leftPad = Math.max(0, Math.floor((width - visibleWidth(label)) / 2));
 	return [`${" ".repeat(leftPad)}${truncateToWidth(label, width, "…")}`];
@@ -1647,7 +1454,7 @@ function collectFullscreenToolCards(component: any, out: any[], seen = new Set<a
 }
 
 /**
- * 官方 fullscreen 工具卡点击（对齐 fixed-editor 体验）：collapsed 整卡点击展开
+ * 官方 fullscreen 工具卡点击：collapsed 整卡点击展开
  * （有且仅保持一个展开：展开前收起其他工具卡），expanded 整卡二次点击收起，
  * 截断头 [show more] 打开全量预览；回到底部按钮 scrollToBottom。
  * 滚动条列、含 OSC8 链接行、非工具区域放行官方。
@@ -1714,10 +1521,10 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 				}
 			}
 		}
-		// 整卡二次点击：收起（对齐 fixed-editor toggle 语义）。
+		// 整卡二次点击：收起（与展开语义对称）。
 		component.setExpanded(false);
 	}
-	// 对齐 fixed-editor：点击后清 hover 高亮。
+	// 点击后清 hover 高亮。
 	hoveredToolCallId = null;
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
@@ -1767,7 +1574,7 @@ type FullscreenHoverTarget =
 	  };
 
 /**
- * fullscreen 悬停高亮（对齐 fixed-editor）：collapsed 卡 [click to show more] hint、
+ * fullscreen 悬停高亮：collapsed 卡 [click to show more] hint、
  * expanded 卡截断头 [show more]、回到底部按钮。motion 不 consume，官方链照常。
  */
 function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
@@ -1912,78 +1719,6 @@ function restoreFullscreenViewportInput(tui: any): void {
 	tui[FULLSCREEN_VIEWPORT_PATCH] = false;
 }
 
-/**
- * pi-zentui consumes left-button presses for text selection. Intercept only a
- * tool-row click at the TUI input boundary, before extension listeners run.
- * Keyboard, wheel, drag, release, and non-tool clicks continue through Pi's
- * original dispatcher, preserving pi-zentui's scroll-to-bottom behavior.
- */
-function patchToolMouseInputCapture(tui: any): void {
-	if (toolMouseInputPatchTui === tui) return;
-	// 0.84+ 惰性 Proxy：捕获 handleInput 会解析到 wrapper 自身（无限递归），跳过。
-	if (isLazyProxyTui(tui)) return;
-
-	restoreToolMouseInputCapture();
-	const originalHandle = tui?.handleInput;
-	if (typeof originalHandle !== "function") return;
-
-	const wrapper = function (this: any, ...args: any[]): any {
-		const data = args[0];
-		if (typeof data === "string") {
-			updateScrollButtonFromInput(this, data);
-			// Capture the current viewport before Pi/Zentui applies the scroll input.
-			scheduleScrollButtonSync(this, data);
-			if (
-				useFixedEditorFeatures(this) &&
-				isScrollBottomInput(data) &&
-				jumpToBottomWithoutSubmit(this)
-			)
-				return;
-			const packets = parseSgrMousePackets(data);
-			if (packets && toolMouseInteractionActive()) {
-				for (const packet of packets) {
-					// Fixed-editor owners may consume motion before extension listeners run,
-					// so hover must be handled at the root input boundary too.
-					updateToolSummaryHover(this, packet);
-					if (!isSgrLeftPress(packet)) continue;
-					if (handleScrollButtonClick(this, packet) || toggleToolAtMouseClick(this, packet)) return;
-				}
-			}
-		}
-		const direction =
-			typeof data === "string" && useFixedEditorFeatures(this) ? wheelDirection(data) : null;
-		const dispatchCount = direction ? fixedEditorWheelDispatchCount(direction) : 1;
-		let result = Reflect.apply(originalHandle, this, args);
-		for (let index = 1; index < dispatchCount; index++) {
-			result = Reflect.apply(originalHandle, this, args);
-		}
-		if (typeof data === "string") scheduleScrollButtonSync(this, data);
-		return result;
-	};
-
-	try {
-		tui.handleInput = wrapper;
-	} catch {
-		return;
-	}
-	toolMouseInputPatchTui = tui;
-	toolMouseInputPatchOriginalHandle = originalHandle;
-	toolMouseInputPatchWrapper = wrapper;
-}
-
-function restoreToolMouseInputCapture(): void {
-	if (
-		toolMouseInputPatchTui &&
-		toolMouseInputPatchOriginalHandle &&
-		toolMouseInputPatchTui.handleInput === toolMouseInputPatchWrapper
-	) {
-		toolMouseInputPatchTui.handleInput = toolMouseInputPatchOriginalHandle;
-	}
-	toolMouseInputPatchTui = null;
-	toolMouseInputPatchOriginalHandle = null;
-	toolMouseInputPatchWrapper = null;
-}
-
 function restoreToolMouseRenderPatch(): void {
 	if (toolMouseRenderPatchState) toolMouseRenderPatchState.active = false;
 	if (
@@ -2007,16 +1742,10 @@ function buildInteractionFrame(
 	placements: FrameToolPlacement[],
 ): InteractionFrame {
 	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
-	const fixed = useFixedEditorFeatures(tui);
-	const viewport = fixed ? getFixedEditorViewport(tui) : null;
-	// fixed-editor: tui.render already returned the visible root slice (screen rows).
 	// native: full buffer; map with the post-doRender previousViewportTop.
 	const lineIndexToScreenRow = (lineIndex: number) =>
-		fixed ? lineIndex + 1 : lineIndex - (Number(tui?.previousViewportTop) || 0) + 1;
-	const visibleRows = fixed
-		? (viewport?.visibleLines.length ??
-			(Array.isArray(tui?.previousLines) ? tui.previousLines.length : Number.POSITIVE_INFINITY))
-		: Math.max(1, Number(tui?.terminal?.rows) || Number.POSITIVE_INFINITY);
+		lineIndex - (Number(tui?.previousViewportTop) || 0) + 1;
+	const visibleRows = Math.max(1, Number(tui?.terminal?.rows) || Number.POSITIVE_INFINITY);
 	const regions: InteractionRegion[] = [];
 	const renderedByComponent = new Map<any, FrameToolRender>();
 	for (const rendered of renderedTools) renderedByComponent.set(rendered.component, rendered);
@@ -2079,10 +1808,6 @@ function buildInteractionFrame(
 				});
 			}
 		}
-	}
-	const scrollHitbox = getFixedEditorScrollButtonHitbox();
-	if (scrollButtonVisible && useFixedEditorFeatures(tui) && scrollHitbox) {
-		regions.push({ kind: "scroll-bottom", ...scrollHitbox });
 	}
 	return { regions };
 }
@@ -2251,8 +1976,7 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 				this.previousLines = extracted.lines;
 				placements = extracted.placements;
 			}
-			if (!useFixedEditorFeatures(this) && toolMouseInteractionActive())
-				toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
+			if (toolMouseInteractionActive()) toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
 			return result;
 		} finally {
 			activeIoViewFrame = previousFrame;
@@ -2275,8 +1999,7 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 	toolMouseRenderPatchOriginal = original;
 	toolMouseRenderPatchWrapper = wrapper;
 	toolMouseRenderPatchState = patchState;
-	if (!useFixedEditorFeatures(tui) && toolMouseInteractionActive())
-		toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
+	if (toolMouseInteractionActive()) toolMouseRawWrite?.(TOOL_MOUSE_MOTION_ENABLE);
 }
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
@@ -2292,25 +2015,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 		}
 		return undefined;
 	}
-	if (
-		toolMouseInputPatchTui === toolMouseTui &&
-		toolMouseTui.handleInput === toolMouseInputPatchWrapper
-	)
-		return undefined;
 	updateScrollButtonFromInput(toolMouseTui, data);
-	if (isScrollBottomInput(data)) {
-		if (useFixedEditorFeatures(toolMouseTui) && jumpToBottomWithoutSubmit(toolMouseTui)) {
-			return { consume: true };
-		}
-		if (!toolMouseFixedFeaturesEnabled) {
-			// Native Pi scrolls through terminal history rather than an internal
-			// viewport. A harmless terminal write makes Ctrl+End snap that history
-			// to the active cursor without enabling mouse reporting.
-			toolMouseTui.terminal?.write?.("\x1b[0m");
-			toolMouseTui.requestRender?.();
-			return { consume: true };
-		}
-	}
 	// Off mode restores native input: wheel keeps scrolling through Pi's normal
 	// dispatcher, while hover/click affordances are entirely inactive.
 	if (!toolMouseInteractionActive()) return undefined;
@@ -2324,10 +2029,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	for (const packet of packets) {
 		updateToolSummaryHover(toolMouseTui, packet);
 		if (!isSgrLeftPress(packet)) continue;
-		if (
-			handleScrollButtonClick(toolMouseTui, packet) ||
-			toggleToolAtMouseClick(toolMouseTui, packet)
-		) {
+		if (toggleToolAtMouseClick(toolMouseTui, packet)) {
 			consumed = true;
 		}
 	}
@@ -2338,7 +2040,7 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 	return consumed ? { consume: true } : undefined;
 }
 
-function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
+function teardownToolMouseInteraction(): void {
 	if (sessionRenderTimer) {
 		clearTimeout(sessionRenderTimer);
 		sessionRenderTimer = null;
@@ -2349,9 +2051,8 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
 	try {
-		// 惰性 Proxy 不启用任何 reporting（regular 会破坏终端回滚，fullscreen 归官方）；
-		// 只有 fixed-editor compositor 路径需要在此释放 reporting。
-		if (!isLazyProxyTui(toolMouseTui) && !nextFixedEditorFeatures) {
+		// 惰性 Proxy 不启用任何 reporting（regular 会破坏终端回滚，fullscreen 归官方）。
+		if (!isLazyProxyTui(toolMouseTui)) {
 			toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	} catch {
@@ -2362,37 +2063,25 @@ function teardownToolMouseInteraction(nextFixedEditorFeatures = false): void {
 	} catch {
 		// The UI context may already have been reset during /reload.
 	}
-	restoreToolMouseInputCapture();
 	restoreToolMouseRenderPatch();
 	restoreFullscreenViewportInput(toolMouseTui);
 	scrollButtonVisible = false;
 	scrollButtonHovered = false;
 	scrollButtonWidget = null;
-	pendingScrollMessages = 0;
-	assistantMessageActive = false;
 	scrollButtonSyncScheduled = false;
 	toolMouseTui = null;
 	toolMouseUi = null;
-	toolMouseFixedFeaturesEnabled = false;
-	wheelExtraRowRemainder = 0;
-	lastWheelDirection = null;
-	collapseCompensationRemainder = 0;
 }
 
-export function installToolMouseInteraction(
-	ctx: any,
-	fixedEditorFeatures = config.fixedEditorFeatures,
-): void {
-	teardownToolMouseInteraction(fixedEditorFeatures);
+export function installToolMouseInteraction(ctx: any): void {
+	teardownToolMouseInteraction();
 	if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
 	if (typeof ctx.ui?.onTerminalInput !== "function" || typeof ctx.ui?.setWidget !== "function")
 		return;
 
 	toolMouseUi = ctx.ui;
-	toolMouseFixedFeaturesEnabled = fixedEditorFeatures;
-	// 0.84+ 的 tui 是惰性 Proxy：行级 patch（doRender/handleInput）无法安全捕获，
-	// fixed-editor compositor 亦停用。regular 模式仍保留工具点击/hover —— 按鼠标
-	// 输入即时捕获 native frame 映射；fullscreen 完全让位。
+	// 0.84+ 的 tui 是惰性 Proxy：行级 patch（doRender/handleInput）无法安全捕获。
+	// regular 模式不启用鼠标上报（保终端回滚）；fullscreen 由官方 viewport 接管。
 	ctx.ui.setWidget(TOOL_MOUSE_WIDGET_KEY, (tui: any, theme: any) => {
 		toolMouseTui = tui;
 		if (isLazyProxyTui(tui)) {
@@ -2410,17 +2099,9 @@ export function installToolMouseInteraction(
 			};
 			return scrollButtonWidget;
 		}
-		// Root input capture follows the live compositor; onRebuild re-applies it
-		// once the fixed-editor compositor actually owns the terminal.
-		if (useFixedEditorFeatures(tui)) patchToolMouseInputCapture(tui);
-		// Wrap doRender unconditionally: the fixed-editor rebuild replaces the
-		// chain (setBeforeFixedEditorStart restores it first) and onRebuild
-		// re-applies this wrapper once the compositor owns the terminal.
+		// Wrap doRender to capture the live frame for tool click/hover mapping.
 		patchToolMouseMotionAfterRender(tui);
-		// The fixed-editor compositor owns its mouse mode; native Pi gets motion only
-		// while mouse interaction is active (rendering mode on + fixed editor).
-		if (!fixedEditorFeatures && toolMouseInteractionActive())
-			tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
+		if (toolMouseInteractionActive()) tui?.terminal?.write?.(TOOL_MOUSE_MOTION_ENABLE);
 		const widget = {
 			render: (width: number) => renderScrollButton(width, theme),
 			invalidate() {},
@@ -2447,10 +2128,7 @@ function scheduleSessionRender(refresh?: () => void): void {
 	sessionRenderTimer = setTimeout(() => {
 		sessionRenderTimer = null;
 		if (toolMouseTui !== tui) return;
-		// Do not pre-wrap while fixed-editor compositor install is still pending.
-		if (!toolMouseFixedFeaturesEnabled || useFixedEditorFeatures(tui)) {
-			patchToolMouseMotionAfterRender(tui);
-		}
+		patchToolMouseMotionAfterRender(tui);
 		refreshToolRendererComponents(tui);
 		refresh?.();
 		tui.requestRender(true);
@@ -2461,50 +2139,34 @@ function scheduleSessionRender(refresh?: () => void): void {
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_FG_RESET = "\x1b[39m";
 
-function refreshCurrentTranscript(
-	compactStyle: CompactStyleHooks,
-	ctx?: any,
-	toolGrouping?: ToolGroupingHooks,
-): void {
+function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
 	toolGrouping?.refresh();
-	compactStyle.refresh();
 	toolMouseTui?.requestRender?.(true);
 	ctx?.ui?.requestRender?.(true);
 }
 
-function applyStyleMode(
-	mode: CompactStyleMode,
-	ctx: any,
-	compactStyle: CompactStyleHooks,
-	toolGrouping?: ToolGroupingHooks,
-): void {
+function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGroupingHooks): void {
 	config.mode = mode;
 	saveConfig();
 	if (mode === "off") {
 		// Native rendering mode: drop hover/click state and fully disable mouse
 		// reporting so the terminal restores its default scrollback wheel scrolling.
-		// (The fixed-editor compositor owns its own reporting when enabled.)
 		hoveredToolCallId = null;
 		setHoveredToolGroup(null);
 		setHoveredToolIo(null, null);
 		scrollButtonVisible = false;
 		scrollButtonHovered = false;
-		pendingScrollMessages = 0;
-		assistantMessageActive = false;
 		// 惰性 Proxy（regular/fullscreen）不持有 reporting：regular 保终端回滚，
 		// fullscreen 归官方所有，均不能在此关闭。
-		if (toolMouseTui && !useFixedEditorFeatures(toolMouseTui) && !isLazyProxyTui(toolMouseTui)) {
+		if (toolMouseTui && !isLazyProxyTui(toolMouseTui)) {
 			toolMouseTui.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	}
-	refreshCurrentTranscript(compactStyle, ctx, toolGrouping);
+	refreshCurrentTranscript(ctx, toolGrouping);
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
 
 function modeSettingDescription(mode: CompactStyleMode): string {
-	if (mode === "compact") {
-		return "Compact transcript summaries. Diff options below still apply independently.";
-	}
 	if (mode === "off") {
 		return "Pi native tool rendering. Diff options below still apply independently.";
 	}
@@ -2546,7 +2208,7 @@ function buildExcludeRenderersSubmenu(
 		description:
 			name === "Agent"
 				? "Agent always uses its dedicated renderer and cannot be forced through ccstyle."
-				: `Use Pi native renderer for ${name} instead of Claude Code / compact styling.`,
+				: `Use Pi native renderer for ${name} instead of Claude Code styling.`,
 		currentValue: config.excludeRenderers.includes(name) ? "exclude" : "style",
 		values: ["style", "exclude"],
 	}));
@@ -2618,7 +2280,6 @@ function renderSectionTabBar(
 
 async function showCcstylePanel(
 	ctx: any,
-	compactStyle: CompactStyleHooks,
 	toolGrouping?: ToolGroupingHooks,
 	compactThinking?: CompactThinkingController,
 ): Promise<void> {
@@ -2633,7 +2294,7 @@ async function showCcstylePanel(
 			label: "Mode",
 			description: modeSettingDescription(config.mode),
 			currentValue: config.mode,
-			values: ["on", "off", "compact"],
+			values: ["on", "off"],
 		};
 		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
@@ -2655,7 +2316,7 @@ async function showCcstylePanel(
 					() => {
 						excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
 						excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
-						refreshCurrentTranscript(compactStyle, ctx);
+						refreshCurrentTranscript(ctx);
 					},
 				);
 			},
@@ -2734,7 +2395,7 @@ async function showCcstylePanel(
 			switch (id) {
 				case "mode":
 					modeSetting.description = modeSettingDescription(value as CompactStyleMode);
-					applyStyleMode(value as CompactStyleMode, ctx, compactStyle, toolGrouping);
+					applyStyleMode(value as CompactStyleMode, ctx, toolGrouping);
 					return;
 				case "excludeRenderers":
 					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
@@ -2795,7 +2456,7 @@ async function showCcstylePanel(
 			}
 			saveConfig();
 			compactThinking?.updateConfig(getCompactThinkingConfig());
-			refreshCurrentTranscript(compactStyle, ctx);
+			refreshCurrentTranscript(ctx);
 			ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 		};
 
@@ -3249,7 +2910,7 @@ function createCcstyleTool(
 /**
  * Apart from the write override used to capture pre-write content, renderers are
  * applied through ToolExecutionComponent. Patch its lookup once so tools use the
- * same compact fallback shell by default. Tools named in excludeRenderers keep
+ * same ccstyle fallback shell by default. Tools named in excludeRenderers keep
  * their original renderer.
  */
 const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
@@ -3576,18 +3237,6 @@ function deactivateLegacyCompactionRendering() {
 	if (patch) patch.enabled = () => false;
 }
 
-function notePendingScrollMessage(role: unknown): void {
-	if (!toolMouseTui || !useFixedEditorFeatures(toolMouseTui) || !scrollButtonVisible) return;
-	if (role === "assistant") {
-		if (assistantMessageActive) return;
-		assistantMessageActive = true;
-	} else if (role !== "toolResult") {
-		return;
-	}
-	pendingScrollMessages += 1;
-	toolMouseTui.requestRender?.();
-}
-
 export default function (
 	pi: ExtensionAPI,
 	configOverride?: Partial<Config>,
@@ -3595,56 +3244,31 @@ export default function (
 ) {
 	// The optional override keeps integration tests independent from the user's global config.
 	if (configOverride) config = normalizeConfig({ ...config, ...configOverride });
-	const fixedEditorController = installFixedEditor(pi, config.fixedEditorFeatures);
-	// Unwrap mouse doRender before compositor construction captures the chain.
-	setBeforeFixedEditorStart(() => {
-		restoreToolMouseRenderPatch();
-	});
-	// Footer/compositor rebuild disposes the old chain; re-wrap the live doRender and repaint.
-	fixedEditorController.onRebuild(() => {
-		const tui = toolMouseTui;
-		if (!tui) return;
-		if (toolMouseFixedFeaturesEnabled) patchToolMouseInputCapture(tui);
-		// compositor.install captured the current chain as originalDoRender, so an
-		// already-installed wrapper keeps receiving calls through it — re-wrapping
-		// only when no wrapper is active avoids stacking one per rebuild/reload.
-		if (!(toolMouseRenderPatchTui === tui && toolMouseRenderPatchState?.active)) {
-			patchToolMouseMotionAfterRender(tui);
-		}
-		tui.requestRender?.(true);
-	});
 	const writeExecutionMetadata = new WriteExecutionMetadataStore();
 	let installation:
 		| {
 				globalToolRendering: GlobalToolRenderPatch;
 				toolGrouping: ToolGroupingHooks;
-				compactStyle: CompactStyleHooks;
 		  }
 		| undefined;
 	const ensureTuiInstallation = (ctx: any) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
-		// 渲染层（工具样式/紧凑模式/分组）是原型与组件级 patch，fullscreen 官方布局
-		// 同样渲染这些组件，因此两种模式都安装；fixed-editor compositor 仍由
-		// installFixedEditor 内部按 fullscreen 让位。
+		// 渲染层（工具样式/分组）是原型与组件级 patch，fullscreen 官方布局
+		// 同样渲染这些组件，因此两种模式都安装。
 		if (installation) return installation;
 		const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
 		deactivateLegacyCompactionRendering();
-		const compactStyle = installCompactStyle(pi, {
-			getMode: () => config.mode,
-			getExcludeRenderers: () => config.excludeRenderers,
-		});
-		installation = { globalToolRendering, toolGrouping, compactStyle };
+		installation = { globalToolRendering, toolGrouping };
 		return installation;
 	};
 
 	pi.registerCommand("ccstyle", {
-		description: "Configure Claude Code style, fixed editor, and rich diff options",
+		description: "Configure Claude Code style and rich diff options",
 		getArgumentCompletions: (prefix) => {
 			const topLevel = [
 				{ value: "on", label: "on", description: "Enable Claude Code style" },
 				{ value: "off", label: "off", description: "Use Pi's native renderer" },
-				{ value: "compact", label: "compact", description: "Use compact transcript rendering" },
 				{ value: "status", label: "status", description: "Show full configuration" },
 				{ value: "panel", label: "panel", description: "Open interactive settings panel" },
 			];
@@ -3652,7 +3276,7 @@ export default function (
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (!arg || arg === "panel" || arg === "on" || arg === "off" || arg === "compact") {
+			if (!arg || arg === "panel" || arg === "on" || arg === "off") {
 				if (ctx?.mode !== "tui" || !ctx?.hasUI) {
 					ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 					return;
@@ -3660,9 +3284,9 @@ export default function (
 				const hooks = ensureTuiInstallation(ctx);
 				if (!hooks) return;
 				if (!arg || arg === "panel") {
-					await showCcstylePanel(ctx, hooks.compactStyle, hooks.toolGrouping, compactThinking);
+					await showCcstylePanel(ctx, hooks.toolGrouping, compactThinking);
 				} else {
-					applyStyleMode(arg, ctx, hooks.compactStyle, hooks.toolGrouping);
+					applyStyleMode(arg, ctx, hooks.toolGrouping);
 				}
 				return;
 			}
@@ -3670,7 +3294,7 @@ export default function (
 				ctx.ui.notify(`Claude Code style: ${formatConfigStatus(config)}`, "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /ccstyle [on|off|compact|status|panel]", "warning");
+			ctx.ui.notify("Usage: /ccstyle [on|off|status|panel]", "warning");
 		},
 	});
 
@@ -3685,11 +3309,8 @@ export default function (
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
-		hooks.compactStyle.onSessionStart(event, ctx);
-		pendingScrollMessages = 0;
-		assistantMessageActive = false;
 		ctx.ui.setStatus("ccstyle", undefined);
-		scheduleSessionRender(hooks.compactStyle.refresh);
+		scheduleSessionRender();
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
@@ -3699,46 +3320,11 @@ export default function (
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
-		hooks.compactStyle.onSessionCompact(event, ctx);
-		scheduleSessionRender(hooks.compactStyle.refresh);
-	});
-
-	pi.on("message_start", async (event) => {
-		if (installation) notePendingScrollMessage(event?.message?.role);
-	});
-
-	pi.on("message_update", async (event, ctx) => {
-		installation?.compactStyle.onMessageUpdate(event, ctx);
-		if (installation && event?.message?.role === "assistant") notePendingScrollMessage("assistant");
-	});
-
-	pi.on("message_end", async (event) => {
-		if (installation && event?.message?.role === "assistant") assistantMessageActive = false;
-	});
-
-	pi.on("agent_start", async (event, ctx) => {
-		installation?.compactStyle.onAgentStart(event, ctx);
-	});
-
-	pi.on("agent_end", async (event, ctx) => {
-		installation?.compactStyle.onAgentEnd(event, ctx);
-	});
-
-	pi.on("turn_start", async (event, ctx) => {
-		installation?.compactStyle.onTurnStart(event, ctx);
+		scheduleSessionRender();
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
 		installation?.toolGrouping.setTheme(ctx.ui.theme);
-		installation?.compactStyle.onToolExecutionStart(event, ctx);
-	});
-
-	pi.on("tool_execution_update", async (event, ctx) => {
-		installation?.compactStyle.onToolExecutionUpdate(event, ctx);
-	});
-
-	pi.on("tool_execution_end", async (event, ctx) => {
-		installation?.compactStyle.onToolExecutionEnd(event, ctx);
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
@@ -3753,7 +3339,6 @@ export default function (
 			!current.globalToolRendering.active
 		)
 			return;
-		current.compactStyle.onSessionShutdown(event, ctx);
 		deactivateGlobalToolRendering(current.globalToolRendering);
 		current.toolGrouping.shutdown();
 		deactivateLegacyCompactionRendering();

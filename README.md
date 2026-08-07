@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  类 Claude Code TUI输出风格、固定编辑器、上下文检查，以及 Agent / Session 引用。
+  类 Claude Code TUI 输出风格、上下文检查，以及 Agent / Session 引用。
 </p>
 
 <p align="center">
@@ -39,13 +39,40 @@ pi install git:github.com/minuque/pi-cc-extensions
 ## 功能
 
 
-| 功能                 | 说明                                                                            | 入口        |
-| ---------------------- | --------------------------------------------------------------------------------- | ------------- |
-| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` / `compact` 三种模式 | `/ccstyle`  |
-| Fixed editor 交互    | 基于`@tifan/pi-fixed-editor`，支持动态开关、每刻度 5 行滚动、工具点击与回到底部 | `/ccstyle`  |
-| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                  | `/context`  |
-| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@session:` |
-| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark、CC Light 主题                        | `/theme`    |
+| 功能                 | 说明                                                                | 入口        |
+| ---------------------- | --------------------------------------------------------------------- | ------------- |
+| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` 两种模式 | `/ccstyle`  |
+| Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、`[show more]` 预览、回到底部按钮       | `/ccstyle`  |
+| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容      | `/context`  |
+| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                 | `@session:` |
+| 主题                 | 随包提供内置 GitHub Dark Default、CC Dark、CC Light 主题            | `/theme`    |
+
+### 输出模式
+
+
+| 模式  | 行为                                                    |
+| ------- | --------------------------------------------------------- |
+| `on`  | Claude Code 风格工具输出，`edit` / `write` 带 rich diff |
+| `off` | Pi 原生渲染                                             |
+
+```text
+/ccstyle on
+/ccstyle off
+/ccstyle status
+/ccstyle panel   # 交互式设置面板（模式、Diff、thinking 选项）
+```
+
+配置保存在 `~/.pi/agent/claude-code-style.json`：
+
+```json
+{
+  "mode": "on",
+  "excludeRenderers": []
+}
+```
+
+- `excludeRenderers` 使用精确工具名；`Agent` 始终保留其专用渲染器。
+- 手动修改配置后执行 `/reload`。
 
 ## 本地开发
 
@@ -59,18 +86,10 @@ pi -e .
 
 ## 兼容性
 
-- Node.js `>=22.19.0`
-- Pi `^0.84.0`（通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载）
-- 0.80.x 及更早版本请使用本包的旧版本（peerDependencies 已收紧为 `^0.84.0`）
-- `@tifan/pi-fixed-editor`、Pi 或 TUI 内部实现升级后若显示异常，先执行 `/reload`
-
-### Fullscreen 模式与日落功能
-
-- 官方 `--tui-mode fullscreen`（及 `/settings` 运行时切换）复用官方布局，`/ccstyle` 的渲染层（工具样式、紧凑模式、工具分组）为原型与组件级 patch，随官方布局同样生效，无需切换到 regular。
-- fullscreen 下已适配 fixed-editor 的交互能力：工具卡点击展开/折叠、回到底部按钮（`[ ↓ Back to bottom · Ctrl+End ]`，滚轮/PageUp/官方滚动键离开底部时显示）；滚动条拖动、文本选择、OSC8 链接点击等官方能力完整保留。
-- 固定编辑器布局与独立滚动 transcript 已日落（冻结开发、仅维持可用）：`@tifan/pi-fixed-editor` 的 compositor 在 0.84+ 停用（惰性 Proxy 无法安全捕获 doRender/render/handleInput），渲染由官方管线接管；regular 模式不启用鼠标上报，终端回滚（滚轮）保持原生。
-- 已知边界：运行时从 regular 切换到 fullscreen 时，插件行级渲染 patch 随旧 TUI 实例自动失效，但组件级样式 patch 仍生效（不影响官方布局）；如需完全隔离，建议以 fullscreen 模式启动会话。
-- `compact-thinking.json` 配置文件已日落（不再读取、不再兼容），compact-thinking 的配置统一由 `claude-code-style.json` 管控。
+- Node.js `>=22.19.0`，Pi `^0.84.0`（通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载）
+- fixed-editor相关功能已平滑迁移至官方管线：TUI mode=fullscreen 模式下 `/ccstyle` 全部鼠标交互功能类照常可用。
+- 需要已移除的 fixed-editor 布局或 `compact` 单行摘要模式？请使用 `0.8.46` 及更早版本
+- 已移除：固定编辑器布局与 `compact` 单行摘要模式（后续会有新版本 compact mode 发布）。旧配置 `mode: "compact"` 自动回退 `on`，`/ccstyle` 面板仅有 `on` / `off`。
 
 ## 推荐搭配
 
@@ -88,8 +107,6 @@ pi -e .
 
 ## 致谢
 
-- Compact transcript 基于 [`avhagedorn/pi-compact-transcript`](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2（MIT）。
-- Fixed editor 由 [`@tifan/pi-fixed-editor`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-fixed-editor) 提供（MIT）。
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md)。
 - 启动头基于 [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header)（MIT）。
 - 命令别名基于 [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases)（MIT）。

@@ -6,7 +6,8 @@ import { render as renderMermaid, sourceBox } from "grok-mermaid";
 // ============================================================================
 
 // 内置 mermaid transformer 只认 ```mermaid，这里补上 grok-mermaid 支持的其他方言
-const DIAGRAM_FENCE = /^(`{3,})\s*(mermaid|statediagram|statediagram-v2|classdiagram|classdiagram-v2|erdiagram|sequencediagram)\s*$/i;
+const DIAGRAM_FENCE =
+	/^(`{3,})\s*(mermaid|statediagram|statediagram-v2|classdiagram|classdiagram-v2|erdiagram|sequencediagram)\s*$/i;
 const FENCE_OPEN = /^(`{3,})/;
 const FENCE_CLOSE = /^`{3,}\s*$/;
 

@@ -164,14 +164,13 @@ test("lazy-proxy tui: regular stands down without mouse reporting (terminal scro
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
 	const { pi, events } = runtime();
-	claudeCodeStyleExtension(pi as any, { mode: "on", fixedEditorFeatures: true });
+	claudeCodeStyleExtension(pi as any, { mode: "on" });
 	await events.get("session_start")?.({}, ui.ctx);
 
 	assert.equal(ui.terminalInputCalls, 1);
 	// regular lazy proxy 不启用任何 reporting：终端回滚（滚轮）必须保持原生行为。
 	assert.ok(!writes.some((value) => value.includes("?1000h")), "no click reporting in regular");
 	assert.ok(!writes.some((value) => value.includes("?1003h")), "no motion reporting in regular");
-	assert.equal((globalThis as any)[Symbol.for("pi.ccstyle.fixed-editor-owner")], undefined);
 
 	// 不得捕获回写惰性 Proxy 方法，也不得递归。
 	renderer.doRender();
@@ -183,7 +182,7 @@ test("lazy-proxy tui: regular stands down without mouse reporting (terminal scro
 	assert.equal(ui.inputHandler?.(`\x1b[<0;${hintCol};2M`), undefined);
 	assert.equal(tool.expanded, false);
 
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 	assert.ok(
 		!writes.some((value) => value.includes("?1000l") && value.includes("?1006l")),
 		"teardown does not touch terminal mouse modes it never enabled",
@@ -297,8 +296,7 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	let renderer = new FullscreenRenderer(tool, null, terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	// 用用户真实配置安装（fixedEditorFeatures=false）：点击体系独立于该开关。
-	installToolMouseInteraction(ui.ctx, false);
+	installToolMouseInteraction(ui.ctx);
 
 	assert.equal(renderer.wheelScrollLines, 3, "fullscreen native wheel step is raised to 3");
 	assert.ok(
@@ -453,7 +451,7 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	ui.inputHandler?.("\x1b[8^"); // Ctrl+End 官方不消费，经 onTerminalInput 回到底部
 	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
 	assert.deepEqual(ui.widget.render(80), []);
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
 });
 
@@ -474,7 +472,7 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => 
 	const renderer = new FullscreenRenderer(group, null, terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx, false);
+	installToolMouseInteraction(ui.ctx);
 
 	const hintCol = group.render(80)[1].indexOf("click to show more") + 1;
 	tui.handleViewportInput(`\x1b[<32;${hintCol};2M`);
@@ -485,7 +483,7 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => 
 	assert.equal((group as any).expanded, true, "group click expands all children");
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
 	assert.equal((group as any).expanded, false, "second group click collapses all children");
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 });
 
 test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components", () => {
@@ -496,11 +494,11 @@ test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components
 	const renderer = new FullscreenRenderer(tool, null, terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx, false);
+	installToolMouseInteraction(ui.ctx);
 
 	assert.doesNotThrow(() => tui.handleViewportInput(`\x1b[<32;20;2M`));
 	assert.equal(renderer.officialInputs.length, 1, "motion still reaches official chain");
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 });
 
 test("lazy-proxy tui: fullscreen text preview receives mouse before official selection", async () => {
@@ -510,7 +508,7 @@ test("lazy-proxy tui: fullscreen text preview receives mouse before official sel
 	renderer.hasOverlay = () => true;
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx, false);
+	installToolMouseInteraction(ui.ctx);
 
 	let component: any;
 	const preview = showTextPreview(
@@ -534,7 +532,7 @@ test("lazy-proxy tui: fullscreen text preview receives mouse before official sel
 	);
 	component.handleInput("\x1b");
 	await preview;
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 });
 
 test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership", () => {
@@ -543,7 +541,7 @@ test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership"
 	let renderer = new FullscreenRenderer(tool, null, terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx, true);
+	installToolMouseInteraction(ui.ctx);
 
 	assert.ok(!writes.some((value) => value.includes("?1000h")), "initial fullscreen is untouched");
 	const hintCol = tool.render()[1].indexOf("/ click") + 1;
@@ -577,7 +575,7 @@ test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership"
 	renderer = createRenderer("fullscreen", [tool], terminal);
 	ui.widget.render();
 	const writesBeforeTeardown = writes.length;
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 	assert.equal(writes.length, writesBeforeTeardown);
 });
 
@@ -600,10 +598,10 @@ test("lazy-proxy frame capture rolls back partial render wrappers on failure", (
 	let renderer = createRenderer("regular", [first, hostile], terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx, true);
+	installToolMouseInteraction(ui.ctx);
 
 	assert.equal(ui.inputHandler?.("\x1b[<0;20;2M"), undefined);
 	assert.equal(first.render, originalRender, "earlier component render is restored after failure");
 	assert.ok(first.render().every((line) => !line.includes("\x1b_cc:")));
-	installToolMouseInteraction({}, false);
+	installToolMouseInteraction({});
 });

@@ -8,8 +8,6 @@ import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
 // 渲染层（工具样式/紧凑模式/分组）为原型与组件级 patch，随官方布局生效；
 // 固定编辑器 compositor 仍让位官方 sticky editor。
 
-const FIXED_EDITOR_OWNER = Symbol.for("pi.ccstyle.fixed-editor-owner");
-
 function runtime() {
 	const events = new Map<string, Function>();
 	return {
@@ -61,8 +59,6 @@ test("fullscreen session: rendering layer installs, fixed editor stands down", a
 	// 渲染层安装：/ccstyle 在 fullscreen 下同样可用（组件级 patch 随官方布局生效）
 	assert.notEqual(toolPrototype.getRenderShell, original.getRenderShell);
 	assert.notEqual(toolPrototype.getCallRenderer, original.getCallRenderer);
-	// 固定编辑器未激活
-	assert.equal((globalThis as any)[FIXED_EDITOR_OWNER], undefined);
 });
 
 test("regular session: rendering layer still installs", async () => {
@@ -78,8 +74,4 @@ test("regular session: rendering layer still installs", async () => {
 	await events.get("session_start")?.({}, ctxWithTuiMode("regular"));
 
 	assert.notEqual(toolPrototype.getRenderShell, original.getRenderShell);
-	assert.equal((globalThis as any)[FIXED_EDITOR_OWNER]?.owner, undefined);
-	// 清理，避免影响其他测试进程内断言
-	(globalThis as any)[FIXED_EDITOR_OWNER]?.stop?.();
-	delete (globalThis as any)[FIXED_EDITOR_OWNER];
 });

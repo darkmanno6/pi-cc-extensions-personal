@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  Claude Code-style output, a fixed editor, context inspection, and Agent / Session references.
+  Claude Code-style output, context inspection, and Agent / Session references.
 </p>
 
 <p align="center">
@@ -34,7 +34,7 @@ pi install npm:pi-cc-extensions
 Run `/reload` after installation, then try:
 
 ```text
-/ccstyle       # Configure output and fixed-editor interaction
+/ccstyle       # Configure output and rich diffs
 /context       # Inspect context usage
 @              # Complete Agents, Sessions, and files
 ```
@@ -44,8 +44,8 @@ Run `/reload` after installation, then try:
 
 | Feature                  | Description                                                                                                                  | Entry point |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| Claude Code-style output | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` / `compact` modes                                    | `/ccstyle`  |
-| Fixed-editor interaction | Powered by`@tifan/pi-fixed-editor`, with runtime toggling, five-row wheel scrolling, tool clicks, and back-to-bottom control | `/ccstyle`  |
+| Claude Code-style output | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` modes                                        | `/ccstyle`  |
+| Fullscreen mouse interaction | Tool card/group click-to-toggle, `[show more]` previews, and a back-to-bottom button | `/ccstyle`  |
 | Context inspection       | Usage breakdown and previews for the system prompt, tools, skills, and messages                                              | `/context`  |
 | Session references       | Search and inject effective context from previous Sessions or existing SubAgents                                             | `@session:` |
 | Theme                    | Bundled GitHub Dark Default, CC Dark, and CC Light themes                                                                     | `/theme`    |
@@ -57,12 +57,10 @@ Run `/reload` after installation, then try:
 | ----------- | ----------------------------------------------------------------------- |
 | `on`      | Claude Code-style tool output with rich diffs for`edit` and `write`   |
 | `off`     | Native Pi renderers                                                   |
-| `compact` | One-line previews, merged repeated calls, duration, and run summaries |
 
 ```text
 /ccstyle on
 /ccstyle off
-/ccstyle compact
 /ccstyle status
 ```
 
@@ -71,14 +69,11 @@ Configuration is stored in `~/.pi/agent/claude-code-style.json`:
 ```json
 {
   "mode": "on",
-  "excludeRenderers": [],
-  "fixedEditorFeatures": true
+  "excludeRenderers": []
 }
 ```
 
 - `excludeRenderers` uses exact tool names. `Agent` always keeps its dedicated renderer.
-- `fixedEditorFeatures: true` enables `@tifan/pi-fixed-editor` plus mouse scrolling, clicks, viewport mapping, and the back-to-bottom indicator.
-- Set it to `false`, or toggle **Fixed editor** in `/ccstyle`, to restore Pi's native scrolling editor immediately. `Ctrl+End` remains available.
 - Run `/reload` after editing the file manually.
 
 ### `@` references
@@ -110,18 +105,10 @@ Run `/reload` after changing extensions.
 
 ## Compatibility
 
-- Node.js `>=22.19.0`
-- Pi `^0.84.0` (loaded through `pi.extensions` and `pi.themes` in the root `package.json`)
-- For Pi 0.80.x and earlier, use an older release of this package (peerDependencies are now `^0.84.0`)
-- If a Pi, TUI, or `@tifan/pi-fixed-editor` update causes display issues, try `/reload` first
-
-### Fullscreen mode & sunset features
-
-- Official `--tui-mode fullscreen` (and runtime switching via `/settings`) reuses the official layout; `/ccstyle`'s rendering layer (tool styling, compact mode, tool grouping) is prototype/component-level patching and applies to the official layout as well — no need to switch to regular.
-- Fullscreen adapts the fixed-editor interactions: click a collapsed tool card to expand, click the first row of an expanded card to collapse, and a back-to-bottom button (`[ ↓ Back to bottom · Ctrl+End ]`) appears when scrolling away from the bottom (wheel/PageUp/official scroll keys). Official capabilities (scrollbar dragging, text selection, OSC8 link clicks) are fully preserved.
-- The fixed-editor layout and independently scrollable transcript are sunset (frozen, kept working only): `@tifan/pi-fixed-editor`'s compositor is disabled on 0.84+ (the lazy Proxy cannot safely capture doRender/render/handleInput); rendering is handled by the official pipeline, and regular mode does not enable mouse reporting so terminal scrollback keeps its native wheel behavior.
-- Known boundary: when switching from regular to fullscreen at runtime, per-TUI rendering patches are automatically abandoned with the old TUI instance, but component-level style patches remain active (they do not affect the official layout); for full isolation, start the session in fullscreen mode.
-- The `compact-thinking.json` config file is sunset (no longer read or maintained); compact-thinking settings are managed exclusively by `claude-code-style.json`.
+- Node.js `>=22.19.0`, Pi `^0.84.0` (loaded through `pi.extensions` and `pi.themes` in the root `package.json`)
+- Fixed-editor features have been smoothly migrated to the official pipeline: in TUI fullscreen mode, all `/ccstyle` mouse interactions work as usual.
+- Need the removed fixed-editor layout or `compact` one-line summary mode? Use version `0.8.46` or earlier
+- Removed: the fixed-editor layout and the `compact` one-line summary mode (a new compact mode is planned for a future release). Old configs with `"mode": "compact"` automatically fall back to `on`, and the `/ccstyle` panel only offers `on` / `off`.
 
 ## Recommended companions
 
@@ -139,8 +126,6 @@ Run `/reload` after changing extensions.
 
 ## Credits
 
-- Compact transcript behavior is based on [`avhagedorn/pi-compact-transcript`](https://github.com/avhagedorn/pi-compact-transcript) v0.6.2 (MIT).
-- Fixed-editor behavior is provided by [`@tifan/pi-fixed-editor`](https://github.com/tifandotme/pi-extensions/tree/master/packages/pi-fixed-editor) (MIT).
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md).
 - Startup header based on [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header) (MIT).
 - Command aliases based on [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases) (MIT).

@@ -236,10 +236,10 @@ test("outer removeChild removes grouped tools, dissolves singletons, and clear f
 	}
 });
 
-test("off/compact refresh ungroups, re-enable groups only new tools, and reload/shutdown restore ownership", () => {
+test("off refresh ungroups, re-enable groups only new tools, and reload/shutdown restore ownership", () => {
 	const prototype = Container.prototype as any;
 	const originalAdd = prototype.addChild;
-	let mode: "on" | "off" | "compact" = "on";
+	let mode: "on" | "off" = "on";
 	const first = installToolGrouping(() => mode === "on");
 	const parent = new Container() as any;
 	parent.addChild(tool("read", "one"));
@@ -252,8 +252,6 @@ test("off/compact refresh ungroups, re-enable groups only new tools, and reload/
 		false,
 	);
 
-	mode = "compact";
-	first.refresh();
 	mode = "on";
 	first.refresh();
 	parent.addChild(tool("grep", "three"));

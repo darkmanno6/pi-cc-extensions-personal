@@ -2,14 +2,13 @@
 	"name": "pi-cc-extensions",
 	"version": "0.8.46",
 	"license": "MIT",
-	"description": "A Pi productivity suite with Claude Code-style UI, fixed editor, context inspection, and agent/session references",
+	"description": "A Pi productivity suite with Claude Code-style UI, context inspection, and agent/session references",
 	"type": "module",
 	"keywords": [
 		"pi-package",
 		"pi-extension",
 		"pi-coding-agent",
-		"claude-code",
-		"fixed-editor"
+		"claude-code"
 	],
 	"homepage": "https://github.com/minuque/pi-cc-extensions#readme",
 	"repository": {
@@ -50,13 +49,10 @@
 	},
 	"dependencies": {
 		"@shikijs/cli": "^4.0.2",
-		"@tifan/pi-fixed-editor": "^0.2.5",
 		"grok-mermaid": "^0.2.2",
 		"jiti": "^2.7.0"
 	},
-	"bundledDependencies": [
-		"@tifan/pi-fixed-editor"
-	],
+	"bundledDependencies": [],
 	"peerDependencies": {
 		"@earendil-works/pi-ai": "^0.84.0",
 		"@earendil-works/pi-coding-agent": "^0.84.0",

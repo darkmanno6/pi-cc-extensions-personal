@@ -40,7 +40,7 @@ function output(component: any, width = 100): string[] {
 }
 
 test("rich diff routes only successful edit/write results in on mode", () => {
-	for (const mode of ["on", "off", "compact"] as const) {
+	for (const mode of ["on", "off"] as const) {
 		assert.equal(shouldRenderRichDiff(mode, "edit", false), mode === "on");
 		assert.equal(shouldRenderRichDiff(mode, "write", false), mode === "on");
 		assert.equal(shouldRenderRichDiff(mode, "read", false), false);

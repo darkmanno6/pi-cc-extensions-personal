@@ -34,7 +34,8 @@
 			"./themes/github-dark-default.json",
 			"./themes/cc-dark.json"
 		],
-		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp"
+		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp",
+		"video": "https://github.com/user-attachments/assets/debf76ea-a9dc-4f34-977f-aae344a9a7f8"
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.ts",

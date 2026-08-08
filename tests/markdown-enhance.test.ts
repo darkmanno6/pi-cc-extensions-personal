@@ -48,6 +48,14 @@ test("流式跳过", () => {
 	);
 });
 
+test("thinking 块不转换（与官方推荐一致）", () => {
+	const md = "```mermaid\ngraph LR\nA --> B\n```\n\n> [!NOTE] 提示\n\n看 https://example.com";
+	assert.strictEqual(
+		run(md, { messageType: "assistant-thinking", isStreaming: false, availableWidth: 100 }),
+		md,
+	);
+});
+
 test("admonition 转换", () => {
 	assert.ok(run("> [!WARNING] 磁盘不足\n> 续行\n\n正文").includes("| ⚠️ WARNING | 磁盘不足 续行 |"));
 	assert.ok(run("> [!NOTE] 提示").includes("| 💡 NOTE | 提示 |"));

@@ -137,13 +137,36 @@ export default function (pi: ExtensionAPI): void {
 	// 注意：pi 每个扩展只有一个 markdownTransformer 槽位，多次注册会互相覆盖，
 	// 所以三个转换合并为一次注册，内部按序链式执行。
 	pi.registerMarkdownTransformer((markdown, context) => {
-		// 1. Mermaid 方言渲染（流式跳过，最终渲染时执行）
+		const { messageType, isStreaming = false } = context ?? {};
+		// 与官方推荐一致：thinking 块与流式中间态不转换
+		if (messageType === "assistant-thinking" || isStreaming) return markdown;
+		// 1. Mermaid 方言渲染
 		markdown = renderDiagrams(markdown, context);
 		// 2. GitHub 风格提示框
 		markdown = renderAdmonitions(markdown);
 		// 3. 裸 URL 转超链接
 		return linkifyUrls(markdown);
 	});
+}
+
+// grok-mermaid 渲染结果缓存：resize/restored 重绘会重复转换，按源码缓存 art。
+// ponytail: 固定上限 50 条，防长期会话膨胀；超出后清空重来。
+const ART_CACHE = new Map<string, ReturnType<typeof renderMermaid>>();
+const ART_CACHE_MAX = 50;
+
+/** 获取/计算 mermaid art（带缓存）。 */
+function getArt(src: string): ReturnType<typeof renderMermaid> | null {
+	const cached = ART_CACHE.get(src);
+	if (cached) return cached;
+	let art = null;
+	try {
+		art = renderMermaid(src);
+	} catch {
+		art = null;
+	}
+	if (ART_CACHE.size >= ART_CACHE_MAX) ART_CACHE.clear();
+	if (art) ART_CACHE.set(src, art);
+	return art;
 }
 
 /** Mermaid 方言代码块 → ASCII 图（流式跳过）。 */
@@ -163,12 +186,7 @@ function renderDiagrams(markdown: string, context?: { isStreaming?: boolean; ava
 				// grok-mermaid 需要源码自带类型头，方言头在 fence 标签里时补回去
 				const label = fence[2];
 				const src = label.toLowerCase() === "mermaid" ? diagram : `${label}\n${diagram}`;
-				let art = null;
-				try {
-					art = renderMermaid(src);
-				} catch {
-					art = null;
-				}
+				const art = getArt(src);
 				const width = availableWidth ?? 80;
 				if (art && art.width <= width) {
 					// 图行用硬换行（行尾两空格）连接，防止 Markdown 软换行合并行

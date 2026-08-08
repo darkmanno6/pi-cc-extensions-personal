@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
-import { installCompactThinking } from "../extensions/compact-thinking.ts";
+import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
 
 const config = {
 	useSummaryTitlesAsThinkingTitle: false,

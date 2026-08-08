@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
-import { escCloseHitbox, hasActiveTextPreview, showTextPreview } from "../extensions/context.ts";
+import { escCloseHitbox, hasActiveTextPreview, showTextPreview } from "../extensions/feature/context.ts";
 
 initTheme("dark");
 

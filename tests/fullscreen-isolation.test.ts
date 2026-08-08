@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
+import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
 
 // fullscreen 冒烟测试：官方 fullscreen TUI（mode === "fullscreen"）下，
 // 渲染层（工具样式/紧凑模式/分组）为原型与组件级 patch，随官方布局生效；

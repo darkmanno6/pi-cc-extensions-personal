@@ -1,13 +1,13 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import agentAutocomplete from "./agent-autocomplete.ts";
-import claudeCodeStyle, { getCompactThinkingConfig } from "./claude-code-style.ts";
-import { installCompactThinking, type CompactThinkingController } from "./compact-thinking.ts";
-import context from "./context.ts";
-import markdownEnhance from "./markdown-enhance.ts";
-import piAliases from "./pi-aliases.ts";
-import piStartupHeader from "./pi-startup-header.ts";
-import sessionReference from "./session-reference.ts";
-import workingMessage from "./working-message.ts";
+import agentAutocomplete from "./feature/agent-autocomplete.ts";
+import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
+import { installCompactThinking, type CompactThinkingController } from "./feature/compact-thinking.ts";
+import context from "./feature/context.ts";
+import markdownEnhance from "./feature/markdown-enhance.ts";
+import piAliases from "./feature/pi-aliases.ts";
+import piStartupHeader from "./feature/pi-startup-header.ts";
+import sessionReference from "./feature/session-reference.ts";
+import workingMessage from "./feature/working-message.ts";
 
 export default function (pi: ExtensionAPI): void {
 	piAliases(pi);

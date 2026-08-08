@@ -30,7 +30,7 @@ import {
 	resolveDiffPresentationMode,
 	type DiffPresentationMode,
 } from "./diff-presentation.ts";
-import { sanitizeToolResultText } from "../tool-result-sanitize.ts";
+import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 import { pluralize, sanitizeAnsiForThemedOutput } from "./render-utils.ts";
 import { splitWriteContentLines } from "./write-display-utils.ts";
 import { MAX_HL_CHARS, shikiHighlightCache } from "./shiki-highlight.ts";

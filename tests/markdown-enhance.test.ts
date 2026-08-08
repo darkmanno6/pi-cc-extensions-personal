@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { default as enhance } from "../extensions/markdown-enhance.ts";
+import { default as enhance } from "../extensions/feature/markdown-enhance.ts";
 
 const transformers: Array<(md: string, ctx?: object) => string> = [];
 enhance({ registerMarkdownTransformer: (fn) => transformers.push(fn) } as never);

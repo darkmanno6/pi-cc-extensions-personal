@@ -1,7 +1,7 @@
 import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "./tool-loading-icon.ts";
-import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
+import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
+import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 
 const PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");
 const PARENT_KEY = Symbol.for("pi.ccstyle.tool-grouping-parent");
@@ -250,7 +250,11 @@ let nextGroupId = 1;
 export class ToolGroupComponent extends Container {
 	readonly toolCallId = `ccstyle-tool-group-${nextGroupId++}`;
 	readonly toolName = "Tool group";
-	private expanded = false;
+	private _expanded = false;
+	/** 分组是否展开（只读；测试与外部读状态用）。 */
+	get expanded(): boolean {
+		return this._expanded;
+	}
 	private hintHovered = false;
 	private readonly patch: Patch;
 
@@ -279,7 +283,7 @@ export class ToolGroupComponent extends Container {
 	}
 
 	setExpanded(expanded: boolean): void {
-		this.expanded = expanded;
+		this._expanded = expanded;
 		for (const tool of this.children) tool.setExpanded?.(expanded);
 	}
 
@@ -329,7 +333,7 @@ export class ToolGroupComponent extends Container {
 			const color = toolStatus === "pending" ? "accent" : toolStatus;
 			const branch = index === total - 1 ? "└" : "├";
 			const continuation = index === total - 1 ? "  " : "│ ";
-			if (!this.expanded) {
+			if (!this._expanded) {
 				const summary = toolSummary(tool);
 				lines.push(
 					truncateToWidth(
@@ -357,7 +361,7 @@ export class ToolGroupComponent extends Container {
 				expandedLines.push(prefix + content);
 			}
 		}
-		if (this.expanded) {
+		if (this._expanded) {
 			const backgroundSlot =
 				overall === "error"
 					? "toolErrorBg"

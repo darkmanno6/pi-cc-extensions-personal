@@ -8,7 +8,6 @@ import {
 import { installToolGrouping } from "../extensions/tool-grouping.ts";
 import claudeCodeStyleExtension from "../extensions/claude-code-style.ts";
 
-initTheme("dark");
 const ui = {
 	theme: { fg: (_color: string, text: string) => text },
 	setStatus() {},

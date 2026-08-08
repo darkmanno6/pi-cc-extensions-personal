@@ -211,13 +211,6 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - 支持多文本块、`text_end`/`done`/`error` 校准和跨 turn 重置。
 - turn 结束后立即恢复默认状态，不显示 `✻ Turn took ...`。
 
-## 已知问题（跟踪）
-
-- **ffgrep 摘要取 path 而非 pattern**：`Ffgrep extensions/`。当前 `preferred` 键顺序中 `path` 排在 `pattern` 前。
-- **TaskExecute/TaskStop 前缀拼接**：renderer 固定添加 `Started`/`Stopped`，结果文本若自带动词可能重复。
-
-## 复现
-
 ```bash
 node .tmp-tool-render-demo.ts
 ```

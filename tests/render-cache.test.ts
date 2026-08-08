@@ -4,7 +4,8 @@ import {
 	ExpandedToolIoView,
 	ExpandedToolResultText,
 	formatToolInputArgs,
-} from "../extensions/claude-code-style.ts";
+	SHOW_MORE_LABEL,
+} from "../extensions/renderer/index.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 function expectedExpandedLines(text: string, prefix: string, width: number): string[] {
@@ -81,7 +82,7 @@ test("ExpandedToolIoView labels Input and Output sections", () => {
 	// Tree rail between sections.
 	assert.ok(lines.some((line) => line.trim() === "│"));
 	// Short bodies stay fully visible — no show-more affordance.
-	assert.ok(!lines.some((line) => line.includes("[show more]")));
+	assert.ok(!lines.some((line) => line.includes(SHOW_MORE_LABEL)));
 
 	// Reuse path updates content without changing identity.
 	view.setContent("path: b.ts", "only", false, 4000);
@@ -104,11 +105,11 @@ test("ExpandedToolIoView wraps Input/Output at 80% of the viewport", () => {
 	const view = new ExpandedToolIoView(theme, `command: ${body}`, body, false, 1, 1);
 	const lines = view.render(100);
 	assert.ok(lines.every((line) => visibleWidth(line) <= 80));
-	assert.ok(lines.find((line) => line.includes("Input"))?.includes("[show more]"));
-	assert.ok(lines.find((line) => line.includes("Output"))?.includes("[show more]"));
+	assert.ok(lines.find((line) => line.includes("Input"))?.includes(SHOW_MORE_LABEL));
+	assert.ok(lines.find((line) => line.includes("Output"))?.includes(SHOW_MORE_LABEL));
 });
 
-test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap", () => {
+test("ExpandedToolIoView shows click to show more when Input/Output exceed the line cap", () => {
 	const theme = {
 		fg(color: string, text: string) {
 			if (color === "text") return `\x1b[37m${text}\x1b[39m`;
@@ -126,16 +127,16 @@ test("ExpandedToolIoView shows [show more] when Input/Output exceed the line cap
 	const lines = rawLines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
 	const inputHeader = lines.find((line) => line.includes("Input"));
 	const outputHeader = lines.find((line) => line.includes("Output"));
-	assert.ok(inputHeader?.includes("[show more]"), "Input header shows show more");
-	assert.ok(outputHeader?.includes("[show more]"), "Output header shows show more");
+	assert.ok(inputHeader?.includes(SHOW_MORE_LABEL), "Input header shows show more");
+	assert.ok(outputHeader?.includes(SHOW_MORE_LABEL), "Output header shows show more");
 	assert.equal(view.matchShowMoreLine(inputHeader!), "input");
 	assert.equal(view.matchShowMoreLine(outputHeader!), "output");
 	assert.ok(lines.some((line) => /\+15 more lines/.test(line) || /\+\d+ more lines/.test(line)));
 	view.setHoveredSection("input");
 	const hoveredInput = view.render(80).find((line) => line.includes("Input"));
 	const hoveredOutput = view.render(80).find((line) => line.includes("Output"));
-	assert.match(hoveredInput!, /\x1b\[37m \[show more\]/);
-	assert.match(hoveredOutput!, /\x1b\[90m \[show more\]/);
+	assert.ok(hoveredInput?.includes(`\x1b[37m ${SHOW_MORE_LABEL}`));
+	assert.ok(hoveredOutput?.includes(`\x1b[90m ${SHOW_MORE_LABEL}`));
 });
 
 test("ExpandedToolIoView records exact show-more header rows, not body text", () => {
@@ -147,14 +148,14 @@ test("ExpandedToolIoView records exact show-more header rows, not body text", ()
 			return text;
 		},
 	};
-	// Body text that would false-positive a whole-buffer Input/[show more] scan.
-	const decoy = `note Input [show more]\n${Array.from({ length: 12 }, (_, i) => `out ${i}`).join("\n")}`;
+	// Body text that would false-positive a whole-buffer Input/show-more scan.
+	const decoy = `note Input ${SHOW_MORE_LABEL}\n${Array.from({ length: 12 }, (_, i) => `out ${i}`).join("\n")}`;
 	const view = new ExpandedToolIoView(theme, "", decoy, false, 3, 3);
 	const lines = view.render(80);
 	const headers = view.showMoreHeaderLineIndexes();
 	assert.deepEqual(headers, [{ section: "output", line: 0 }]);
 	const decoyRow = lines.findIndex(
-		(line, index) => index > 0 && line.includes("Input") && line.includes("[show more]"),
+		(line, index) => index > 0 && line.includes("Input") && line.includes(SHOW_MORE_LABEL),
 	);
 	assert.ok(decoyRow > 0, "body still paints the decoy text");
 	assert.ok(!headers.some((h) => h.line === decoyRow));

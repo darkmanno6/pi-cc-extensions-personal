@@ -6,9 +6,10 @@ import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
 	SHOW_MORE_LABEL,
-} from "../extensions/claude-code-style.ts";
-import { showTextPreview } from "../extensions/context.ts";
-import { ToolGroupComponent } from "../extensions/tool-grouping.ts";
+} from "../extensions/renderer/index.ts";
+import { showTextPreview } from "../extensions/feature/context.ts";
+import { hoveredToolCallId } from "../extensions/renderer/mouse-interaction.ts";
+import { ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
@@ -16,34 +17,31 @@ import { ToolGroupComponent } from "../extensions/tool-grouping.ts";
 initTheme("dark");
 
 /** 精确模拟 Pi 0.84.1 createInteractiveTuiReference 的 renderer 重绑语义。 */
-function createLazyProxy(getRenderer: () => any) {
-	return new Proxy(
-		{},
-		{
-			get: (_target, property) => {
-				const tui = getRenderer();
-				const value = Reflect.get(tui, property, tui);
-				if (typeof value !== "function") return value;
-				let methodTui = tui;
-				let method = value;
-				return (...args: any[]) => {
-					const currentTui = getRenderer();
-					if (currentTui !== methodTui) {
-						const currentMethod = Reflect.get(currentTui, property, currentTui);
-						if (typeof currentMethod !== "function") {
-							throw new TypeError(`not callable: ${String(property)}`);
-						}
-						methodTui = currentTui;
-						method = currentMethod;
+function createLazyProxy<T extends object>(getRenderer: () => T): T {
+	return new Proxy({} as T, {
+		get: (_target, property) => {
+			const tui = getRenderer();
+			const value = Reflect.get(tui, property, tui);
+			if (typeof value !== "function") return value;
+			let methodTui = tui;
+			let method = value;
+			return (...args: any[]) => {
+				const currentTui = getRenderer();
+				if (currentTui !== methodTui) {
+					const currentMethod = Reflect.get(currentTui, property, currentTui);
+					if (typeof currentMethod !== "function") {
+						throw new TypeError(`not callable: ${String(property)}`);
 					}
-					return Reflect.apply(method, methodTui, args);
-				};
-			},
-			set: (_target, property, value) => Reflect.set(getRenderer(), property, value),
-			has: (_target, property) => Reflect.has(getRenderer(), property),
-			getPrototypeOf: () => Reflect.getPrototypeOf(getRenderer()),
+					methodTui = currentTui;
+					method = currentMethod;
+				}
+				return Reflect.apply(method, methodTui, args);
+			};
 		},
-	);
+		set: (_target, property, value) => Reflect.set(getRenderer(), property, value),
+		has: (_target, property) => Reflect.has(getRenderer(), property),
+		getPrototypeOf: () => Reflect.getPrototypeOf(getRenderer()),
+	});
 }
 
 function runtime() {
@@ -65,7 +63,18 @@ function theme() {
 	return { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
 }
 
-function createTool(toolCallId: string) {
+/** 工具桩：模拟 Tool 的最小形状（resultRendererComponent 由个别用例注入）。 */
+type ToolStub = {
+	toolCallId: string;
+	expanded: boolean;
+	renderCalls: number;
+	resultRendererComponent?: unknown;
+	setExpanded(value: boolean): void;
+	invalidate(): void;
+	render(): string[];
+};
+
+function createTool(toolCallId: string): ToolStub {
 	return {
 		toolCallId,
 		expanded: false,
@@ -81,7 +90,24 @@ function createTool(toolCallId: string) {
 	};
 }
 
-function createRenderer(mode: "regular" | "fullscreen", children: any[], terminal: any) {
+/** 官方 TuiAltScreen 的最小模型（regular/fullscreen 共用形状）。 */
+type RendererStub = {
+	mode: "regular" | "fullscreen";
+	children: any[];
+	previousViewportTop: number;
+	doRenderCalls: number;
+	terminal: any;
+	requestRender(): void;
+	render(width: number): string[];
+	doRender(): void;
+	handleInput(data: string): void;
+};
+
+function createRenderer(
+	mode: "regular" | "fullscreen",
+	children: any[],
+	terminal: any,
+): RendererStub {
 	return {
 		mode,
 		children,
@@ -189,13 +215,32 @@ test("lazy-proxy tui: regular stands down without mouse reporting (terminal scro
 	);
 });
 
+/** 官方 LayoutFrame 树的最小模型。 */
+type FakeBox = {
+	component: any;
+	parent?: FakeBox;
+	rect: { x: number; y: number; width: number; height: number };
+	clip: { x: number; y: number; width: number; height: number };
+	children: FakeBox[];
+	lines?: string[];
+	scrollView?: FakeScrollView;
+	scrollContentLines?: string[];
+};
+
+type FakeScrollView = {
+	isScrollbarVisible: boolean;
+	scrollTop: number;
+	isFollowingEnd: boolean;
+	getContentWidth(width: number): number;
+};
+
 /** 官方 TuiAltScreen 布局树的最小模型：leaf box 是容器（documentContainer/
  * widgetContainer），工具卡与按钮在其 children 内，按行定位。 */
 function fullscreenLayout(tool: any, widget: any, scrollbarVisible = false) {
 	const tools = Array.isArray(tool) ? tool : [tool];
 	const toolLines = tools.flatMap((t: any) => t.render(80));
 	const docContainer: any = { children: tools };
-	const toolBox = {
+	const toolBox: FakeBox = {
 		component: docContainer,
 		rect: { x: 0, y: 0, width: 80, height: toolLines.length },
 		clip: { x: 0, y: 0, width: 80, height: 20 },
@@ -204,14 +249,14 @@ function fullscreenLayout(tool: any, widget: any, scrollbarVisible = false) {
 	};
 	const widgetLines = widget ? widget.render(80) : [];
 	const widgetContainer: any = { children: widget ? [widget] : [] };
-	const widgetBox = {
+	const widgetBox: FakeBox = {
 		component: widgetContainer,
 		rect: { x: 0, y: 20, width: 80, height: Math.max(1, widgetLines.length) },
 		clip: { x: 0, y: 20, width: 80, height: 4 },
 		children: [],
 		lines: widgetLines,
 	};
-	const scrollBox = {
+	const scrollBox: FakeBox = {
 		component: null,
 		rect: { x: 0, y: 0, width: 80, height: 20 },
 		clip: { x: 0, y: 0, width: 80, height: 20 },
@@ -225,7 +270,7 @@ function fullscreenLayout(tool: any, widget: any, scrollbarVisible = false) {
 		},
 		scrollContentLines: toolBox.lines,
 	};
-	const dockBox = {
+	const dockBox: FakeBox = {
 		component: null,
 		rect: { x: 0, y: 20, width: 80, height: 4 },
 		clip: { x: 0, y: 20, width: 80, height: 4 },
@@ -303,10 +348,15 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 		!writes.some((value) => value.includes("?1000h")),
 		"fullscreen mouse modes belong to official",
 	);
-	// 工具卡左键点击：collapsed 展开（wrapper 消费，官方不收到）。
-	tui.handleViewportInput(`\x1b[<0;20;2M`);
+	// collapsed 仅 hint 文本可点；同一行正文/留白必须放行官方。
+	tui.handleViewportInput(`\x1b[<0;2;2M`);
+	assert.equal(tool.expanded, false, "tool row outside hint is not clickable");
+	assert.equal(renderer.officialInputs.length, 1);
+	renderer.officialInputs.length = 0;
+	const collapsedHintCol = tool.render()[1].indexOf("(ctrl+o expand / click)") + 1;
+	tui.handleViewportInput(`\x1b[<0;${collapsedHintCol};2M`);
 	assert.equal(tool.expanded, true);
-	assert.equal(renderer.officialInputs.length, 0, "click consumed before official chain");
+	assert.equal(renderer.officialInputs.length, 0, "hint click consumed before official chain");
 	assert.deepEqual(ui.widget.render(), []);
 
 	// 二次点击（正文行）：整卡折叠。
@@ -349,9 +399,11 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	ui.widget.render(); // 官方每帧渲染 dock → 新 renderer 重装 wrapper
 	const tui2 = createLazyProxy(() => renderer);
 	renderer.currentLayout = fullscreenLayout([toolA, toolB], null);
-	tui2.handleViewportInput(`\x1b[<0;20;1M`);
-	assert.equal(toolA.expanded, true, "first click expands A");
-	tui2.handleViewportInput(`\x1b[<0;20;3M`);
+	const toolAHintCol = toolA.render()[1].indexOf("(ctrl+o expand / click)") + 1;
+	const toolBHintCol = toolB.render()[1].indexOf("(ctrl+o expand / click)") + 1;
+	tui2.handleViewportInput(`\x1b[<0;${toolAHintCol};2M`);
+	assert.equal(toolA.expanded, true, "first hint click expands A");
+	tui2.handleViewportInput(`\x1b[<0;${toolBHintCol};4M`);
 	assert.equal(toolA.expanded, false, "expanding B collapses A");
 	assert.equal(toolB.expanded, true);
 
@@ -455,6 +507,58 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
 });
 
+test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", () => {
+	const wrap = (label: string) => ({
+		render: (width: number) => (width === 80 ? [label] : [label, `${label}-2`]),
+		invalidate() {},
+	});
+	const toolA = createTool("width-tool-a");
+	const toolB = createTool("width-tool-b");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(toolB, null, terminal);
+	const doc: any = { children: [wrap("message-1"), toolA, wrap("message-2"), toolB] };
+	const docLines = doc.children.flatMap((child: any) => child.render(79));
+	const toolBox: FakeBox = {
+		component: doc,
+		rect: { x: 0, y: 0, width: 79, height: docLines.length },
+		clip: { x: 0, y: 0, width: 79, height: 20 },
+		children: [],
+		lines: docLines,
+	};
+	const scrollBox: FakeBox = {
+		component: null,
+		rect: { x: 0, y: 0, width: 80, height: 20 },
+		clip: { x: 0, y: 0, width: 80, height: 20 },
+		children: [toolBox],
+		scrollView: {
+			isScrollbarVisible: true,
+			scrollTop: 0,
+			isFollowingEnd: true,
+			getContentWidth: (width: number) => Math.max(1, width - 1),
+		},
+		scrollContentLines: docLines,
+	};
+	const root: FakeBox = {
+		component: null,
+		rect: { x: 0, y: 0, width: 80, height: 24 },
+		clip: { x: 0, y: 0, width: 80, height: 24 },
+		children: [scrollBox],
+	};
+	toolBox.parent = scrollBox;
+	scrollBox.parent = root;
+	renderer.currentLayout = { root, primaryScrollView: scrollBox.scrollView };
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+
+	const hintCol = docLines[7].indexOf("/ click") + 1;
+	const rendersBefore = renderer.renderCalls;
+	tui.handleViewportInput(`\x1b[<32;${hintCol};8M`);
+	assert.equal(hoveredToolCallId, "width-tool-b");
+	assert.equal(renderer.renderCalls, rendersBefore + 1);
+	installToolMouseInteraction({});
+});
+
 test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => {
 	const patch = { groups: new Set(), theme: { fg: (_color: string, text: string) => text } };
 	const group = new ToolGroupComponent(patch as any);
@@ -538,7 +642,8 @@ test("lazy-proxy tui: fullscreen text preview receives mouse before official sel
 test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership", () => {
 	const tool = createTool("tool-switch");
 	const { terminal, writes } = createTerminalFixture();
-	let renderer = new FullscreenRenderer(tool, null, terminal);
+	// 交替持有官方全屏 renderer 与 regular/fullscreen 桩，验证切换不泄漏 mouse 状态。
+	let renderer: FullscreenRenderer | RendererStub = new FullscreenRenderer(tool, null, terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
 	installToolMouseInteraction(ui.ctx);
@@ -554,13 +659,12 @@ test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership"
 	ui.widget.render();
 	assert.ok(!writes.some((value) => value.includes("?1000h")), "regular never enables reporting");
 
-	// regular → fullscreen：官方先启用自己的模式；插件不得发送 disable 或遗留 1003。
+	// regular → fullscreen：官方先启用自己的模式；插件不得发送额外 reporting。
 	renderer = createRenderer("fullscreen", [tool], terminal);
 	writes.push("OFFICIAL:\x1b[?1000h\x1b[?1002h\x1b[?1006h");
 	const writesBeforeFullscreenRender = writes.length;
 	ui.widget.render();
 	assert.equal(writes.length, writesBeforeFullscreenRender);
-	assert.ok(!writes.some((value) => value.includes("?1003h")));
 
 	// fullscreen stop 后切回 regular：官方关闭其模式；插件仍不写上报，保持终端原生回滚。
 	writes.push("OFFICIAL:\x1b[?1006l\x1b[?1002l\x1b[?1000l");

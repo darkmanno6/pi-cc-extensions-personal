@@ -12,8 +12,8 @@ import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
 	SHOW_MORE_LABEL,
-} from "../extensions/claude-code-style.ts";
-import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grouping.ts";
+} from "../extensions/renderer/index.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
 
 initTheme("dark");
 
@@ -378,10 +378,10 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 			},
 		});
 		tui.doRender();
-		const showMoreRow = tui.previousLines.findIndex((line: string) =>
-			line.includes(SHOW_MORE_LABEL),
+		const showMoreRow = tui.previousLines.findIndex(
+			(line: string) => line.includes("Output") && line.includes(SHOW_MORE_LABEL),
 		);
-		assert.ok(showMoreRow >= 0, "expanded group must paint [show more]");
+		assert.ok(showMoreRow >= 0, "expanded group must paint click to show more");
 		const col = tui.previousLines[showMoreRow].indexOf(SHOW_MORE_LABEL) + 1;
 		inputHandler?.(`\x1b[<35;${col};${showMoreRow + 1}M`);
 		const beforeExpanded = group.expanded;
@@ -625,7 +625,9 @@ test("expanded group identical show-more labels open their own content", () => {
 			"markers must not leak into previousLines",
 		);
 		const showMoreRows = tui.previousLines
-			.map((line, index) => (line.includes(SHOW_MORE_LABEL) ? index : -1))
+			.map((line, index) =>
+				line.includes("Output") && line.includes(SHOW_MORE_LABEL) ? index : -1,
+			)
 			.filter((index) => index >= 0);
 		assert.ok(showMoreRows.length >= 2, "need two identical show-more headers");
 		const plainLabels = showMoreRows.map((row) =>

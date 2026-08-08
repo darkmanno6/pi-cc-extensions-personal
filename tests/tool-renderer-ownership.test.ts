@@ -8,7 +8,7 @@ import claudeCodeStyleExtension, {
 	humanizeMcpToolName,
 	isMcpToolDefinition,
 	preservesOriginalRenderer,
-} from "../extensions/claude-code-style.ts";
+} from "../extensions/renderer/index.ts";
 
 initTheme("dark");
 

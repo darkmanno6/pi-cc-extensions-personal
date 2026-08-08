@@ -6,7 +6,7 @@ import {
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Spacer } from "@earendil-works/pi-tui";
-import { installToolGrouping, ToolGroupComponent } from "../extensions/tool-grouping.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;

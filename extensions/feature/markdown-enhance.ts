@@ -134,75 +134,83 @@ function linkifyUrls(markdown: string): string {
 // ============================================================================
 
 export default function (pi: ExtensionAPI): void {
-	// 1. Mermaid 方言渲染（流式跳过，最终渲染时执行）
+	// 注意：pi 每个扩展只有一个 markdownTransformer 槽位，多次注册会互相覆盖，
+	// 所以三个转换合并为一次注册，内部按序链式执行。
 	pi.registerMarkdownTransformer((markdown, context) => {
-		const { isStreaming = false, availableWidth } = context ?? {};
-		if (isStreaming) return markdown;
-		const lines = markdown.split("\n");
-		const out: string[] = [];
-		let i = 0;
-		while (i < lines.length) {
-			const line = lines[i];
-			const fence = line.match(DIAGRAM_FENCE);
-			if (fence) {
-				const collected = collectFence(lines, i);
-				if (collected) {
-					const { diagram, next } = collected;
-					// grok-mermaid 需要源码自带类型头，方言头在 fence 标签里时补回去
-					const label = fence[2];
-					const src = label.toLowerCase() === "mermaid" ? diagram : `${label}\n${diagram}`;
-					let art = null;
-					try {
-						art = renderMermaid(src);
-					} catch {
-						art = null;
-					}
-					const width = availableWidth ?? 80;
-					if (art && art.width <= width) {
-						// 图行用硬换行（行尾两空格）连接，防止 Markdown 软换行合并行
-						out.push(art.plain.map(codeSpan).join("  \n"));
-					} else {
-						out.push(framedSource(src, width));
-					}
-					i = next;
-					continue;
-				}
-				// 未闭合：保持原文
-			}
-			out.push(line);
-			i++;
-		}
-		return out.join("\n");
+		// 1. Mermaid 方言渲染（流式跳过，最终渲染时执行）
+		markdown = renderDiagrams(markdown, context);
+		// 2. GitHub 风格提示框
+		markdown = renderAdmonitions(markdown);
+		// 3. 裸 URL 转超链接
+		return linkifyUrls(markdown);
 	});
+}
 
-	// 2. GitHub 风格提示框（跳过代码块）
-	pi.registerMarkdownTransformer((markdown) => {
-		const lines = markdown.split("\n");
-		const out: string[] = [];
-		let inFence = false;
-		let i = 0;
-		while (i < lines.length) {
-			const line = lines[i];
-			if (/^```/.test(line)) {
-				inFence = !inFence;
-				out.push(line);
-				i++;
+/** Mermaid 方言代码块 → ASCII 图（流式跳过）。 */
+function renderDiagrams(markdown: string, context?: { isStreaming?: boolean; availableWidth?: number }): string {
+	const { isStreaming = false, availableWidth } = context ?? {};
+	if (isStreaming) return markdown;
+	const lines = markdown.split("\n");
+	const out: string[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		const fence = line.match(DIAGRAM_FENCE);
+		if (fence) {
+			const collected = collectFence(lines, i);
+			if (collected) {
+				const { diagram, next } = collected;
+				// grok-mermaid 需要源码自带类型头，方言头在 fence 标签里时补回去
+				const label = fence[2];
+				const src = label.toLowerCase() === "mermaid" ? diagram : `${label}\n${diagram}`;
+				let art = null;
+				try {
+					art = renderMermaid(src);
+				} catch {
+					art = null;
+				}
+				const width = availableWidth ?? 80;
+				if (art && art.width <= width) {
+					// 图行用硬换行（行尾两空格）连接，防止 Markdown 软换行合并行
+					out.push(art.plain.map(codeSpan).join("  \n"));
+				} else {
+					out.push(framedSource(src, width));
+				}
+				i = next;
 				continue;
 			}
-			if (!inFence && /^>\s*\[\s*!/i.test(line)) {
-				const result = renderAdmonition(lines, i);
-				if (result) {
-					out.push(...result.output);
-					i = result.next;
-					continue;
-				}
-			}
+			// 未闭合：保持原文
+		}
+		out.push(line);
+		i++;
+	}
+	return out.join("\n");
+}
+
+/** GitHub 风格提示框 → 两列表格（跳过代码块）。 */
+function renderAdmonitions(markdown: string): string {
+	const lines = markdown.split("\n");
+	const out: string[] = [];
+	let inFence = false;
+	let i = 0;
+	while (i < lines.length) {
+		const line = lines[i];
+		if (/^```/.test(line)) {
+			inFence = !inFence;
 			out.push(line);
 			i++;
+			continue;
 		}
-		return out.join("\n");
-	});
-
-	// 3. 裸 URL 转超链接
-	pi.registerMarkdownTransformer((markdown) => linkifyUrls(markdown));
+		if (!inFence && /^>\s*\[\s*!/i.test(line)) {
+			const result = renderAdmonition(lines, i);
+			if (result) {
+				out.push(...result.output);
+				i = result.next;
+				continue;
+			}
+		}
+		out.push(line);
+		i++;
+	}
+	return out.join("\n");
 }

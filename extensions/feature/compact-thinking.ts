@@ -11,7 +11,6 @@ import {
 	type ExtensionAPI,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-// @ts-expect-error pi-tui 类型声明的 .ts 后缀 re-export 解析失败；运行时存在
 import { getKeybindings } from "@earendil-works/pi-tui";
 import { Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 
@@ -48,6 +47,16 @@ type ActiveThinking = {
 	startedAt: number;
 };
 
+// pi-coding-agent 类型声明中 MarkdownTransformer 的 re-export 解析失败，本地用最小结构化类型。
+type MarkdownTransformer = (
+	markdown: string,
+	context: {
+		messageType: "user" | "assistant" | "assistant-thinking";
+		isStreaming: boolean;
+		availableWidth: number;
+	},
+) => string;
+
 type AssistantInternals = {
 	contentContainer: {
 		clear(): void;
@@ -57,6 +66,8 @@ type AssistantInternals = {
 	markdownTheme: ConstructorParameters<typeof Markdown>[3];
 	hiddenThinkingLabel: string;
 	outputPad: number;
+	isStreaming: boolean;
+	markdownTransformers: readonly MarkdownTransformer[];
 	lastMessage?: AssistantMessage;
 	hasToolCalls: boolean;
 	updateContent(message: AssistantMessage): void;
@@ -214,6 +225,30 @@ function getLatestOpenAiSummary(thinkingSignature: string | undefined): SummaryP
 const WIDGET_ID = "compact-thinking-render-loop";
 
 // 上游 index.ts 内联（含 subagent fork patch）。
+function createTransform(
+	messageType: "assistant" | "assistant-thinking",
+	self: AssistantInternals,
+) {
+	// 与 pi 内置 applyMarkdownTransformers 相同的链式语义：
+	// 异常保留当前 markdown，继续下一个 transformer。
+	return (markdown: string, availableWidth: number): string => {
+		let out = markdown;
+		for (const transformer of self.markdownTransformers ?? []) {
+			try {
+				const result = transformer(out, {
+					messageType,
+					isStreaming: self.isStreaming,
+					availableWidth,
+				});
+				if (typeof result === "string") out = result;
+			} catch {
+				// 保持当前 markdown 继续
+			}
+		}
+		return out;
+	};
+}
+
 function compactThinking(pi: ExtensionAPI) {
 	const prototype = AssistantMessageComponent.prototype as PatchedPrototype;
 	const originalUpdateContent = prototype.updateContent;
@@ -328,11 +363,13 @@ function compactThinking(pi: ExtensionAPI) {
 			const content = message.content[i];
 
 			if (content.type === "text" && content.text.trim()) {
-				self.contentContainer.addChild(
-					new Markdown(content.text.trim(), self.outputPad, 0, self.markdownTheme),
-				);
-				continue;
-			}
+			self.contentContainer.addChild(
+				new Markdown(content.text.trim(), self.outputPad, 0, self.markdownTheme, undefined, {
+					transform: createTransform("assistant", self),
+				}),
+			);
+			continue;
+		}
 
 			if (content.type !== "thinking") continue;
 

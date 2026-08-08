@@ -3,6 +3,8 @@
 
 /* eslint-disable */
 declare module "@earendil-works/pi-coding-agent" {
+	export const VERSION: string;
+	export type AppKeybinding = any;
 	export const SessionManager: any;
 	export const CustomEditor: any;
 	export const CustomMessageComponent: any;

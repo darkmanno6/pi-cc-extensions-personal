@@ -12,6 +12,10 @@ declare module "@earendil-works/pi-tui" {
 	export const SettingsList: any;
 	export const Key: any;
 	export const TUI_KEYBINDINGS: any;
+	export class KeybindingsManager {
+		constructor(definitions?: any, userBindings?: any);
+	}
+	export function setKeybindings(...args: any[]): any;
 	export function matchesKey(...args: any[]): any;
 	export function getKeybindings(...args: any[]): any;
 	export function isKeyRelease(...args: any[]): any;

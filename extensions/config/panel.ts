@@ -7,6 +7,7 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
+import { applyStartupHeader } from "../feature/pi-startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool-grouping.ts";
 import type { DiffIndicatorMode, DiffViewMode } from "../renderer/tool-diff/index.ts";
 import {
@@ -24,6 +25,7 @@ import {
 	pickPositiveInt,
 	pickPositiveNumber,
 	saveConfig,
+	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
 	type CompactStyleMode,
@@ -110,7 +112,7 @@ function buildExcludeRenderersSubmenu(
 
 /** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
 type CcstyleSection = {
-	id: "style" | "editor" | "diff" | "thinking";
+	id: "style" | "editor" | "diff" | "thinking" | "feature";
 	label: string;
 	items: any[];
 };
@@ -260,6 +262,22 @@ export async function showCcstylePanel(
 			currentValue: nearestPreset(config.animationIntervalMs, THINKING_ANIMATION_INTERVAL_VALUES),
 			values: [...THINKING_ANIMATION_INTERVAL_VALUES],
 		};
+		const startupHeaderSetting = {
+			id: "showStartupHeader",
+			label: "Startup header",
+			description: config.showStartupHeader
+				? "Show the custom startup header (logo + tips) on new sessions."
+				: "Use Pi's native startup header instead.",
+			currentValue: config.showStartupHeader ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const scrollStepSetting = {
+			id: "scrollStepLines",
+			label: "Scroll step",
+			description: "Mouse wheel scroll lines in fullscreen mode.",
+			currentValue: nearestPreset(config.scrollStepLines, SCROLL_STEP_LINES_VALUES),
+			values: [...SCROLL_STEP_LINES_VALUES],
+		};
 
 		const onSettingChange = (id: string, value: string) => {
 			switch (id) {
@@ -321,6 +339,22 @@ export async function showCcstylePanel(
 						DEFAULT_CONFIG.animationIntervalMs,
 					);
 					break;
+				case "showStartupHeader":
+					config.showStartupHeader = value === "on";
+					startupHeaderSetting.description = config.showStartupHeader
+						? "Show the custom startup header (logo + tips) on new sessions."
+						: "Use Pi's native startup header instead.";
+					// 实时切换：on → 自定义 header；off → 官方默认 header。
+					applyStartupHeader(ctx);
+					break;
+				case "scrollStepLines":
+					config.scrollStepLines = pickPositiveInt(
+						value,
+						DEFAULT_CONFIG.scrollStepLines,
+						1,
+						50,
+					);
+					break;
 				default:
 					return;
 			}
@@ -352,6 +386,11 @@ export async function showCcstylePanel(
 				id: "thinking",
 				label: "Thinking",
 				items: [thinkingTitleSetting, thinkingPreviewSetting, thinkingAnimationSetting],
+			},
+			{
+				id: "feature",
+				label: "Feature",
+				items: [startupHeaderSetting, scrollStepSetting],
 			},
 		];
 

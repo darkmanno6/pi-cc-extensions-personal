@@ -1,6 +1,7 @@
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { inspect } from "node:util";
 import { config } from "../config/config.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 
@@ -298,7 +299,7 @@ export class ExpandedToolIoView {
 	/** True when the plain header line is a truncated section with show-more. */
 	matchShowMoreLine(plainLine: string): ToolIoSection | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
-		if (!line.includes(SHOW_MORE_LABEL)) return null;
+		if (!line.includes(` • ${showMoreHintText()}`)) return null;
 		if (/\bInput\b/.test(line) && this.truncated.input) return "input";
 		if (/\bOutput\b/.test(line) && this.truncated.output) return "output";
 		return null;
@@ -319,11 +320,12 @@ export class ExpandedToolIoView {
 	/** Column range (1-based, visible cells) of show-more on a rendered header, if present. */
 	showMoreHitbox(plainLine: string): { startCol: number; endCol: number } | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");
-		const idx = line.indexOf(SHOW_MORE_LABEL);
+		const label = ` • ${showMoreHintText()}`;
+		const idx = line.lastIndexOf(label);
 		if (idx < 0) return null;
 		const before = line.slice(0, idx);
 		const startCol = visibleWidth(before) + 1;
-		const endCol = startCol + visibleWidth(SHOW_MORE_LABEL) - 1;
+		const endCol = startCol + visibleWidth(label) - 1;
 		return { startCol, endCol };
 	}
 
@@ -354,8 +356,10 @@ export class ExpandedToolIoView {
 				"accent",
 				typeof theme.bold === "function" ? theme.bold(label) : label,
 			);
+			// hover 只高亮文字，圆点保持 dim（与 group hint 一致）。
 			const more = showMore
-				? theme.fg(this.hoveredSection === section ? "text" : "dim", ` ${SHOW_MORE_LABEL}`)
+				? theme.fg("dim", " •") +
+					theme.fg(this.hoveredSection === section ? "text" : "dim", ` ${showMoreHintText()}`)
 				: "";
 			if (showMore) this.showMoreHeaderRows[section] = lines.length;
 			lines.push(truncateToWidth(mark + title + more, safeWidth, ""));

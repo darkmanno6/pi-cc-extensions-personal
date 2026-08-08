@@ -135,8 +135,11 @@ test("ExpandedToolIoView shows click to show more when Input/Output exceed the l
 	view.setHoveredSection("input");
 	const hoveredInput = view.render(80).find((line) => line.includes("Input"));
 	const hoveredOutput = view.render(80).find((line) => line.includes("Output"));
-	assert.ok(hoveredInput?.includes(`\x1b[37m ${SHOW_MORE_LABEL}`));
-	assert.ok(hoveredOutput?.includes(`\x1b[90m ${SHOW_MORE_LABEL}`));
+	assert.ok(
+		hoveredInput?.includes(`\x1b[90m •\x1b[39m\x1b[37m click to show more\x1b[39m`),
+		"hover keeps the bullet dim and highlights only the text",
+	);
+	assert.ok(hoveredOutput?.includes(`\x1b[90m •\x1b[39m\x1b[90m click to show more\x1b[39m`));
 });
 
 test("ExpandedToolIoView records exact show-more header rows, not body text", () => {

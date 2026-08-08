@@ -23,6 +23,8 @@ export type Config = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
+	showStartupHeader: boolean;
+	scrollStepLines: number;
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -36,6 +38,8 @@ export const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"]
 export const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
+/** fullscreen 滚轮步进行数预设。 */
+export const SCROLL_STEP_LINES_VALUES = ["1", "2", "3", "5", "10"];
 /** Tools commonly toggled in excludeRenderers via the settings panel. */
 export const EXCLUDE_RENDERER_CANDIDATES = [
 	"bash",
@@ -61,6 +65,8 @@ export const DEFAULT_CONFIG: Config = {
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
+	showStartupHeader: true,
+	scrollStepLines: 3,
 };
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -156,6 +162,13 @@ export function normalizeConfig(input: unknown): Config {
 			source.animationIntervalMs,
 			DEFAULT_CONFIG.animationIntervalMs,
 		),
+		showStartupHeader: source.showStartupHeader !== false,
+		scrollStepLines: pickPositiveInt(
+			source.scrollStepLines,
+			DEFAULT_CONFIG.scrollStepLines,
+			1,
+			50,
+		),
 	};
 }
 
@@ -195,6 +208,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
+		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
+		`scrollStep=${source.scrollStepLines}`,
 	].join(" · ");
 }
 

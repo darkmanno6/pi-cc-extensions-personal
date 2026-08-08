@@ -68,14 +68,15 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 			},
 		});
 		tui.doRender();
+		// regular 模式不启用鼠标上报，提示文本为默认展开快捷键。
 		const headerRow = tui.previousLines.findIndex((line: string) =>
-			line.includes("click to show more"),
+			line.includes("to show more"),
 		);
 		assert.ok(headerRow >= 0);
-		const hintColumn = tui.previousLines[headerRow].indexOf("click to show more") + 1;
+		const hintColumn = tui.previousLines[headerRow].indexOf("to show more") + 1;
 		inputHandler?.(`\x1b[<32;${hintColumn};${headerRow + 1}M`);
 		const hoveredHeader = group.render(100)[headerRow];
-		assert.match(hoveredHeader, /• \x1b\[37mclick to show more\x1b\[39m/);
+		assert.match(hoveredHeader, /• \x1b\[37m[^\x1b]*to show more\x1b\[39m/);
 		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);
 		assert.equal(inputHandler?.(`\x1b[<0;${hintColumn};${headerRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, true);
@@ -282,7 +283,7 @@ test("show-more hover targets the view rendered in the current frame after compa
 	try {
 		tui.doRender();
 		const inputHeader = tui.previousLines[1];
-		const col = inputHeader.indexOf(SHOW_MORE_LABEL) + 1;
+		const col = inputHeader.indexOf("to show more") + 1;
 		tui.handleInput(`\x1b[<35;${col};2M`);
 		assert.match(currentView.render(78)[0], /\x1b\[97m/);
 		assert.doesNotMatch(staleView.render(78)[0], /\x1b\[97m/);
@@ -379,10 +380,10 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 		});
 		tui.doRender();
 		const showMoreRow = tui.previousLines.findIndex(
-			(line: string) => line.includes("Output") && line.includes(SHOW_MORE_LABEL),
+			(line: string) => line.includes("Output") && line.includes("to show more"),
 		);
-		assert.ok(showMoreRow >= 0, "expanded group must paint click to show more");
-		const col = tui.previousLines[showMoreRow].indexOf(SHOW_MORE_LABEL) + 1;
+		assert.ok(showMoreRow >= 0, "expanded group must paint a show-more affordance");
+		const col = tui.previousLines[showMoreRow].indexOf("to show more") + 1;
 		inputHandler?.(`\x1b[<35;${col};${showMoreRow + 1}M`);
 		const beforeExpanded = group.expanded;
 		assert.equal(inputHandler?.(`\x1b[<0;${col};${showMoreRow + 1}M`)?.consume, true);
@@ -626,7 +627,7 @@ test("expanded group identical show-more labels open their own content", () => {
 		);
 		const showMoreRows = tui.previousLines
 			.map((line, index) =>
-				line.includes("Output") && line.includes(SHOW_MORE_LABEL) ? index : -1,
+				line.includes("Output") && line.includes("to show more") ? index : -1,
 			)
 			.filter((index) => index >= 0);
 		assert.ok(showMoreRows.length >= 2, "need two identical show-more headers");
@@ -639,7 +640,7 @@ test("expanded group identical show-more labels open their own content", () => {
 		assert.equal(plainLabels[0], plainLabels[1], "labels must be text-identical");
 
 		const secondRow = showMoreRows[1];
-		const col = tui.previousLines[secondRow].indexOf(SHOW_MORE_LABEL) + 1;
+		const col = tui.previousLines[secondRow].indexOf("to show more") + 1;
 		assert.equal(inputHandler?.(`\x1b[<0;${col};${secondRow + 1}M`)?.consume, true);
 		assert.ok(
 			opened.some((text) => text.includes("UNIQUE_B_CONTENT")),

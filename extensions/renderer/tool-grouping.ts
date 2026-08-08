@@ -2,6 +2,7 @@ import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-wor
 import { Container, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
 
 const PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");
 const PARENT_KEY = Symbol.for("pi.ccstyle.tool-grouping-parent");
@@ -291,6 +292,30 @@ export class ToolGroupComponent extends Container {
 		this.hintHovered = hovered;
 	}
 
+	/**
+	 * 展开时按局部行定位内部组件（null = 行属于 group 自身：空行/头行/尾行）。
+	 * 行数计算与 render 保持一致：宽度 width-2 + 空行过滤。
+	 */
+	childAtRow(localRow: number, width: number): { component: any; row: number } | null {
+		if (!this._expanded || localRow < 2) return null;
+		let offset = 2;
+		for (const tool of this.children) {
+			let lines: string[] = [];
+			try {
+				const rendered = tool.render?.(Math.max(1, width - 2));
+				if (Array.isArray(rendered)) lines = visibleLines(rendered.map((line) => String(line)));
+			} catch {
+				lines = [];
+			}
+			const lineCount = Math.max(1, lines.length);
+			if (localRow < offset + lineCount) {
+				return { component: tool, row: localRow - offset };
+			}
+			offset += lineCount;
+		}
+		return null;
+	}
+
 	invalidate(): void {
 		for (const tool of this.children) tool.invalidate?.();
 	}
@@ -316,7 +341,7 @@ export class ToolGroupComponent extends Container {
 		const overallColor = overall === "pending" ? "accent" : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
-		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", "click to show more")}`;
+		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
 		const lines = [
 			"",
 			truncateToWidth(
@@ -442,9 +467,40 @@ function maybeGroup(patch: Patch, parent: any, component: any): void {
 	children.splice(index, 1);
 }
 
+/** /reload 不会重新 addChild；扫描当前 mounted roots，把已有工具重新送入同一分组规则。 */
+function regroup(patch: Patch, root: any): void {
+	if (!patch.active || !patch.enabled() || !root) return;
+	const seen = new Set<any>();
+	const visit = (value: any): void => {
+		if (!value || typeof value !== "object" || seen.has(value)) return;
+		seen.add(value);
+		if (Array.isArray(value)) {
+			for (const child of value) visit(child);
+			return;
+		}
+		const children = value.children;
+		if (Array.isArray(children)) {
+			for (const child of [...children]) {
+				if (child && typeof child === "object") child[PARENT_KEY] = value;
+				maybeGroup(patch, value, child);
+			}
+			for (const child of [...children]) {
+				if (!(child instanceof ToolGroupComponent) && !isGroupable(child)) visit(child);
+			}
+		}
+		try {
+			const mounted = value.getMountedRoots?.();
+			if (Array.isArray(mounted)) visit(mounted);
+		} catch {
+			// renderer 切换中的惰性 Proxy 可能暂时没有 mounted roots。
+		}
+	};
+	visit(root);
+}
+
 export type ToolGroupingHooks = {
 	setTheme(theme: any): void;
-	refresh(): void;
+	refresh(root?: any): void;
 	shutdown(): void;
 };
 
@@ -526,13 +582,14 @@ export function installToolGrouping(getEnabled: () => boolean): ToolGroupingHook
 		setTheme(theme: any) {
 			patch.theme = theme;
 		},
-		refresh() {
+		refresh(root?: any) {
 			const enabled = patch.enabled();
 			if (enabled !== patch.lastEnabled) {
 				patch.lastEnabled = enabled;
 				if (enabled) patch.generation++;
 			}
-			if (!enabled) ungroup(patch);
+			if (enabled) regroup(patch, root);
+			else ungroup(patch);
 		},
 		shutdown() {
 			if (!patch.active) return;

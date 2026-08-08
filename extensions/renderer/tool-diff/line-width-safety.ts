@@ -1,5 +1,6 @@
 import { normalizeDiffRenderWidth } from "./diff-presentation.ts";
 import { pluralize } from "./render-utils.ts";
+import { showMoreHintText } from "../show-more-hint.ts";
 
 export interface WidthMeasurementOps {
 	measure(text: string): number;
@@ -71,7 +72,7 @@ export function buildCollapsedDiffHintText(
 				: undefined;
 
 		const candidates = [
-			`… (${[remainingText, hiddenHunksText, "click to show more"].filter(Boolean).join(" • ")})`,
+			`… (${[remainingText, hiddenHunksText, showMoreHintText()].filter(Boolean).join(" • ")})`,
 			`… (${[remainingText, hiddenHunksText].filter(Boolean).join(" • ")})`,
 			`… (${[shortRemainingText, shortHiddenHunksText].filter(Boolean).join(" • ")})`,
 			options.hiddenHunks > 0

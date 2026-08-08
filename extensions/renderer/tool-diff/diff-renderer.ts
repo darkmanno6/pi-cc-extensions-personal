@@ -34,6 +34,7 @@ import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 import { pluralize, sanitizeAnsiForThemedOutput } from "./render-utils.ts";
 import { splitWriteContentLines } from "./write-display-utils.ts";
 import { MAX_HL_CHARS, shikiHighlightCache } from "./shiki-highlight.ts";
+import { showMoreHintText } from "../show-more-hint.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	type DiffIndicatorMode,
@@ -2319,7 +2320,7 @@ function applyLineLimit(
 		DIFF_WIDTH_OPS,
 	);
 
-	const clickLabel = "click to show more";
+	const clickLabel = showMoreHintText();
 	const clickIndex = hintText.lastIndexOf(clickLabel);
 	const styledHint =
 		hovered && !expanded && clickIndex >= 0

@@ -18,8 +18,8 @@ import {
 	type Config,
 } from "../config/config.ts";
 import {
-	hoveredToolCallId,
 	installToolMouseInteraction,
+	isToolCallHovered,
 	resetToolHoverState,
 	scheduleSessionRender,
 	setHoveredToolGroup,
@@ -47,6 +47,7 @@ import {
 	toolIconColor,
 	toolViewportWidth,
 } from "./tool-result.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
 import {
 	installWriteOverride,
 	renderRichToolResult,
@@ -64,7 +65,7 @@ const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_FG_RESET = "\x1b[39m";
 
 function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
-	toolGrouping?.refresh();
+	toolGrouping?.refresh(toolMouseTui);
 	toolMouseTui?.requestRender?.(true);
 	ctx?.ui?.requestRender?.(true);
 }
@@ -87,7 +88,6 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGro
 	refreshCurrentTranscript(ctx, toolGrouping);
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
-
 
 function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any[], fallback = "") {
 	try {
@@ -350,8 +350,8 @@ function createCcstyleTool(
 					{
 						...options,
 						expanded,
-						// Live hover state for the collapsed hint row (dim → text on hover).
-						isHovered: () => !!toolCallId && toolCallId === hoveredToolCallId,
+						// 全局共享状态避免 /reload 后旧 result renderer 闭包失联。
+						isHovered: () => isToolCallHovered(toolCallId),
 					},
 					theme,
 					context,
@@ -381,9 +381,10 @@ function createCcstyleTool(
 						? `${outputLines} ${lineWord} ${action}`
 						: "Done";
 			const expandable = !expanded && (tasks.length > 0 || hasExpandableDetail(text, args));
+			const hintText = showMoreHintText();
 			const hintPrefix = expandable ? theme.fg("dim", " • ") : "";
-			const hint = expandable ? hintPrefix + theme.fg("dim", "click to show more") : "";
-			const hoveredHint = expandable ? hintPrefix + theme.fg("text", "click to show more") : "";
+			const hint = expandable ? hintPrefix + theme.fg("dim", hintText) : "";
+			const hoveredHint = expandable ? hintPrefix + theme.fg("text", hintText) : "";
 			if (expanded) {
 				return renderExpandedToolResult(
 					text || "",
@@ -411,7 +412,7 @@ function createCcstyleTool(
 							renderCollapsedToolResultToWidth(rendered, hoveredHint, width),
 						);
 					}
-					return [toolCallId && hoveredToolCallId === toolCallId ? cachedHoveredLine! : cachedLine];
+					return [isToolCallHovered(toolCallId) ? cachedHoveredLine! : cachedLine];
 				},
 				invalidate() {},
 			};
@@ -757,6 +758,7 @@ export default function (
 	// The optional override keeps integration tests independent from the user's global config.
 	if (configOverride) setConfig(normalizeConfig({ ...config, ...configOverride }));
 	const writeExecutionMetadata = new WriteExecutionMetadataStore();
+	const mouseOwner = {};
 	let installation:
 		| {
 				globalToolRendering: GlobalToolRenderPatch;
@@ -823,21 +825,21 @@ export default function (
 		const hooks = ensureTuiInstallation(ctx);
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
-		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx);
+		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		ctx.ui.setStatus("ccstyle", undefined);
-		scheduleSessionRender();
+		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
 		const hooks = ensureTuiInstallation(ctx);
 		// Compaction rebuilds the transcript without session_start. Rebind after
 		// other TUI extensions may have replaced the root input dispatcher.
-		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx);
+		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
-		scheduleSessionRender();
+		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
@@ -848,7 +850,7 @@ export default function (
 		writeExecutionMetadata.clear();
 		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
-		teardownToolMouseInteraction();
+		teardownToolMouseInteraction(mouseOwner);
 		const current = installation;
 		if (
 			!current ||

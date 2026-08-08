@@ -29,26 +29,24 @@
 
 ```bash
 pi install npm:pi-cc-extensions
+
+# GitHub
+pi install git:github.com/minuque/pi-cc-extensions
 ```
 
-Run `/reload` after installation, then try:
-
-```text
-/ccstyle       # Configure output and rich diffs
-/context       # Inspect context usage
-@              # Complete Agents, Sessions, and files
-```
+Run `/reload` after installation.
 
 ## Features
 
 
-| Feature                      | Description                                                                         | Entry point |
-| ------------------------------ | ------------------------------------------------------------------------------------- | ------------- |
-| Claude Code-style output     | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` modes       | `/ccstyle`  |
-| Fullscreen mouse interaction | Tool card/group click-to-toggle,`[show more]` previews, and a back-to-bottom button | `/ccstyle`  |
-| Context inspection           | Usage breakdown and previews for the system prompt, tools, skills, and messages     | `/context`  |
-| Session references           | Search and inject effective context from previous Sessions or existing SubAgents    | `@session:` |
-| Theme                        | Bundled CC Dark and CC Light themes                                            | `/theme`    |
+| Feature                      | Description                                                                                                                                                   | Entry point |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Claude Code-style output     | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` modes                                                                                 | `/ccstyle`  |
+| Fullscreen mouse interaction | Tool card/group click-to-toggle,`[show more]` previews, hover highlight, and a back-to-bottom button (motion reporting auto-enabled under tmux/zellij/screen) | `/ccstyle`  |
+| Settings panel               | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step                                                                                | `/ccstyle`  |
+| Context inspection           | Usage breakdown and previews for the system prompt, tools, skills, and messages                                                                               | `/context`  |
+| Session references           | Search and inject effective context from previous Sessions or existing SubAgents                                                                              | `@session:` |
+| Theme                        | Bundled CC Dark and CC Light themes                                                                                                                           | `/theme`    |
 
 ## Configuration
 
@@ -66,25 +64,10 @@ Run `/reload` after installation, then try:
   "expandedPreviewMaxLines": 40,           // max body lines for expanded output/diff
   "useSummaryTitlesAsThinkingTitle": true, // use the latest provider summary as the active thinking title
   "previewLines": 3,                       // thinking preview lines; 0 hides the preview body
-  "animationIntervalMs": 90                // thinking title animation interval in ms
+  "animationIntervalMs": 90,               // thinking title animation interval in ms
+  "showStartupHeader": true,               // custom startup header (logo + tips) toggle
+  "scrollStepLines": 3                     // fullscreen mouse wheel scroll lines
 }
-```
-
-### `@` references
-
-- Enter `@session:` to reference a previous Session.
-- Enter `@agent-name` to delegate to a custom Agent.
-- Compatible with `@bacnh85/pi-fff` and `@tintinweb/pi-subagents`.
-- Session context is deduplicated and size-limited before injection.
-
-## Other installation methods
-
-```bash
-# GitHub
-pi install git:github.com/minuque/pi-cc-extensions
-
-# Local repository
-pi install /absolute/path/to/pi-cc-extensions
 ```
 
 ## Local development
@@ -92,7 +75,7 @@ pi install /absolute/path/to/pi-cc-extensions
 ```bash
 npm test
 npm run typecheck
-pi -e .
+./test.bat # or pi -e .
 ```
 
 Run `/reload` after changing extensions.
@@ -121,5 +104,3 @@ Run `/reload` after changing extensions.
 ## Credits
 
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md).
-- Startup header based on [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header) (MIT).
-- Command aliases based on [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases) (MIT).

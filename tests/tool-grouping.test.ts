@@ -236,7 +236,7 @@ test("outer removeChild removes grouped tools, dissolves singletons, and clear f
 	}
 });
 
-test("off refresh ungroups, re-enable groups only new tools, and reload/shutdown restore ownership", () => {
+test("off refresh ungroups, reload rescans existing tools, and stale shutdown preserves ownership", () => {
 	const prototype = Container.prototype as any;
 	const originalAdd = prototype.addChild;
 	let mode: "on" | "off" = "on";
@@ -265,6 +265,14 @@ test("off refresh ungroups, re-enable groups only new tools, and reload/shutdown
 	const firstWrapper = prototype.addChild;
 	const second = installToolGrouping(() => true);
 	assert.notEqual(prototype.addChild, firstWrapper);
+	assert.equal(
+		parent.children.some((child: any) => child instanceof ToolGroupComponent),
+		false,
+		"replacement install first releases old-module groups",
+	);
+	second.refresh({ getMountedRoots: () => [parent] });
+	assert.ok(parent.children[0] instanceof ToolGroupComponent, "reload regroups mounted transcript");
+	assert.equal(parent.children[0].children.length, 4);
 	first.shutdown();
 	const secondWrapper = prototype.addChild;
 	assert.equal(prototype.addChild, secondWrapper, "stale shutdown preserves the new owner");

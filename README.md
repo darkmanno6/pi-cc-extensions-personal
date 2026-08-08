@@ -39,13 +39,14 @@ pi install git:github.com/minuque/pi-cc-extensions
 ## 功能
 
 
-| 功能                 | 说明                                                                | 入口        |
-| ---------------------- | --------------------------------------------------------------------- | ------------- |
-| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` 两种模式 | `/ccstyle`  |
-| Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、`[show more]` 预览、回到底部按钮       | `/ccstyle`  |
-| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容      | `/context`  |
-| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                 | `@session:` |
-| 主题                 | 随包提供内置 CC Dark、CC Light 主题                                 | `/theme`    |
+| 功能                 | 说明                                                                                                                   | 入口        |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` 两种模式                                                    | `/ccstyle`  |
+| Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、`[show more]` 预览、hover 高亮、回到底部按钮（tmux/zellij/screen 下自动补开 motion 上报） | `/ccstyle`  |
+| 配置面板             | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进                                                     | `/ccstyle`  |
+| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                                                         | `/context`  |
+| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                                    | `@session:` |
+| 主题                 | 随包提供内置 CC Dark、CC Light 主题                                                                                    | `/theme`    |
 
 ## 配置
 
@@ -63,7 +64,9 @@ pi install git:github.com/minuque/pi-cc-extensions
   "expandedPreviewMaxLines": 40,           // 展开后输出/diff 正文的最大行数
   "useSummaryTitlesAsThinkingTitle": true, // 用最新 provider 摘要作为思考标题
   "previewLines": 3,                       // thinking 预览行数，0 隐藏预览正文
-  "animationIntervalMs": 90                // thinking 标题动画间隔（毫秒）
+  "animationIntervalMs": 90,               // thinking 标题动画间隔（毫秒）
+  "showStartupHeader": true,               // 自定义启动头（logo + tips）开关
+  "scrollStepLines": 3                     // fullscreen 滚轮滚动步进行数
 }
 ```
 
@@ -72,7 +75,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 ```bash
 npm test
 npm run typecheck
-pi -e .
+./test.bat # or pi -e .
 ```
 
 修改扩展后执行 `/reload`。
@@ -101,5 +104,3 @@ pi -e .
 ## 致谢
 
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/tool-diff/ATTRIBUTION.md`](./extensions/tool-diff/ATTRIBUTION.md)。
-- 启动头基于 [`EnderLiquid/pi-startup-header`](https://github.com/EnderLiquid/pi-startup-header)（MIT）。
-- 命令别名基于 [`xRyul/pi-aliases`](https://github.com/xRyul/pi-aliases)（MIT）。

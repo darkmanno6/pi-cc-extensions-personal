@@ -1,6 +1,7 @@
 import { VERSION, type AppKeybinding } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { config } from "../config/config.ts";
 
 type Rgb = [number, number, number];
 type StyledPart = {
@@ -328,16 +329,28 @@ export function renderHeaderLines(
 	);
 }
 
+/**
+ * 按配置应用启动头：on → 自定义 header；off → 恢复官方默认 header。
+ * 导出供 /ccstyle 面板在切换开关时实时重应用。
+ */
+export function applyStartupHeader(ctx: any): void {
+	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
+	if (!config.showStartupHeader) {
+		// 恢复官方内置 header（logo + 快捷键提示 + onboarding）。
+		ctx.ui.setHeader(undefined);
+		return;
+	}
+	ctx.ui.setHeader((_tui, theme) => ({
+		render(width: number): string[] {
+			return renderHeaderLines(width, theme);
+		},
+		invalidate() {},
+	}));
+}
+
 export default function piStartupHeader(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
-		if (!ctx.hasUI) return;
-
-		ctx.ui.setHeader((_tui, theme) => ({
-			render(width: number): string[] {
-				return renderHeaderLines(width, theme);
-			},
-			invalidate() {},
-		}));
+		applyStartupHeader(ctx);
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {

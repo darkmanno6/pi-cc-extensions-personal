@@ -1,6 +1,6 @@
 # 工具 Render 示例（ccstyle）
 
-> 由真实 renderer 驱动生成（`node docs/.tmp-tool-render-demo.ts`），示例已剥离 ANSI。
+> 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
 > 当前版本：ccstyle 0.8.35。renderer 变更后应重跑脚本并同步本文件。
 
@@ -210,7 +210,3 @@ ANSI 剥离后无法展示背景，实际 TUI 行为如下：
 - provider 提供 `usage.output` 时优先使用真实值。
 - 支持多文本块、`text_end`/`done`/`error` 校准和跨 turn 重置。
 - turn 结束后立即恢复默认状态，不显示 `✻ Turn took ...`。
-
-```bash
-node .tmp-tool-render-demo.ts
-```

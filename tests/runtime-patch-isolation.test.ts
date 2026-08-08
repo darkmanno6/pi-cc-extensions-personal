@@ -100,6 +100,84 @@ test("stale TUI shutdown leaves the replacement runtime active", async () => {
 	}
 });
 
+test("reload regroups the mounted transcript instead of leaving single tools", async () => {
+	const first = runtime();
+	const second = runtime();
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	};
+	const parent = new Container() as any;
+	const inputHandlers = new Set<Function>();
+	let widget: any;
+	const tui = {
+		mode: "regular",
+		children: [] as any[],
+		getMountedRoots: () => [parent],
+		terminal: { columns: 100, rows: 30, write() {} },
+		previousLines: [] as string[],
+		previousViewportTop: 0,
+		requestRender() {},
+		render(width: number) {
+			return this.children.flatMap((child: any) => child.render(width));
+		},
+		doRender() {
+			this.previousLines = this.render(100);
+		},
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			theme,
+			setStatus() {},
+			requestRender() {},
+			setWidget(_key: string, factory: any) {
+				widget = typeof factory === "function" ? factory(tui, theme) : undefined;
+			},
+			onTerminalInput(handler: Function) {
+				inputHandlers.add(handler);
+				return () => inputHandlers.delete(handler);
+			},
+		},
+	} as any;
+	try {
+		claudeCodeStyleExtension(first.pi as any, { mode: "on" });
+		await first.events.get("session_start")?.({}, ctx);
+		for (const name of ["read", "bash"]) {
+			const component = new ToolExecutionComponent(
+				name,
+				`reload-${name}`,
+				{},
+				{},
+				undefined,
+				ctx.ui,
+				process.cwd(),
+			) as any;
+			component.updateResult({ content: [], isError: false });
+			parent.addChild(component);
+		}
+		assert.ok(parent.children[0] instanceof ToolGroupComponent);
+
+		await first.events.get("session_shutdown")?.({ reason: "reload" }, ctx);
+		assert.equal(parent.children.length, 2, "old patch releases its group");
+
+		claudeCodeStyleExtension(second.pi as any, { mode: "on" });
+		await second.events.get("session_start")?.({ reason: "reload" }, ctx);
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+		assert.ok(parent.children[0] instanceof ToolGroupComponent);
+		assert.equal(parent.children[0].children.length, 2);
+		assert.equal(inputHandlers.size, 1);
+		assert.ok(widget);
+
+		await first.events.get("session_shutdown")?.({ reason: "stale" }, ctx);
+		assert.equal(inputHandlers.size, 1, "stale shutdown keeps replacement mouse listener");
+		assert.ok(widget, "stale shutdown keeps replacement mouse widget");
+	} finally {
+		await first.events.get("session_shutdown")?.({}, ctx);
+		await second.events.get("session_shutdown")?.({}, ctx);
+	}
+});
+
 test("headless runtimes do not replace or shut down main TUI patches", async () => {
 	const containerPrototype = Container.prototype as any;
 	const toolPrototype = ToolExecutionComponent.prototype as any;

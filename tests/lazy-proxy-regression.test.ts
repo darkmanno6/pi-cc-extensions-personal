@@ -8,7 +8,8 @@ import claudeCodeStyleExtension, {
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
 import { showTextPreview } from "../extensions/feature/context.ts";
-import { hoveredToolCallId } from "../extensions/renderer/mouse-interaction.ts";
+import { config } from "../extensions/config/config.ts";
+import { hoveredToolCallId, isToolCallHovered } from "../extensions/renderer/mouse-interaction.ts";
 import { ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
@@ -296,6 +297,8 @@ class FullscreenRenderer {
 	scrollBottomCalls = 0;
 	renderCalls = 0;
 	wheelScrollLines = 1;
+	altScreenActive = true;
+	mouseEnabled = true;
 
 	constructor(tool: any, widget: any, terminal: any) {
 		this.children = [tool];
@@ -335,7 +338,44 @@ class FullscreenRenderer {
 	}
 }
 
+test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
+	const previousTmux = process.env.TMUX;
+	process.env.TMUX = "test";
+	const tool = createTool("tool-motion");
+	const { terminal, writes } = createTerminalFixture();
+	let renderer: FullscreenRenderer | RendererStub = new FullscreenRenderer(tool, null, terminal);
+	renderer.altScreenActive = false;
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		assert.ok(!writes.some((value) => value.includes("?1003h")), "startup is not preempted");
+		renderer.altScreenActive = true;
+		ui.widget.render();
+		assert.ok(
+			writes.some((value) => value.includes("?1003h")),
+			"hover motion is enabled after startup",
+		);
+		const disablesBeforeSwitch = writes.filter((value) => value.includes("?1003l")).length;
+		renderer = createRenderer("regular", [tool], terminal);
+		ui.widget.render();
+		assert.equal(
+			writes.filter((value) => value.includes("?1003l")).length,
+			disablesBeforeSwitch + 1,
+			"fullscreen → regular releases owned motion",
+		);
+		installToolMouseInteraction({});
+	} finally {
+		installToolMouseInteraction({});
+		if (previousTmux === undefined) delete process.env.TMUX;
+		else process.env.TMUX = previousTmux;
+	}
+});
+
 test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async () => {
+	// 步进数来自用户配置，测试固定为默认 3（避免受本机 claude-code-style.json 影响）。
+	const previousStep = config.scrollStepLines;
+	config.scrollStepLines = 3;
 	const tool = createTool("tool-fullscreen");
 	const { terminal, writes } = createTerminalFixture();
 	let renderer = new FullscreenRenderer(tool, null, terminal);
@@ -346,7 +386,11 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.wheelScrollLines, 3, "fullscreen native wheel step is raised to 3");
 	assert.ok(
 		!writes.some((value) => value.includes("?1000h")),
-		"fullscreen mouse modes belong to official",
+		"click reporting belongs to official",
+	);
+	assert.ok(
+		writes.some((value) => value.includes("?1003h")),
+		"extension reasserts hover motion after official startup",
 	);
 	// collapsed 仅 hint 文本可点；同一行正文/留白必须放行官方。
 	tui.handleViewportInput(`\x1b[<0;2;2M`);
@@ -395,8 +439,14 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	// single-expand：展开 A 后再点 B，A 自动收起。
 	const toolA = createTool("tool-a");
 	const toolB = createTool("tool-b");
+	const motionWritesBeforeSwitch = writes.filter((value) => value.includes("?1003h")).length;
 	renderer = new FullscreenRenderer([toolA, toolB], ui.widget, terminal);
-	ui.widget.render(); // 官方每帧渲染 dock → 新 renderer 重装 wrapper
+	ui.widget.render(); // 官方每帧渲染 dock → 新 renderer 重装 wrapper/上报
+	assert.equal(
+		writes.filter((value) => value.includes("?1003h")).length,
+		motionWritesBeforeSwitch + 1,
+		"renderer switch re-enables hover motion",
+	);
 	const tui2 = createLazyProxy(() => renderer);
 	renderer.currentLayout = fullscreenLayout([toolA, toolB], null);
 	const toolAHintCol = toolA.render()[1].indexOf("(ctrl+o expand / click)") + 1;
@@ -438,8 +488,13 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	}
 
 	// show-more：expanded 工具卡渲染截断 Input/Output 头，点击 [show more] 打开预览。
+	// 真实 ANSI 主题：拆分样式（点 dim / 文字 text）后 indexOf 仍按可见文本命中。
+	const ansiTheme = {
+		fg: (color: string, text: string) =>
+			`\x1b[${color === "text" ? "97" : color === "dim" ? "90" : "37"}m${text}\x1b[39m`,
+	};
 	const longOutput = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
-	const ioView = new ExpandedToolIoView(theme(), "arg: 1", longOutput, false, 3, 3);
+	const ioView = new ExpandedToolIoView(ansiTheme, "arg: 1", longOutput, false, 3, 3);
 	ioView.render(80); // 触发截断状态与 show-more 头行记录
 	const showMoreTool = createTool("tool-show-more");
 	showMoreTool.expanded = true;
@@ -451,7 +506,8 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	const ioLines = ioView.render(80);
 	const moreHeader = ioView.showMoreHeaderLineIndexes()[0];
 	const moreRow = moreHeader.line;
-	const moreCol = ioLines[moreRow].indexOf(SHOW_MORE_LABEL) + 1;
+	const moreCol =
+		ioLines[moreRow].replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").indexOf(SHOW_MORE_LABEL) + 1;
 	const notifiedBefore = ui.notifications.length;
 	const officialBeforeShowMore = renderer.officialInputs.length;
 	tui.handleViewportInput(`\x1b[<0;${moreCol};${moreRow + 1}M`);
@@ -504,10 +560,11 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.scrollBottomCalls, 2, "Ctrl+End scrolls to bottom");
 	assert.deepEqual(ui.widget.render(80), []);
 	installToolMouseInteraction({});
+	config.scrollStepLines = previousStep;
 	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
 });
 
-test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", () => {
+test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", async () => {
 	const wrap = (label: string) => ({
 		render: (width: number) => (width === 80 ? [label] : [label, `${label}-2`]),
 		invalidate() {},
@@ -556,6 +613,13 @@ test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after 
 	tui.handleViewportInput(`\x1b[<32;${hintCol};8M`);
 	assert.equal(hoveredToolCallId, "width-tool-b");
 	assert.equal(renderer.renderCalls, rendersBefore + 1);
+	const reloadSpecifier = `../extensions/renderer/mouse-interaction.ts?reload=${Date.now()}`;
+	const reloadedMouse: typeof import("../extensions/renderer/mouse-interaction.ts") = await import(
+		reloadSpecifier
+	);
+	assert.equal(reloadedMouse.isToolCallHovered("width-tool-b"), true);
+	reloadedMouse.resetToolHoverState();
+	assert.equal(isToolCallHovered("width-tool-b"), false, "hover state is shared across reloads");
 	installToolMouseInteraction({});
 });
 
@@ -588,6 +652,70 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => 
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
 	assert.equal((group as any).expanded, false, "second group click collapses all children");
 	installToolMouseInteraction({});
+});
+
+test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights the header", () => {
+	const patch = {
+		groups: new Set(),
+		theme: { fg: (_color: string, text: string) => text },
+	};
+	const group = new ToolGroupComponent(patch as any);
+	const longOutput = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n");
+	// 真实 ANSI 主题：拆分后的 show-more 样式（点 dim / 文字 text）可被命中逻辑识别。
+	const ansiTheme = {
+		fg: (color: string, text: string) =>
+			`\x1b[${color === "text" ? "97" : color === "dim" ? "90" : "37"}m${text}\x1b[39m`,
+	};
+	const ioView = new ExpandedToolIoView(ansiTheme, "", longOutput, false, 2, 2);
+	const child = Object.assign(createTool("group-child"), {
+		toolName: "read",
+		result: { isError: false },
+		resultRendererComponent: ioView,
+		render: (width: number) => ioView.render(width),
+	});
+	group.addTool(child);
+	group.addTool(
+		Object.assign(createTool("group-sibling"), {
+			toolName: "bash",
+			result: { isError: false },
+		}),
+	);
+	group.setExpanded(true);
+
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(group, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	installToolMouseInteraction(ui.ctx);
+	try {
+		const stripAnsi = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const lines = group.render(80);
+		const row = lines.findIndex(
+			(line, index) =>
+				index > 1 &&
+				stripAnsi(line).includes("Output") &&
+				stripAnsi(line).includes(SHOW_MORE_LABEL),
+		);
+		assert.ok(row > 1, "grouped child renders an Output show-more header");
+		const col = stripAnsi(lines[row]).indexOf(SHOW_MORE_LABEL) + 1;
+		const before = lines[row];
+
+		tui.handleViewportInput(`\x1b[<32;${col};${row + 1}M`);
+
+		const after = group.render(80)[row];
+		assert.notEqual(after, before);
+		assert.match(after, /\x1b\[90m •\x1b\[39m\x1b\[97m click to show more\x1b\[39m/);
+
+		tui.handleViewportInput(`\x1b[<0;${col};${row + 1}M`);
+		assert.equal(ui.notifications.length, 1, "child show-more click opens preview");
+		assert.equal(group.expanded, true, "show-more click keeps the group expanded");
+		const bodyRow = group.render(80).findIndex((line) => line.includes("line 0"));
+		assert.ok(bodyRow > row);
+		tui.handleViewportInput(`\x1b[<0;10;${bodyRow + 1}M`);
+		assert.equal(group.expanded, false, "ordinary child-row click collapses the whole group");
+	} finally {
+		installToolMouseInteraction({});
+	}
 });
 
 test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components", () => {
@@ -659,12 +787,13 @@ test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership"
 	ui.widget.render();
 	assert.ok(!writes.some((value) => value.includes("?1000h")), "regular never enables reporting");
 
-	// regular → fullscreen：官方先启用自己的模式；插件不得发送额外 reporting。
+	// regular → fullscreen：官方先启用点击模式，插件只补 hover 所需的 1003。
 	renderer = createRenderer("fullscreen", [tool], terminal);
 	writes.push("OFFICIAL:\x1b[?1000h\x1b[?1002h\x1b[?1006h");
 	const writesBeforeFullscreenRender = writes.length;
 	ui.widget.render();
-	assert.equal(writes.length, writesBeforeFullscreenRender);
+	assert.equal(writes.length, writesBeforeFullscreenRender + 1);
+	assert.match(writes.at(-1) ?? "", /\?1003h/);
 
 	// fullscreen stop 后切回 regular：官方关闭其模式；插件仍不写上报，保持终端原生回滚。
 	writes.push("OFFICIAL:\x1b[?1006l\x1b[?1002l\x1b[?1000l");
@@ -680,7 +809,11 @@ test("lazy-proxy tui: renderer replacement preserves fullscreen mouse ownership"
 	ui.widget.render();
 	const writesBeforeTeardown = writes.length;
 	installToolMouseInteraction({});
-	assert.equal(writes.length, writesBeforeTeardown);
+	const teardownWrites = writes.slice(writesBeforeTeardown);
+	assert.ok(
+		!teardownWrites.some((value) => value.includes("?1000l") || value.includes("?1006l")),
+		"teardown keeps official click reporting",
+	);
 });
 
 test("lazy-proxy frame capture rolls back partial render wrappers on failure", () => {

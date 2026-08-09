@@ -520,6 +520,18 @@ export function renderCollapsedToolResultToWidth(
 	);
 }
 
+/** 从头截断到宽度（保留开头、省略尾部），不插入 ANSI reset（背景卡片下安全）。 */
+export function headTruncateToWidth(text: string, width: number): string {
+	if (visibleWidth(text) <= width) return text;
+	if (width <= 1) return "…";
+	let left = "";
+	for (const char of Array.from(text)) {
+		if (visibleWidth(left + "…" + char) > width) break;
+		left += char;
+	}
+	return `${left}…`;
+}
+
 /** 截断到宽度时保留首尾内容（渲染折叠行与工具标题用）。 */
 export function middleTruncateToWidth(text: string, width: number): string {
 	if (visibleWidth(text) <= width) return text;

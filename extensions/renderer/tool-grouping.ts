@@ -387,12 +387,8 @@ export class ToolGroupComponent extends Container {
 			}
 		}
 		if (this._expanded) {
-			const backgroundSlot =
-				overall === "error"
-					? "toolErrorBg"
-					: overall === "pending"
-						? "toolPendingBg"
-						: "toolSuccessBg";
+			// 展开面板统一用 user message 背景色（ccstyle 约定），不按状态区分。
+			const backgroundSlot = "userMessageBg";
 			for (const line of expandedLines) {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}

@@ -1,7 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import agentAutocomplete from "./feature/agent-autocomplete.ts";
+import agentSummary from "./feature/agent-summary.ts";
 import claudeCodeStyle, { getCompactThinkingConfig } from "./renderer/index.ts";
-import { installCompactThinking, type CompactThinkingController } from "./feature/compact-thinking.ts";
+import {
+	installCompactThinking,
+	type CompactThinkingController,
+} from "./feature/compact-thinking.ts";
 import context from "./feature/context.ts";
 import markdownEnhance from "./feature/markdown-enhance.ts";
 import piAliases from "./feature/pi-aliases.ts";
@@ -25,4 +29,5 @@ export default function (pi: ExtensionAPI): void {
 	context(pi);
 	sessionReference(pi);
 	agentAutocomplete(pi);
+	agentSummary(pi);
 }

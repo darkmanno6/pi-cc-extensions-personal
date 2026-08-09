@@ -32,6 +32,7 @@ import {
 	clearAllAnimations,
 	countLines,
 	hasExpandableDetail,
+	headTruncateToWidth,
 	isToolExpanded,
 	middleTruncateToWidth,
 	oneLine,
@@ -53,6 +54,12 @@ import {
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
 } from "./tool-diff/index.ts";
+import {
+	getMessageDisplayTheme,
+	installMessageDisplayRendering,
+	refreshMessageDisplays,
+	setMessageDisplayTheme,
+} from "./message-display.ts";
 
 /**
  * Claude Code Style for pi — 装配入口（拆分后位于 ccstyle/index.ts）。
@@ -66,6 +73,7 @@ const ANSI_FG_RESET = "\x1b[39m";
 
 function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
 	toolGrouping?.refresh(toolMouseTui);
+	refreshMessageDisplays(toolMouseTui);
 	toolMouseTui?.requestRender?.(true);
 	ctx?.ui?.requestRender?.(true);
 }
@@ -133,10 +141,11 @@ function singleToolCallSummary(
 	const name = toolName.toLowerCase();
 	const value = (fallback: string, ...keys: string[]) => {
 		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
-		return `${title} ${oneLine(found || fallback, Infinity)}`;
+		// 与多 tool 摘要对齐：从头截断，上限 96 字符（tool-grouping oneLine 默认值）。
+		return `${title} ${oneLine(found || fallback, 96)}`;
 	};
 	if (AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
-		return { main: `${title} ${oneLine(args.agent_id, Infinity)}`, detail: "" };
+		return { main: `${title} ${oneLine(args.agent_id, 96)}`, detail: "" };
 	}
 	// Agents still uses the ccstyle wrapper; Agent keeps its dedicated renderer.
 	if (name === "agents") {
@@ -177,7 +186,7 @@ function singleToolCallSummary(
 			args.limit !== undefined ? `limit=${args.limit}` : "",
 		].filter(Boolean);
 		return {
-			main: `${title}${args.path ? ` ${oneLine(args.path, Infinity)}` : ""}`,
+			main: `${title}${args.path ? ` ${oneLine(args.path, 96)}` : ""}`,
 			detail: details.length ? ` (${details.join(", ")})` : "",
 		};
 	}
@@ -197,7 +206,7 @@ function singleToolCallSummary(
 	return {
 		main:
 			preferred !== undefined && preferred !== null && typeof preferred !== "object"
-				? `${title} ${oneLine(preferred, Infinity)}`
+				? `${title} ${oneLine(preferred, 96)}`
 				: title,
 		detail: "",
 	};
@@ -317,7 +326,8 @@ function createCcstyleTool(
 					const callWidth = Math.max(0, viewportWidth - visibleWidth(icon) - 2);
 					const mainWidth = Math.max(0, callWidth - visibleWidth(summary.detail));
 					cachedWidth = width;
-					cachedLine = ` ${icon} ${theme.fg("toolTitle", middleTruncateToWidth(summary.main, mainWidth))}${theme.fg("dim", summary.detail)}`;
+					// 纯文本先截断再着色（省略号不带 ANSI，避免 reset 破坏卡片背景）；从头截断，与多 tool 一致
+					cachedLine = ` ${icon} ${theme.fg("toolTitle", headTruncateToWidth(summary.main, mainWidth))}${theme.fg("dim", summary.detail)}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {},
@@ -738,6 +748,50 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 
 const GLOBAL_COMPACTION_RENDER_PATCH = Symbol.for("pi.ccstyle.compaction-render-patch");
 
+const TOOL_EXPANDED_BACKGROUND_PATCH = Symbol.for("pi.ccstyle.tool-expanded-background-patch");
+
+type ToolExpandedBackgroundPatch = {
+	active: boolean;
+	prototype: any;
+	installed: (...args: any[]) => void;
+	original: (...args: any[]) => void;
+	dispose: () => void;
+};
+
+/** 展开面板背景统一为 user message 背景色；折叠行保持原生状态色（由 original 重设）。 */
+function installToolExpandedBackground(): () => void {
+	const host = globalThis as any;
+	const previous = host[TOOL_EXPANDED_BACKGROUND_PATCH] as ToolExpandedBackgroundPatch | undefined;
+	if (previous) previous.dispose();
+	const prototype = ToolExecutionComponent.prototype;
+	const original = prototype.updateDisplay;
+	const patch: ToolExpandedBackgroundPatch = {
+		active: true,
+		prototype,
+		installed: function (this: any) {
+			original.call(this);
+			if (!patch.active || config.mode !== "on" || !this.expanded) return;
+			const theme = getMessageDisplayTheme();
+			if (!theme?.bg) return;
+			const box = this.contentBox;
+			if (box?.setBgFn) box.setBgFn((text: string) => theme.bg("userMessageBg", text));
+		},
+		original,
+		dispose: () => {
+			patch.active = false;
+			if (prototype.updateDisplay === patch.installed) {
+				prototype.updateDisplay = original;
+			}
+			if (host[TOOL_EXPANDED_BACKGROUND_PATCH] === patch) {
+				delete host[TOOL_EXPANDED_BACKGROUND_PATCH];
+			}
+		},
+	};
+	prototype.updateDisplay = patch.installed;
+	host[TOOL_EXPANDED_BACKGROUND_PATCH] = patch;
+	return patch.dispose;
+}
+
 type LegacyCompactionRenderPatch = {
 	enabled?: () => boolean;
 };
@@ -763,6 +817,8 @@ export default function (
 		| {
 				globalToolRendering: GlobalToolRenderPatch;
 				toolGrouping: ToolGroupingHooks;
+				disposeMessageDisplay: () => void;
+				disposeToolExpandedBackground: () => void;
 		  }
 		| undefined;
 	const ensureTuiInstallation = (ctx: any) => {
@@ -772,8 +828,15 @@ export default function (
 		if (installation) return installation;
 		const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
+		const disposeMessageDisplay = installMessageDisplayRendering();
+		const disposeToolExpandedBackground = installToolExpandedBackground();
 		deactivateLegacyCompactionRendering();
-		installation = { globalToolRendering, toolGrouping };
+		installation = {
+			globalToolRendering,
+			toolGrouping,
+			disposeMessageDisplay,
+			disposeToolExpandedBackground,
+		};
 		return installation;
 	};
 
@@ -828,6 +891,7 @@ export default function (
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
+		setMessageDisplayTheme(ctx.ui.theme);
 		ctx.ui.setStatus("ccstyle", undefined);
 		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
 	});
@@ -839,6 +903,7 @@ export default function (
 		if (ctx?.mode === "tui" && ctx?.hasUI) installToolMouseInteraction(ctx, mouseOwner);
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
+		setMessageDisplayTheme(ctx.ui.theme);
 		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
 	});
 
@@ -860,6 +925,8 @@ export default function (
 			return;
 		deactivateGlobalToolRendering(current.globalToolRendering);
 		current.toolGrouping.shutdown();
+		current.disposeMessageDisplay();
+		current.disposeToolExpandedBackground();
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
 		installation = undefined;
@@ -880,6 +947,7 @@ export {
 	ExpandedToolResultText,
 	formatExpandHint,
 	formatToolInputArgs,
+	headTruncateToWidth,
 	middleTruncateToWidth,
 	outputLineCount,
 	renderCollapsedToolResult,

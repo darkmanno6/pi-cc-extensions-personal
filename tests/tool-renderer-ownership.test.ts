@@ -58,7 +58,11 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 	};
 	claudeCodeStyleExtension(pi as any, { mode: "on" });
 	const ui = {
-		theme: { fg: (_color: string, text: string) => text },
+		theme: {
+			fg: (_color: string, text: string) => text,
+			// userMsgBg #343541 → 48;2;52;53;65；toolSuccessBg #283228 → 48;2;40;50;40
+			bg: (_color: string, text: string) => `\x1b[48;2;52;53;65m${text}\x1b[49m`,
+		},
 		setStatus() {},
 		requestRender() {},
 	};
@@ -120,7 +124,12 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 		assert.ok(component.resultRendererComponent instanceof ExpandedToolIoView);
 
 		const cardLines = component.render(60);
-		assert.ok(cardLines.some((line: string) => /\x1b\[(?:4[0-8]|10[0-7])/.test(line)));
+		// 展开面板背景统一为 user message 背景色（userMsgBg #343541），不再按状态区分。
+		assert.ok(cardLines.some((line: string) => line.includes("\x1b[48;2;52;53;65m")));
+		assert.ok(
+			cardLines.every((line: string) => !line.includes("\x1b[48;2;40;50;40m")),
+			"no toolSuccessBg remains in the expanded panel",
+		);
 		const callLine = cardLines.find((line: string) => line.includes("Bash "));
 		assert.ok(callLine);
 		assert.equal(
@@ -129,7 +138,9 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			"background card title stays within its full-width row",
 		);
 		const plainCallLine = callLine.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
-		assert.match(plainCallLine, /✓ Bash .*….*compositor\.ts'$/);
+		// input 摘要与多 tool 一致：从头截断（保留开头，省略尾部），上限 96 字符
+		assert.match(plainCallLine, /✓ Bash .*…$/);
+		assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
 		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");
 		component.setExpanded(false);
 		assert.equal(component.children.includes(component.selfRenderContainer), true);

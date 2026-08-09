@@ -10,6 +10,7 @@ declare module "@earendil-works/pi-tui" {
 	export const Container: any;
 	export const SelectList: any;
 	export const SettingsList: any;
+	export const Input: any;
 	export const Key: any;
 	export const TUI_KEYBINDINGS: any;
 	export class KeybindingsManager {

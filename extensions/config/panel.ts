@@ -5,7 +5,7 @@
  * CcstylePanelHooks 注入，避免 config → renderer 循环依赖。
  */
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyStartupHeader } from "../feature/pi-startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool-grouping.ts";
@@ -38,6 +38,9 @@ export type CcstylePanelHooks = {
 };
 
 function modeSettingDescription(mode: CompactStyleMode): string {
+	if (mode === "compact") {
+		return "One summary line per assistant round; expanded edit/write rows show rich diffs.";
+	}
 	if (mode === "off") {
 		return "Pi native tool rendering. Diff options below still apply independently.";
 	}
@@ -110,6 +113,66 @@ function buildExcludeRenderersSubmenu(
 	};
 }
 
+/** 数值项手动输入子面板：预填当前值，Space 循环预设，输入数字自定义，Enter 应用，Esc 取消。 */
+function buildNumberInputSubmenu(
+	theme: any,
+	setting: { label: string; values: readonly string[]; currentValue: string },
+	closeSubmenu: (selected?: string) => void,
+): {
+	render: (width: number) => string[];
+	invalidate: () => void;
+	handleInput: (data: string) => void;
+} {
+	const input = new Input();
+	let error = "";
+	const cyclePreset = () => {
+		const presets = setting.values;
+		const next = presets[(presets.indexOf(input.getValue()) + 1) % presets.length] ?? presets[0];
+		if (next !== undefined) input.setValue(next);
+		error = "";
+	};
+	input.setValue(setting.currentValue);
+	input.onSubmit = (value: string) => {
+		const raw = value.trim();
+		if (raw === "") {
+			closeSubmenu(); // 空输入 = 取消
+			return;
+		}
+		if (!Number.isFinite(Number(raw))) {
+			error = `Invalid number: "${raw}"`;
+			return;
+		}
+		closeSubmenu(raw);
+	};
+	input.onEscape = () => closeSubmenu();
+	return {
+		render: (width: number) => {
+			const safe = Math.max(0, Math.floor(width));
+			const lines = [
+				theme.fg("dim", `  ${setting.label} — custom value:`),
+				...input.render(safe),
+				truncateToWidth(
+					theme.fg(
+						"dim",
+						`  Presets: ${setting.values.join(" · ")} — Space to cycle · Enter to apply · Esc to go back`,
+					),
+					safe,
+				),
+			];
+			if (error !== "") lines.push(theme.fg("dim", `  ${error}`));
+			return lines;
+		},
+		invalidate: () => {},
+		handleInput: (data: string) => {
+			if (data === " ") {
+				cyclePreset();
+				return;
+			}
+			input.handleInput(data);
+		},
+	};
+}
+
 /** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
 type CcstyleSection = {
 	id: "style" | "editor" | "diff" | "thinking" | "feature";
@@ -166,7 +229,7 @@ export async function showCcstylePanel(
 			label: "Mode",
 			description: modeSettingDescription(config.mode),
 			currentValue: config.mode,
-			values: ["on", "off"],
+			values: ["on", "compact", "off"],
 		};
 		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
@@ -210,16 +273,22 @@ export async function showCcstylePanel(
 		const diffSplitSetting = {
 			id: "diffSplitMinWidth",
 			label: "Split min width",
-			description: "Minimum terminal width before auto/split layout uses side-by-side columns.",
+			description:
+				"Minimum terminal width before auto/split layout uses side-by-side columns. Enter to type a custom value.",
 			currentValue: nearestPreset(config.diffSplitMinWidth, DIFF_SPLIT_MIN_WIDTH_VALUES),
 			values: [...DIFF_SPLIT_MIN_WIDTH_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, diffSplitSetting, closeSubmenu),
 		};
 		const diffCollapsedSetting = {
 			id: "diffCollapsedLines",
 			label: "Collapsed lines",
-			description: "How many diff body lines to show before the expand hint (Ctrl+O / click).",
+			description:
+				"How many diff body lines to show before the expand hint (Ctrl+O / click). Enter to type a custom value.",
 			currentValue: nearestPreset(config.diffCollapsedLines, DIFF_COLLAPSED_LINES_VALUES),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, diffCollapsedSetting, closeSubmenu),
 		};
 		const diffWordWrapSetting = {
 			id: "diffWordWrap",
@@ -240,6 +309,8 @@ export async function showCcstylePanel(
 				EXPANDED_PREVIEW_MAX_LINES_VALUES,
 			),
 			values: [...EXPANDED_PREVIEW_MAX_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, expandedMaxSetting, closeSubmenu),
 		};
 		const thinkingTitleSetting = {
 			id: "useSummaryTitlesAsThinkingTitle",
@@ -254,6 +325,8 @@ export async function showCcstylePanel(
 			description: "Thinking preview lines; 0 hides the preview body.",
 			currentValue: nearestPreset(config.previewLines, THINKING_PREVIEW_LINES_VALUES),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, thinkingPreviewSetting, closeSubmenu),
 		};
 		const thinkingAnimationSetting = {
 			id: "animationIntervalMs",
@@ -261,6 +334,8 @@ export async function showCcstylePanel(
 			description: "Thinking title animation interval for the next thinking run.",
 			currentValue: nearestPreset(config.animationIntervalMs, THINKING_ANIMATION_INTERVAL_VALUES),
 			values: [...THINKING_ANIMATION_INTERVAL_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, thinkingAnimationSetting, closeSubmenu),
 		};
 		const startupHeaderSetting = {
 			id: "showStartupHeader",
@@ -277,6 +352,8 @@ export async function showCcstylePanel(
 			description: "Mouse wheel scroll lines in fullscreen mode.",
 			currentValue: nearestPreset(config.scrollStepLines, SCROLL_STEP_LINES_VALUES),
 			values: [...SCROLL_STEP_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, scrollStepSetting, closeSubmenu),
 		};
 
 		const onSettingChange = (id: string, value: string) => {
@@ -304,6 +381,7 @@ export async function showCcstylePanel(
 						40,
 						300,
 					);
+					diffSplitSetting.currentValue = String(config.diffSplitMinWidth);
 					break;
 				case "diffCollapsedLines":
 					config.diffCollapsedLines = pickPositiveInt(
@@ -312,6 +390,7 @@ export async function showCcstylePanel(
 						1,
 						500,
 					);
+					diffCollapsedSetting.currentValue = String(config.diffCollapsedLines);
 					break;
 				case "diffWordWrap":
 					config.diffWordWrap = value === "on";
@@ -326,18 +405,21 @@ export async function showCcstylePanel(
 						10,
 						50_000,
 					);
+					expandedMaxSetting.currentValue = String(config.expandedPreviewMaxLines);
 					break;
 				case "useSummaryTitlesAsThinkingTitle":
 					config.useSummaryTitlesAsThinkingTitle = value === "on";
 					break;
 				case "previewLines":
 					config.previewLines = pickPositiveInt(value, DEFAULT_CONFIG.previewLines, 0);
+					thinkingPreviewSetting.currentValue = String(config.previewLines);
 					break;
 				case "animationIntervalMs":
 					config.animationIntervalMs = pickPositiveNumber(
 						value,
 						DEFAULT_CONFIG.animationIntervalMs,
 					);
+					thinkingAnimationSetting.currentValue = String(config.animationIntervalMs);
 					break;
 				case "showStartupHeader":
 					config.showStartupHeader = value === "on";
@@ -349,6 +431,7 @@ export async function showCcstylePanel(
 					break;
 				case "scrollStepLines":
 					config.scrollStepLines = pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50);
+					scrollStepSetting.currentValue = String(config.scrollStepLines);
 					break;
 				default:
 					return;
@@ -435,7 +518,7 @@ export async function showCcstylePanel(
 					truncateToWidth(
 						theme.fg(
 							"dim",
-							"  Enter/Space to change · Tab/Shift+Tab to switch sections · Esc to close",
+							"  Enter/Space to change · Enter on numbers types a custom value · Tab/Shift+Tab to switch sections · Esc to close",
 						),
 						safeWidth,
 					),

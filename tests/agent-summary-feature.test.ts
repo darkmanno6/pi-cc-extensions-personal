@@ -83,11 +83,7 @@ test("summaryMarkdown box=true 输出引用块斜体，无标签", () => {
 
 	// 计数染色：仅数字染 success/error 色，文本与时长不染色（无默认色时保持原样）
 	assert.equal(
-		summaryMarkdown(
-			{ ...data, failed: 1 },
-			true,
-			{ success: "\x1b[32m", failed: "\x1b[31m" },
-		),
+		summaryMarkdown({ ...data, failed: 1 }, true, { success: "\x1b[32m", failed: "\x1b[31m" }),
 		"> *Read \x1b[32m2\x1b[0m files, edited \x1b[32m1\x1b[0m file, ran \x1b[32m3\x1b[0m commands, \x1b[31m1\x1b[0m failed · 42s*",
 	);
 	assert.equal(

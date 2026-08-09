@@ -19,17 +19,14 @@ import {
 export const AGENT_SUMMARY_ENTRY_TYPE = "agent-summary";
 
 export default function (pi: ExtensionAPI): void {
-	pi.registerEntryRenderer<AgentSummaryData>(
-		AGENT_SUMMARY_ENTRY_TYPE,
-		(entry, _options, theme) => {
-			const line = summaryMarkdown(entry.data, true, {
-				success: theme.getFgAnsi("success"),
-				failed: theme.getFgAnsi("error"),
-			});
-			if (!line) return undefined;
-			return new Markdown(line, 1, 0, getMarkdownTheme());
-		},
-	);
+	pi.registerEntryRenderer<AgentSummaryData>(AGENT_SUMMARY_ENTRY_TYPE, (entry, _options, theme) => {
+		const line = summaryMarkdown(entry.data, true, {
+			success: theme.getFgAnsi("success"),
+			failed: theme.getFgAnsi("error"),
+		});
+		if (!line) return undefined;
+		return new Markdown(line, 1, 0, getMarkdownTheme());
+	});
 
 	bindAgentSummary(pi, (data) => {
 		pi.appendEntry(AGENT_SUMMARY_ENTRY_TYPE, data);

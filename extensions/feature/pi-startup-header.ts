@@ -15,13 +15,7 @@ const ANSI_PATTERN =
 
 // 官方 install.sh 静态 logo（4 行原样，短行补尾随空格统一到 8 列）+ 底部空行补到 5 行，
 // 与右侧 tips 行数等高；着色保持现状（accent 渐变）
-const LOGO_LINES = [
-	"██████  ",
-	"██  ██  ",
-	"████  ██",
-	"██    ██",
-	"        ",
-];
+const LOGO_LINES = ["██████  ", "██  ██  ", "████  ██", "██    ██", "        "];
 
 // hero 文案（单行，替换原生 header 的 "Pi can explain..." 默认位置）
 const HERO_PREFIX = "There are many agent harnesses, but this one is ";
@@ -325,7 +319,8 @@ export function renderHeaderLines(
 	];
 
 	return paddedLeft.map(
-		(line, index) => `${line}${" ".repeat(TWO_COL_GAP)}${fitLineToWidth(rightLines[index] ?? "", rightWidth)}`,
+		(line, index) =>
+			`${line}${" ".repeat(TWO_COL_GAP)}${fitLineToWidth(rightLines[index] ?? "", rightWidth)}`,
 	);
 }
 

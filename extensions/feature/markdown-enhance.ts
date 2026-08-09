@@ -170,7 +170,10 @@ function getArt(src: string): ReturnType<typeof renderMermaid> | null {
 }
 
 /** Mermaid 方言代码块 → ASCII 图（流式跳过）。 */
-function renderDiagrams(markdown: string, context?: { isStreaming?: boolean; availableWidth?: number }): string {
+function renderDiagrams(
+	markdown: string,
+	context?: { isStreaming?: boolean; availableWidth?: number },
+): string {
 	const { isStreaming = false, availableWidth } = context ?? {};
 	if (isStreaming) return markdown;
 	const lines = markdown.split("\n");

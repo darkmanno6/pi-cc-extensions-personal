@@ -34,7 +34,5 @@ export function expandShortcutText(): string {
 }
 
 export function showMoreHintText(): string {
-	return isToolTuiFullscreen()
-		? "click to show more"
-		: `${expandShortcutText()} to show more`;
+	return isToolTuiFullscreen() ? "click to show more" : `${expandShortcutText()} to show more`;
 }

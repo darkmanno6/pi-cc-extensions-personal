@@ -363,13 +363,13 @@ function compactThinking(pi: ExtensionAPI) {
 			const content = message.content[i];
 
 			if (content.type === "text" && content.text.trim()) {
-			self.contentContainer.addChild(
-				new Markdown(content.text.trim(), self.outputPad, 0, self.markdownTheme, undefined, {
-					transform: createTransform("assistant", self),
-				}),
-			);
-			continue;
-		}
+				self.contentContainer.addChild(
+					new Markdown(content.text.trim(), self.outputPad, 0, self.markdownTheme, undefined, {
+						transform: createTransform("assistant", self),
+					}),
+				);
+				continue;
+			}
 
 			if (content.type !== "thinking") continue;
 

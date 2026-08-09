@@ -32,10 +32,7 @@ function makeSkillBlock(name = "ponytail", content = "**lazy** content\n\n- rule
 }
 
 function makeCompaction(summary = "summarized history", tokensBefore = 12345) {
-	return new CompactionSummaryMessageComponent(
-		{ summary, tokensBefore },
-		getMarkdownTheme(),
-	);
+	return new CompactionSummaryMessageComponent({ summary, tokensBefore }, getMarkdownTheme());
 }
 
 function makeBranch(summary = "branch work") {

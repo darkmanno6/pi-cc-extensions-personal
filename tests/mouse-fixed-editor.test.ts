@@ -69,9 +69,7 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		});
 		tui.doRender();
 		// regular 模式不启用鼠标上报，提示文本为默认展开快捷键。
-		const headerRow = tui.previousLines.findIndex((line: string) =>
-			line.includes("to show more"),
-		);
+		const headerRow = tui.previousLines.findIndex((line: string) => line.includes("to show more"));
 		assert.ok(headerRow >= 0);
 		const hintColumn = tui.previousLines[headerRow].indexOf("to show more") + 1;
 		inputHandler?.(`\x1b[<32;${hintColumn};${headerRow + 1}M`);
@@ -626,9 +624,7 @@ test("expanded group identical show-more labels open their own content", () => {
 			"markers must not leak into previousLines",
 		);
 		const showMoreRows = tui.previousLines
-			.map((line, index) =>
-				line.includes("Output") && line.includes("to show more") ? index : -1,
-			)
+			.map((line, index) => (line.includes("Output") && line.includes("to show more") ? index : -1))
 			.filter((index) => index >= 0);
 		assert.ok(showMoreRows.length >= 2, "need two identical show-more headers");
 		const plainLabels = showMoreRows.map((row) =>

@@ -163,12 +163,7 @@ export function normalizeConfig(input: unknown): Config {
 			DEFAULT_CONFIG.animationIntervalMs,
 		),
 		showStartupHeader: source.showStartupHeader !== false,
-		scrollStepLines: pickPositiveInt(
-			source.scrollStepLines,
-			DEFAULT_CONFIG.scrollStepLines,
-			1,
-			50,
-		),
+		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
 	};
 }
 

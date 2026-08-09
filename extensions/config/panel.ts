@@ -348,12 +348,7 @@ export async function showCcstylePanel(
 					applyStartupHeader(ctx);
 					break;
 				case "scrollStepLines":
-					config.scrollStepLines = pickPositiveInt(
-						value,
-						DEFAULT_CONFIG.scrollStepLines,
-						1,
-						50,
-					);
+					config.scrollStepLines = pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50);
 					break;
 				default:
 					return;

@@ -45,7 +45,8 @@ const SKILL_KIND: DisplayKind = {
 };
 
 const COMPACTION_KIND: DisplayKind = {
-	title: (component) => `Compacted from ${Number(component.message?.tokensBefore ?? 0).toLocaleString()} tokens`,
+	title: (component) =>
+		`Compacted from ${Number(component.message?.tokensBefore ?? 0).toLocaleString()} tokens`,
 	body: (component) => String(component.message?.summary ?? ""),
 };
 
@@ -79,7 +80,11 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 	);
 }
 
-type PatchEntry = { prototype: any; installed: (...args: any[]) => void; original: (...args: any[]) => void };
+type PatchEntry = {
+	prototype: any;
+	installed: (...args: any[]) => void;
+	original: (...args: any[]) => void;
+};
 
 /** patch 三个消息组件的 updateDisplay，返回统一 dispose（/reload 链安全）。 */
 export function installMessageDisplayRendering(): () => void {

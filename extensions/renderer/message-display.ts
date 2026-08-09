@@ -58,6 +58,10 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 	const theme = displayTheme;
 	if (!theme) return; // 主题未就绪时保留原生渲染
 	if (component.bgFn) component.setBgFn?.(undefined); // 与工具调用一致，去掉灰底
+	if (component.paddingY !== 0) {
+		component._ccstyleOriginalPaddingY = component.paddingY;
+		component.paddingY = 0; // 工具组件 paddingY=0；原生 Box 默认 1，会上下各留一个空行
+	}
 	component.clear();
 	const icon = `${BRIGHT_GREEN}✓${ANSI_FG_RESET}`; // 已完成消息，等同工具成功态
 	const title = theme.fg("toolTitle", kind.title(component));
@@ -98,6 +102,11 @@ export function installMessageDisplayRendering(): () => void {
 				} catch {
 					// 渲染失败回退原生
 				}
+			}
+			// 回退原生前恢复 paddingY，避免原生渲染丢失上下内边距
+			if (this._ccstyleOriginalPaddingY !== undefined) {
+				this.paddingY = this._ccstyleOriginalPaddingY;
+				delete this._ccstyleOriginalPaddingY;
 			}
 			original.call(this);
 		};

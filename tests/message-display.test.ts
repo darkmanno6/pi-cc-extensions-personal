@@ -52,6 +52,8 @@ test("message-display: ccstyle on 时三个组件渲染为工具调用风格", (
 	const skillCollapsed = stripAnsi(skill.render(120).join("\n"));
 	assert.match(skillCollapsed, /✓ Skill ponytail/);
 	assert.doesNotMatch(skillCollapsed, /\[skill\]/);
+	// 与单 tool 一致：Box paddingY 置 0，折叠行无上下空行
+	assert.equal(skill.render(120).length, 1, "折叠行不应有上下空行");
 	// expanded：标题行 + markdown 正文
 	skill.setExpanded(true);
 	const skillExpanded = stripAnsi(skill.render(120).join("\n"));
@@ -63,6 +65,7 @@ test("message-display: ccstyle on 时三个组件渲染为工具调用风格", (
 	const compactionCollapsed = stripAnsi(compaction.render(120).join("\n"));
 	assert.match(compactionCollapsed, /✓ Compacted from 12,345 tokens/);
 	assert.doesNotMatch(compactionCollapsed, /\[compaction\]/);
+	assert.equal(compaction.render(120).length, 1, "折叠行不应有上下空行");
 	compaction.setExpanded(true);
 	const compactionExpanded = stripAnsi(compaction.render(120).join("\n"));
 	assert.match(compactionExpanded, /summarized history/);
@@ -72,6 +75,7 @@ test("message-display: ccstyle on 时三个组件渲染为工具调用风格", (
 	const branchCollapsed = stripAnsi(branch.render(120).join("\n"));
 	assert.match(branchCollapsed, /✓ Branch summary/);
 	assert.doesNotMatch(branchCollapsed, /\[branch\]/);
+	assert.equal(branch.render(120).length, 1, "折叠行不应有上下空行");
 	branch.setExpanded(true);
 	assert.match(stripAnsi(branch.render(120).join("\n")), /branch work/);
 
@@ -94,6 +98,8 @@ test("message-display: mode off 或 dispose 后回退原生渲染", () => {
 	compaction.invalidate();
 	assert.match(stripAnsi(skill.render(120).join("\n")), /\[skill\]/);
 	assert.match(stripAnsi(compaction.render(120).join("\n")), /\[compaction\]/);
+	// 原生 Box paddingY=1 恢复：重新出现上下空行
+	assert.equal(skill.render(120).length, 3, "原生渲染恢复上下内边距");
 
 	// dispose 后同样回退
 	setConfig(normalizeConfig({ ...DEFAULT_CONFIG, mode: "on" }));

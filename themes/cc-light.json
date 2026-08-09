@@ -81,7 +81,7 @@
 		"thinkingHigh": "accentBright",
 		"thinkingXhigh": "#4a8fa3",
 		"thinkingMax": "cyan",
-		"bashMode": "accent"
+		"bashMode": "green"
 	},
 	"export": {
 		"pageBg": "bg",

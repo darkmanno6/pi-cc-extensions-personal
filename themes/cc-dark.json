@@ -24,7 +24,7 @@
 		"selectedBg": "#252035",
 		"userMessageBg": "#1e1e2e",
 		"toolPendingBg": "#1b1924",
-		"toolSuccessBg": "#18251f",
+		"toolSuccessBg": "#1e1e2e",
 		"toolErrorBg": "#2a1b22",
 		"customMessageBg": "#211c30"
 	},
@@ -80,7 +80,7 @@
 		"thinkingHigh": "accentBright",
 		"thinkingXhigh": "#4db9cd",
 		"thinkingMax": "cyan",
-		"bashMode": "accent"
+		"bashMode": "green"
 	},
 	"export": {
 		"pageBg": "bg",

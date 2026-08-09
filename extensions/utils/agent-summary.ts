@@ -128,8 +128,16 @@ export function summaryLine(data: AgentSummaryData): string {
  * `box` 为 true：markdown 引用块 `> *斜体内容*`（渲染为引用，主题 mdQuote=muted 即灰色，
  * 内容斜体）。entry renderer 场景直接用。
  * `box` 为 false：整体加粗单行。
+ * `colors`：成功/失败计数的 ANSI 前缀，取自主题（`theme.getFgAnsi("success")` /
+ * `theme.getFgAnsi("error")`），缺省不染色。仅数字染色：成功计数的数字染
+ * success 色、failed 计数的数字染 error 色，文本与时长不染色。颜色 span 以
+ * `\x1b[0m` 复位，引用块渲染器会在复位后重贴引用样式，后续文本不受影响。
  */
-export function summaryMarkdown(data: AgentSummaryData, box = false): string {
+export function summaryMarkdown(
+	data: AgentSummaryData,
+	box = false,
+	colors: { success: string; failed: string } = { success: "", failed: "" },
+): string {
 	const parts = summaryParts(data);
 	if (parts.length === 0) return "";
 	// 仅首段动词大写（与纯文本版“句首大写”一致）
@@ -137,7 +145,13 @@ export function summaryMarkdown(data: AgentSummaryData, box = false): string {
 		const verb = part.match(/^[a-z]+/)?.[0] ?? "";
 		return first && verb ? verb[0].toUpperCase() + verb.slice(1) + part.slice(verb.length) : part;
 	};
-	const text = parts.map((part, index) => capitalizeFirst(part, index === 0)).join(", ");
+	// 仅染数字：`Read 2 files` → `Read <色>2</色> files`
+	const paintNumber = (code: string, part: string) =>
+		code ? part.replace(/(\d+)/, `${code}$1\x1b[0m`) : part;
+	const text = parts
+		.map((part, index) => capitalizeFirst(part, index === 0))
+		.map((part) => paintNumber(part.endsWith("failed") ? colors.failed : colors.success, part))
+		.join(", ");
 	const duration = formatDuration(data.durationMs);
 	const line = duration ? `${text} · ${duration}` : text;
 	return box ? `> *${line}*` : `**${line}**`;

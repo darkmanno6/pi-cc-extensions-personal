@@ -18,6 +18,7 @@ import {
 	formatThoughtDuration,
 	styleCompactThinkingText,
 } from "../renderer/compact-mode.ts";
+import { refreshMountedTranscript } from "../renderer/transcript-refresh.ts";
 // 保持导出兼容：渲染函数已并入 renderer/compact-mode.ts，这里 re-export。
 export { animateCompactThinkingText, formatThoughtDuration, styleCompactThinkingText };
 
@@ -286,7 +287,6 @@ function compactThinking(pi: ExtensionAPI) {
 	};
 
 	const completedDurations = new Map<number, Map<number, number>>();
-	const renderedComponents = new Set<AssistantMessageComponentLike>();
 	const streamingComponents = new Set<AssistantMessageComponentLike>();
 	let activeThinking: ActiveThinking | undefined;
 	let activeTheme: Theme | undefined;
@@ -297,14 +297,6 @@ function compactThinking(pi: ExtensionAPI) {
 	let animationFrame = 0;
 	let compactSummaryActive = false;
 	let patchInstalled = true;
-
-	function refreshRenderedComponents() {
-		for (const component of renderedComponents) {
-			const self = component as unknown as AssistantInternals;
-			if (self.lastMessage) self.updateContent(self.lastMessage);
-		}
-		activeTui?.requestRender(true);
-	}
 
 	function thinkingStyle(text: string) {
 		return styleCompactThinkingText(text, activeTheme);
@@ -346,7 +338,6 @@ function compactThinking(pi: ExtensionAPI) {
 		const component = this as AssistantMessageComponentLike;
 		const self = this as unknown as AssistantInternals;
 		self.lastMessage = message;
-		renderedComponents.add(component);
 		latestComponent = component;
 		latestComponentTimestamp = message.timestamp;
 
@@ -455,8 +446,10 @@ function compactThinking(pi: ExtensionAPI) {
 					(durationText ? thinkingStyle(` · ${durationText}`) : "");
 			} else {
 				// Completed compact blocks use one provider-independent status line.
+				// 无时长记录（中断流/旧会话/entry 缺失或索引错位）时不回退到加载文案
+				// "Thinking..."：改用摘要标题或中性 "Thought"。
 				heading = thinkingStyle(
-					durationText ? `Thought for ${durationText}` : self.hiddenThinkingLabel || "Thinking...",
+					durationText ? `Thought for ${durationText}` : (latestSummary?.title ?? "Thought"),
 				);
 			}
 			self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
@@ -696,20 +689,24 @@ function compactThinking(pi: ExtensionAPI) {
 
 		// An empty widget gives the animation loop access to requestRender without
 		// enabling terminal mouse reporting or intercepting native scrollback input.
+		// setWidget 的 factory 同步执行，此刻补丁已安装。
 		ctx.ui.setWidget(WIDGET_ID, (tui) => {
 			activeTui = tui;
 			return { render: () => [], invalidate() {} };
 		});
 
-		// On resume, Pi may construct the chat before session_start is emitted.
-		// Rebuild those already-rendered components now that persisted durations
-		// and the active theme are available.
-		refreshRenderedComponents();
+		// pi 在 reload/resume 时先于 session_start 用原始原型重建聊天组件
+		// （rebuildChatFromMessages / renderCurrentSessionState）。由共享的
+		// refreshMountedTranscript 扫描挂载树重绘这些组件，恢复 compact 渲染、
+		// 持久化时长与工具调用显示。
+		refreshMountedTranscript(activeTui);
+		activeTui?.requestRender(true);
 	});
 
 	pi.on("session_tree", (_event, ctx) => {
 		restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
-		refreshRenderedComponents();
+		refreshMountedTranscript(activeTui);
+		activeTui?.requestRender(true);
 	});
 
 	pi.on("session_shutdown", (_event, ctx) => {
@@ -726,7 +723,6 @@ function compactThinking(pi: ExtensionAPI) {
 		latestComponent = undefined;
 		latestComponentTimestamp = undefined;
 		completedDurations.clear();
-		renderedComponents.clear();
 		streamingComponents.clear();
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);
 

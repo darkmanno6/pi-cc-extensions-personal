@@ -123,3 +123,8 @@ test("代码块内 URL 不动", () => {
 	assert.ok(!out.includes("[https://code.com/x]"));
 	assert.ok(out.includes("[https://outside.com](https://outside.com)"));
 });
+
+test("圈数字转半角括号（Nerd Font 字形缺陷规避）", () => {
+	assert.strictEqual(run("方案②引入，共⑩项"), "方案(2)引入，共(10)项");
+	assert.ok(run("① ② ⑳").includes("(1) (2) (20)"));
+});

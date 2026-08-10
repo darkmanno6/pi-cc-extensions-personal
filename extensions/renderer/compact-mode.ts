@@ -22,6 +22,7 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
+import { refreshTranscriptComponent } from "./transcript-refresh.ts";
 import { getMessageDisplayTheme } from "./message-display.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import {
@@ -927,15 +928,15 @@ function refreshTrackedComponents(): void {
 	for (const component of [...trackedAssistantComponents]) {
 		try {
 			if (config.mode !== "compact") detachAssistantExpansion(component);
-			if (component.lastMessage) component.updateContent?.(component.lastMessage);
-			else component.invalidate?.();
+			refreshTranscriptComponent(component);
 		} catch {
 			trackedAssistantComponents.delete(component);
 		}
 	}
 	for (const component of [...trackedToolComponents]) {
 		try {
-			component.updateDisplay?.();
+			// 共享实现负责 updateDisplay；invalidate 属于 compact-mode 的跟踪语义。
+			refreshTranscriptComponent(component);
 			component.invalidate?.();
 		} catch {
 			trackedToolComponents.delete(component);

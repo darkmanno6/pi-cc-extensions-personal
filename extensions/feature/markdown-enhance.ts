@@ -130,6 +130,18 @@ function linkifyUrls(markdown: string): string {
 }
 
 // ============================================================================
+// 圈数字 → 半角括号
+// ============================================================================
+
+// Nerd Font 补丁字形（U+2460-U+2473）ink 超界，DirectWrite 下渲染会压住相邻字符；
+// 转成 ASCII "(n)" 后任何字体下宽度一致。U+2460-U+2473 连续，差值即序号。
+const CIRCLED_RE = /[①-⑳]/g;
+
+function deCircled(markdown: string): string {
+	return markdown.replace(CIRCLED_RE, (ch) => `(${ch.codePointAt(0)! - 0x2460 + 1})`);
+}
+
+// ============================================================================
 // 注册
 // ============================================================================
 
@@ -140,6 +152,8 @@ export default function (pi: ExtensionAPI): void {
 		const { messageType, isStreaming = false } = context ?? {};
 		// 与官方推荐一致：thinking 块与流式中间态不转换
 		if (messageType === "assistant-thinking" || isStreaming) return markdown;
+		// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
+		markdown = deCircled(markdown);
 		// 1. Mermaid 方言渲染
 		markdown = renderDiagrams(markdown, context);
 		// 2. GitHub 风格提示框

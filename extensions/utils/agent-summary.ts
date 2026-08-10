@@ -107,8 +107,8 @@ function summaryParts(data: AgentSummaryData): string[] {
 	const parts: string[] = [];
 	if (data.reads) parts.push(`read ${data.reads} file${plural(data.reads)}`);
 	if (data.edits) parts.push(`edited ${data.edits} file${plural(data.edits)}`);
-	if (data.commands) parts.push(`ran ${data.commands} command${plural(data.commands)}`);
 	if (data.others) parts.push(`${data.others} other tool${plural(data.others)}`);
+	if (data.commands) parts.push(`ran ${data.commands} command${plural(data.commands)}`);
 	if (data.failed) parts.push(`${data.failed} failed`);
 	return parts;
 }

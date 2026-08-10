@@ -63,7 +63,7 @@ test("summaryLine 纯文本（旧格式，首字母大写 + 耗时）", () => {
 	};
 	assert.equal(
 		summaryLine(data),
-		"Read 3 files, edited 2 files, ran 4 commands, 1 other tool, 1 failed · 1m 1s",
+		"Read 3 files, edited 2 files, 1 other tool, ran 4 commands, 1 failed · 1m 1s",
 	);
 	// 单数与无耗时
 	assert.equal(

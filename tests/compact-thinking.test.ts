@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import {
@@ -360,6 +360,154 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 		nested.emit("session_shutdown", {}, headlessCtx);
 	} finally {
 		emit("session_shutdown", {}, uiCtx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("reload/resume rebuild: mounted-tree scan re-renders rebuilt components", async () => {
+	initTheme("dark");
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-rescan-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { Container } = await import("@earendil-works/pi-tui");
+	const parent = new Container() as any;
+	const tui = {
+		mode: "regular",
+		getMountedRoots: () => [parent],
+		requestRender() {},
+	};
+	const entries: any[] = [];
+	const sessionManager = { getBranch: () => entries, getEntries: () => entries };
+	const ctx = {
+		mode: "tui",
+		sessionManager,
+		ui: {
+			theme: { fg: (_c: string, t: string) => t, italic: (t: string) => t },
+			setWidget(_key: string, factory: any) {
+				if (typeof factory === "function") factory(tui);
+			},
+			requestRender() {},
+		},
+	} as any;
+	const first = runtime();
+	first.pi.appendEntry = (_type: string, data: unknown) =>
+		entries.push({ type: "custom", customType: "compact-thinking-duration", data });
+	try {
+		installCompactThinking(first.pi, config);
+		first.emit("session_start", {}, ctx);
+
+		// live run: thinking then toolcall records the duration entry
+		const ts = Date.now();
+		const msg = thinkingMessage(ts, false);
+		first.emit(
+			"message_update",
+			{ message: msg, assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } },
+			ctx,
+		);
+		await new Promise((resolve) => setTimeout(resolve, 30));
+		first.emit(
+			"message_update",
+			{ message: msg, assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 } },
+			ctx,
+		);
+
+		first.emit("session_shutdown", { reason: "reload" }, ctx);
+
+		// pi rebuildChatFromMessages: fresh components with the restored ORIGINAL prototype
+		parent.clear();
+		const rebuilt = new AssistantMessageComponent(msg, true) as any;
+		parent.addChild(rebuilt);
+		assert.ok(
+			renderText(rebuilt).some((line) => line.startsWith("Thinking...")),
+			"native rebuild shows the bare Thinking... label",
+		);
+
+		// new extension instance: session_start scans the mounted tree and re-renders
+		const second = runtime();
+		installCompactThinking(second.pi, config);
+		second.emit("session_start", { reason: "reload" }, ctx);
+		const lines = renderText(rebuilt);
+		assert.ok(
+			lines.some((line) => line.startsWith("Thought for")),
+			`rebuilt component recovers its duration, got: ${JSON.stringify(lines)}`,
+		);
+		assert.ok(
+			!lines.some((line) => line.includes("Thinking...")),
+			`no bare Thinking... fallback after reload, got: ${JSON.stringify(lines)}`,
+		);
+
+		second.emit("session_shutdown", {}, ctx);
+	} finally {
+		first.emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("completed run without duration never falls back to the loading label", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-fallback-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: {
+			theme: { fg: (_c: string, t: string) => t, italic: (t: string) => t },
+			setWidget(_key: string, factory: any) {
+				if (typeof factory === "function") factory({ requestRender() {} });
+			},
+			requestRender() {},
+		},
+	} as any;
+	try {
+		installCompactThinking(pi, { ...config, useSummaryTitlesAsThinkingTitle: true });
+		emit("session_start", {}, ctx);
+		// completed run with no duration entry: summary title preferred, then "Thought"
+		const withSummary = {
+			...thinkingMessage(Date.now(), false),
+			api: "openai-responses",
+			content: [
+				{
+					type: "thinking",
+					thinking: "**Plan**\n\nFirst do A",
+					thinkingSignature: {
+						type: "reasoning",
+						summary: [{ type: "summary_text", text: "**Plan**\n\nFirst do A" }],
+					},
+				},
+				{ type: "toolCall", name: "bash", args: {}, id: "c1" },
+			],
+		} as any;
+		const component = new AssistantMessageComponent(withSummary, true) as any;
+		component.updateContent(withSummary);
+		const withSummaryLines = renderText(component);
+		assert.ok(
+			withSummaryLines.some((line) => line.includes("Plan")),
+			`summary title shown for completed run, got: ${JSON.stringify(withSummaryLines)}`,
+		);
+		assert.ok(
+			!withSummaryLines.some((line) => line.includes("Thinking...")),
+			"no loading label for a completed run",
+		);
+
+		const plain = thinkingMessage(Date.now(), false);
+		const plainComponent = new AssistantMessageComponent(plain, true) as any;
+		plainComponent.updateContent(plain);
+		const plainLines = renderText(plainComponent);
+		assert.ok(
+			plainLines.some((line) => line.includes("Thought")),
+			`neutral fallback for run without title or duration, got: ${JSON.stringify(plainLines)}`,
+		);
+		assert.ok(
+			!plainLines.some((line) => line.includes("Thinking...")),
+			"no loading label fallback",
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });

@@ -51,7 +51,10 @@ test("scroll button: schedule → immediate teardown → reinstall stays safe", 
 	await new Promise((resolve) => setImmediate(resolve));
 	assert.ok(count() >= 1, "reinstall 后滚动导航应触发按钮渲染");
 	const lines = renderScrollButton(80, fakeTheme());
-	assert.ok(lines.some((line) => line.includes("Back to bottom")), "不在底部时按钮应可见");
+	assert.ok(
+		lines.some((line) => line.includes("Back to bottom")),
+		"不在底部时按钮应可见",
+	);
 
 	// 3. 清理
 	resetScrollButtonState();

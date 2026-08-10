@@ -38,7 +38,7 @@ export type CcstylePanelHooks = {
 
 function modeSettingDescription(mode: CompactStyleMode): string {
 	if (mode === "compact") {
-		return "One summary line per assistant round; expanded edit/write rows show rich diffs.";
+		return "(Experimental) One summary line per assistant round; expanded edit/write rows show rich diffs.";
 	}
 	if (mode === "off") {
 		return "Pi native tool rendering. Diff options below still apply independently.";
@@ -209,8 +209,8 @@ export async function showCcstylePanel(
 			id: "mode",
 			label: "Mode",
 			description: modeSettingDescription(config.mode),
-			currentValue: config.mode,
-			values: ["on", "compact", "off"],
+			currentValue: config.mode === "compact" ? "compact (Experimental)" : config.mode,
+			values: ["on", "compact (Experimental)", "off"],
 		};
 		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
@@ -336,10 +336,14 @@ export async function showCcstylePanel(
 
 		const onSettingChange = (id: string, value: string) => {
 			switch (id) {
-				case "mode":
-					modeSetting.description = modeSettingDescription(value as CompactStyleMode);
-					hooks.applyStyleMode(value as CompactStyleMode, ctx, toolGrouping);
+				case "mode": {
+					// 选项值带 Experimental 标记，选择后还原为真实 mode 值。
+					const mode: CompactStyleMode =
+						value === "compact (Experimental)" ? "compact" : (value as CompactStyleMode);
+					modeSetting.description = modeSettingDescription(mode);
+					hooks.applyStyleMode(mode, ctx, toolGrouping);
 					return;
+				}
 				case "excludeRenderers":
 					excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
 					excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);

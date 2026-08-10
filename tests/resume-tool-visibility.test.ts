@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { AssistantMessageComponent, ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	ToolExecutionComponent,
+	initTheme,
+} from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyle, { getCompactThinkingConfig } from "../extensions/renderer/index.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";

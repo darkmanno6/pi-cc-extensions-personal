@@ -60,6 +60,120 @@ test("agent and session autocomplete compose with an FFF provider that claims @ 
 	);
 });
 
+test("agent autocomplete shows model and thinking in the description only", async () => {
+	const provider = createAgentAutocompleteProvider(fffProvider, () => [
+		{
+			name: "coder",
+			displayName: "coder",
+			description: "This text must not appear",
+			model: "deepseek/deepseek-v4-flash",
+			thinking: "max",
+			filePath: "/agents/coder.md",
+		},
+	]);
+	const result = await provider.getSuggestions(["@"], 0, 1, {
+		signal: new AbortController().signal,
+	});
+
+	assert.equal(result?.items[0]?.label, "[SubAgent] coder");
+	assert.equal(result?.items[0]?.description, "deepseek/deepseek-v4-flash · max");
+});
+
+test("session autocomplete fuzzy-matches explicit session names only", async () => {
+	const noFiles: AutocompleteProvider = {
+		...fffProvider,
+		async getSuggestions() {
+			return null;
+		},
+	};
+	const provider = createSessionAutocompleteProvider(
+		noFiles,
+		async () =>
+			[
+				{
+					kind: "session",
+					referenceIds: ["named-session"],
+					info: {
+						id: "named-session",
+						name: "Release plan",
+						cwd: "/repo",
+						firstMessage: "alpha",
+						messageCount: 1,
+						modified: new Date("2025-01-02T03:04:05.000Z"),
+					},
+				},
+				{
+					kind: "session",
+					referenceIds: ["unnamed-session"],
+					info: {
+						id: "unnamed-session",
+						cwd: "/repo",
+						firstMessage: "Release plan",
+						messageCount: 1,
+						modified: new Date("2025-01-03T03:04:05.000Z"),
+					},
+				},
+			] as any,
+		"/repo",
+	);
+	const result = await provider.getSuggestions(["@release"], 0, 7, {
+		signal: new AbortController().signal,
+	});
+
+	assert.deepEqual(
+		result?.items.map((item) => item.label),
+		["[Session] Release plan"],
+	);
+});
+
+test("session candidate value uses the bracketed session name", async () => {
+	const provider = createSessionAutocompleteProvider(
+		fffProvider,
+		async () => references as any,
+		"/repo",
+	);
+	const result = await provider.getSuggestions(["@"], 0, 1, {
+		signal: new AbortController().signal,
+	});
+
+	assert.deepEqual(
+		result?.items.filter((item) => item.value.startsWith("@session:")).map((item) => item.value),
+		["@session:[Previous work]"],
+	);
+});
+
+test("duplicate session names use stable ids", async () => {
+	const duplicates = [
+		{
+			...references[0],
+			referenceIds: ["session-a"],
+			info: { ...references[0]!.info, id: "session-a" },
+		},
+		{
+			...references[0],
+			referenceIds: ["session-b"],
+			info: {
+				...references[0]!.info,
+				id: "session-b",
+				modified: new Date("2025-01-03T03:04:05.000Z"),
+			},
+		},
+	];
+	const provider = createSessionAutocompleteProvider(
+		fffProvider,
+		async () => duplicates as any,
+		"/repo",
+	);
+	const result = await provider.getSuggestions(["@"], 0, 1, {
+		signal: new AbortController().signal,
+	});
+
+	assert.deepEqual(
+		result?.items.filter((item) => item.value.startsWith("@session:")).map((item) => item.value),
+		["@session:[session-b]", "@session:[session-a]"],
+	);
+});
+
 test("session autocomplete caps sessions at three and interleaves files two-to-one", async () => {
 	const manyReferences = Array.from({ length: 5 }, (_, index) => ({
 		kind: "session",

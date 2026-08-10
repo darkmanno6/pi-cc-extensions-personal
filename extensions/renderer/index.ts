@@ -3,6 +3,11 @@ import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { installToolGrouping, type ToolGroupingHooks } from "./tool-grouping.ts";
+import {
+	installCompactMode,
+	refreshCompactModeComponents,
+	type CompactModeHooks,
+} from "./compact-mode.ts";
 import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { showCcstylePanel } from "../config/panel.ts";
 import {
@@ -33,6 +38,7 @@ import {
 	countLines,
 	hasExpandableDetail,
 	headTruncateToWidth,
+	insetComponent,
 	isToolExpanded,
 	middleTruncateToWidth,
 	oneLine,
@@ -49,6 +55,7 @@ import {
 	toolViewportWidth,
 } from "./tool-result.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
+import type { CompactThinkingQuery } from "./compact-mode.ts";
 import {
 	installWriteOverride,
 	renderRichToolResult,
@@ -74,8 +81,17 @@ const ANSI_FG_RESET = "\x1b[39m";
 function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
 	toolGrouping?.refresh(toolMouseTui);
 	refreshMessageDisplays(toolMouseTui);
+	refreshCompactModeComponents(toolMouseTui);
+	compactModeHooks?.refresh();
 	toolMouseTui?.requestRender?.(true);
 	ctx?.ui?.requestRender?.(true);
+}
+
+let compactModeHooks: CompactModeHooks | undefined;
+
+function syncCompactMode(ctx: any): void {
+	refreshCompactModeComponents(toolMouseTui);
+	compactModeHooks?.sync(ctx);
 }
 
 function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGroupingHooks): void {
@@ -92,6 +108,9 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGro
 		if (toolMouseTui && !isLazyProxyTui(toolMouseTui)) {
 			toolMouseTui.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
+	} else if (mode === "compact") {
+		// 切入 compact：先收集当前 transcript，再同步全局展开状态和补丁所有权。
+		syncCompactMode(ctx);
 	}
 	refreshCurrentTranscript(ctx, toolGrouping);
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
@@ -110,17 +129,6 @@ function singleLine(text: string) {
 	return {
 		render: (width: number) => [truncateToWidth(text, width, "…")],
 		invalidate() {},
-	};
-}
-
-function insetComponent(component: any): any {
-	return {
-		render: (width: number) =>
-			component.render(Math.max(1, width - 1)).map((line: string) => {
-				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
-				return ` ${nestedMarker}`;
-			}),
-		invalidate: () => component.invalidate?.(),
 	};
 }
 
@@ -817,6 +825,7 @@ export default function (
 		| {
 				globalToolRendering: GlobalToolRenderPatch;
 				toolGrouping: ToolGroupingHooks;
+				compactMode: CompactModeHooks;
 				disposeMessageDisplay: () => void;
 				disposeToolExpandedBackground: () => void;
 		  }
@@ -828,12 +837,18 @@ export default function (
 		if (installation) return installation;
 		const globalToolRendering = installGlobalToolRendering(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
+		const compactMode = installCompactMode({
+			query: compactThinking as CompactThinkingQuery | undefined,
+			writeMetadata: writeExecutionMetadata,
+		});
+		compactModeHooks = compactMode;
 		const disposeMessageDisplay = installMessageDisplayRendering();
 		const disposeToolExpandedBackground = installToolExpandedBackground();
 		deactivateLegacyCompactionRendering();
 		installation = {
 			globalToolRendering,
 			toolGrouping,
+			compactMode,
 			disposeMessageDisplay,
 			disposeToolExpandedBackground,
 		};
@@ -845,6 +860,11 @@ export default function (
 		getArgumentCompletions: (prefix) => {
 			const topLevel = [
 				{ value: "on", label: "on", description: "Enable Claude Code style" },
+				{
+					value: "compact",
+					label: "compact",
+					description: "One summary line per assistant message",
+				},
 				{ value: "off", label: "off", description: "Use Pi's native renderer" },
 				{ value: "status", label: "status", description: "Show full configuration" },
 				{ value: "panel", label: "panel", description: "Open interactive settings panel" },
@@ -853,7 +873,7 @@ export default function (
 		},
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
-			if (!arg || arg === "panel" || arg === "on" || arg === "off") {
+			if (!arg || arg === "panel" || arg === "on" || arg === "compact" || arg === "off") {
 				if (ctx?.mode !== "tui" || !ctx?.hasUI) {
 					ctx.ui?.notify?.("/ccstyle requires TUI mode", "warning");
 					return;
@@ -876,8 +896,26 @@ export default function (
 				ctx.ui.notify(`Claude Code style: ${formatConfigStatus(config)}`, "info");
 				return;
 			}
-			ctx.ui.notify("Usage: /ccstyle [on|off|status|panel]", "warning");
+			ctx.ui.notify("Usage: /ccstyle [on|compact|off|status|panel]", "warning");
 		},
+	});
+
+	pi.on("message_update", async (event) => {
+		// compact-thinking 在 session_start 时于 compact 补丁之上再装一层；
+		// 扩展事件先于 interactive-mode 的 updateContent 派发，此处先重新认领。
+		if (config.mode === "compact" && event.message?.role === "assistant") {
+			compactModeHooks?.assertOwnership();
+		}
+	});
+
+	pi.on("tool_execution_end", async (event) => {
+		if (config.mode !== "compact") return;
+		// Agent 工具在 tool_execution_end 收尾思考：延迟到所有监听器之后刷新，
+		// 让 compact-thinking 先写入最终时长，再重绘摘要行。
+		const toolCallId: string | undefined = event?.toolCallId;
+		setTimeout(() => {
+			compactModeHooks?.refreshToolCallMessage(toolCallId);
+		}, 0);
 	});
 
 	pi.on("session_start", async (event, ctx) => {
@@ -893,6 +931,11 @@ export default function (
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
 		ctx.ui.setStatus("ccstyle", undefined);
+		// 先收集 resume transcript，再同步 compact 补丁与全局展开状态。
+		syncCompactMode(ctx);
+		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
+		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
+		setTimeout(() => syncCompactMode(ctx), 0);
 		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
 	});
 
@@ -904,7 +947,18 @@ export default function (
 		if (!hooks) return;
 		hooks.toolGrouping.setTheme(ctx.ui.theme);
 		setMessageDisplayTheme(ctx.ui.theme);
-		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
+		syncCompactMode(ctx);
+		scheduleSessionRender(() => {
+			syncCompactMode(ctx);
+			hooks.toolGrouping.refresh(toolMouseTui);
+		});
+	});
+
+	pi.on("session_tree", async (event, ctx) => {
+		// 会话树重建后在当前帧和下一帧各同步一次，替换旧组件引用。
+		if (ctx?.mode !== "tui" || !ctx?.hasUI) return;
+		syncCompactMode(ctx);
+		scheduleSessionRender(() => syncCompactMode(ctx));
 	});
 
 	pi.on("tool_execution_start", async (event, ctx) => {
@@ -925,8 +979,10 @@ export default function (
 			return;
 		deactivateGlobalToolRendering(current.globalToolRendering);
 		current.toolGrouping.shutdown();
-		current.disposeMessageDisplay();
 		current.disposeToolExpandedBackground();
+		current.compactMode.shutdown();
+		compactModeHooks = undefined;
+		current.disposeMessageDisplay();
 		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
 		installation = undefined;

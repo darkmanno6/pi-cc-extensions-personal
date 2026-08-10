@@ -21,7 +21,6 @@ import {
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
-	nearestPreset,
 	pickPositiveInt,
 	pickPositiveNumber,
 	saveConfig,
@@ -125,12 +124,6 @@ function buildNumberInputSubmenu(
 } {
 	const input = new Input();
 	let error = "";
-	const cyclePreset = () => {
-		const presets = setting.values;
-		const next = presets[(presets.indexOf(input.getValue()) + 1) % presets.length] ?? presets[0];
-		if (next !== undefined) input.setValue(next);
-		error = "";
-	};
 	input.setValue(setting.currentValue);
 	input.onSubmit = (value: string) => {
 		const raw = value.trim();
@@ -151,25 +144,13 @@ function buildNumberInputSubmenu(
 			const lines = [
 				theme.fg("dim", `  ${setting.label} — custom value:`),
 				...input.render(safe),
-				truncateToWidth(
-					theme.fg(
-						"dim",
-						`  Presets: ${setting.values.join(" · ")} — Space to cycle · Enter to apply · Esc to go back`,
-					),
-					safe,
-				),
+				truncateToWidth(theme.fg("dim", "  Enter to apply · Esc to go back"), safe),
 			];
 			if (error !== "") lines.push(theme.fg("dim", `  ${error}`));
 			return lines;
 		},
 		invalidate: () => {},
-		handleInput: (data: string) => {
-			if (data === " ") {
-				cyclePreset();
-				return;
-			}
-			input.handleInput(data);
-		},
+		handleInput: (data: string) => input.handleInput(data),
 	};
 }
 
@@ -275,7 +256,7 @@ export async function showCcstylePanel(
 			label: "Split min width",
 			description:
 				"Minimum terminal width before auto/split layout uses side-by-side columns. Enter to type a custom value.",
-			currentValue: nearestPreset(config.diffSplitMinWidth, DIFF_SPLIT_MIN_WIDTH_VALUES),
+			currentValue: String(config.diffSplitMinWidth),
 			values: [...DIFF_SPLIT_MIN_WIDTH_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, diffSplitSetting, closeSubmenu),
@@ -285,7 +266,7 @@ export async function showCcstylePanel(
 			label: "Collapsed lines",
 			description:
 				"How many diff body lines to show before the expand hint (Ctrl+O / click). Enter to type a custom value.",
-			currentValue: nearestPreset(config.diffCollapsedLines, DIFF_COLLAPSED_LINES_VALUES),
+			currentValue: String(config.diffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, diffCollapsedSetting, closeSubmenu),
@@ -304,10 +285,7 @@ export async function showCcstylePanel(
 			label: "Expanded max lines",
 			description:
 				"Max Output/diff body lines when expanded. Default 40 keeps the TUI compact; raise for large dumps.",
-			currentValue: nearestPreset(
-				config.expandedPreviewMaxLines,
-				EXPANDED_PREVIEW_MAX_LINES_VALUES,
-			),
+			currentValue: String(config.expandedPreviewMaxLines),
 			values: [...EXPANDED_PREVIEW_MAX_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, expandedMaxSetting, closeSubmenu),
@@ -323,7 +301,7 @@ export async function showCcstylePanel(
 			id: "previewLines",
 			label: "Preview lines",
 			description: "Thinking preview lines; 0 hides the preview body.",
-			currentValue: nearestPreset(config.previewLines, THINKING_PREVIEW_LINES_VALUES),
+			currentValue: String(config.previewLines),
 			values: [...THINKING_PREVIEW_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingPreviewSetting, closeSubmenu),
@@ -332,7 +310,7 @@ export async function showCcstylePanel(
 			id: "animationIntervalMs",
 			label: "Animation interval ms",
 			description: "Thinking title animation interval for the next thinking run.",
-			currentValue: nearestPreset(config.animationIntervalMs, THINKING_ANIMATION_INTERVAL_VALUES),
+			currentValue: String(config.animationIntervalMs),
 			values: [...THINKING_ANIMATION_INTERVAL_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, thinkingAnimationSetting, closeSubmenu),
@@ -350,7 +328,7 @@ export async function showCcstylePanel(
 			id: "scrollStepLines",
 			label: "Scroll step",
 			description: "Mouse wheel scroll lines in fullscreen mode.",
-			currentValue: nearestPreset(config.scrollStepLines, SCROLL_STEP_LINES_VALUES),
+			currentValue: String(config.scrollStepLines),
 			values: [...SCROLL_STEP_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, scrollStepSetting, closeSubmenu),
@@ -493,6 +471,27 @@ export async function showCcstylePanel(
 			activeSection = (activeSection + delta + sections.length) % sections.length;
 		};
 
+		/** 数值项：当前选中项有 submenu + values 时，Space 仅循环预设，不打开子面板。 */
+		const cyclePresetInList = (list: InstanceType<typeof SettingsList>): boolean => {
+			const internal = list as unknown as {
+				submenuComponent: unknown;
+				items: {
+					id: string;
+					currentValue: string;
+					submenu?: unknown;
+					values?: readonly string[];
+				}[];
+				selectedIndex: number;
+			};
+			if (internal.submenuComponent) return false;
+			const item = internal.items[internal.selectedIndex];
+			if (!item?.submenu || !item.values?.length) return false;
+			const i = item.values.indexOf(item.currentValue);
+			item.currentValue = item.values[i === -1 ? 0 : (i + 1) % item.values.length]!;
+			onSettingChange(item.id, item.currentValue);
+			return true;
+		};
+
 		return {
 			render(width: number): string[] {
 				const safeWidth = Math.max(0, Math.floor(width));
@@ -539,7 +538,13 @@ export async function showCcstylePanel(
 					tui.requestRender();
 					return;
 				}
-				activeList().handleInput?.(data);
+				const list = activeList();
+				// Space 循环预设（数值项不进子面板）；Enter 打开子面板输入自定义值。
+				if (data === " " && cyclePresetInList(list)) {
+					tui.requestRender();
+					return;
+				}
+				list.handleInput?.(data);
 				tui.requestRender();
 			},
 		};

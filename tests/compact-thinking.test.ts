@@ -5,13 +5,29 @@ import { join } from "node:path";
 import test from "node:test";
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
 
-import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
+import {
+	animateCompactThinkingText,
+	installCompactThinking,
+} from "../extensions/feature/compact-thinking.ts";
 
 const config = {
 	useSummaryTitlesAsThinkingTitle: false,
 	previewLines: 0,
 	animationIntervalMs: 30,
 };
+
+test("compact summary reuses compact-thinking's sweep animation", () => {
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+		italic: (text: string) => `<i>${text}</i>`,
+		bold: (text: string) => `<b>${text}</b>`,
+	} as any;
+	const first = animateCompactThinkingText("Thinking...", theme, 0);
+	const second = animateCompactThinkingText("Thinking...", theme, 1);
+	assert.notEqual(first, second);
+	assert.equal(first.replace(/<[^>]+>/g, ""), "Thinking...");
+	assert.equal(second.replace(/<[^>]+>/g, ""), "Thinking...");
+});
 
 function runtime() {
 	const handlers = new Map<string, Function[]>();
@@ -228,6 +244,42 @@ test("session tree restores durations from all entries so old messages keep Thou
 	}
 });
 
+test("compact summary keeps the shared animation alive until the next assistant message", async () => {
+	const { emit, pi } = runtime();
+	const uiCtx = themeCtx();
+	const controller = installCompactThinking(pi, config);
+	try {
+		emit("session_start", {}, uiCtx);
+		const message = {
+			...thinkingMessage(Date.now(), false),
+			content: [
+				{ type: "thinking", thinking: "plan" },
+				{ type: "toolCall", name: "bash", args: {} },
+			],
+		};
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "thinking_start", contentIndex: 0 },
+		});
+		controller.setCompactSummaryActive?.(true);
+		emit("message_update", {
+			message,
+			assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 },
+		});
+		assert.equal(controller.isMessageThinkingActive?.(message.timestamp), false);
+		const runningFrame = controller.getThinkingAnimationFrame?.() ?? 0;
+		await new Promise((resolve) => setTimeout(resolve, 70));
+		assert.ok((controller.getThinkingAnimationFrame?.() ?? 0) > runningFrame);
+
+		controller.setCompactSummaryActive?.(false);
+		const stoppedFrame = controller.getThinkingAnimationFrame?.() ?? 0;
+		await new Promise((resolve) => setTimeout(resolve, 70));
+		assert.equal(controller.getThinkingAnimationFrame?.(), stoppedFrame);
+	} finally {
+		emit("session_shutdown", {}, uiCtx);
+	}
+});
+
 test("Agent tool execution keeps the thinking animation until the next boundary", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-agent-"));
 	const previousDir = process.env.PI_CODING_AGENT_DIR;
@@ -235,7 +287,7 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 	const { emit, pi } = runtime();
 	const uiCtx = themeCtx();
 	try {
-		installCompactThinking(pi, config);
+		const controller = installCompactThinking(pi, config);
 		emit("session_start", {}, uiCtx);
 
 		const ts = Date.now();
@@ -249,6 +301,15 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 			assistantMessageEvent: { type: "thinking_delta", contentIndex: 0 },
 		});
 		await new Promise((resolve) => setTimeout(resolve, 60));
+		assert.equal(controller.isMessageThinkingActive?.(ts), true);
+		assert.ok(
+			(controller.getThinkingAnimationFrame?.() ?? 0) > 0,
+			"animation frame follows compact-thinking's configured timer",
+		);
+		assert.ok(
+			(controller.getMessageThinkingDurationMs?.(ts) ?? 0) > 0,
+			"active thinking exposes compact-thinking's live elapsed duration",
+		);
 		// toolcall_start carries the Agent toolCall: animation must survive
 		emit("message_update", {
 			message: msg,
@@ -281,6 +342,11 @@ test("Agent tool execution keeps the thinking animation until the next boundary"
 			"tool_execution_end",
 			{ toolName: "Agent", toolCallId: "c1", result: {}, isError: false },
 			uiCtx,
+		);
+		assert.equal(controller.isMessageThinkingActive?.(ts), false);
+		assert.ok(
+			(controller.getMessageThinkingDurationMs?.(ts) ?? 0) > 0,
+			"completed thinking exposes its final duration",
 		);
 		const after = new AssistantMessageComponent(msg, true);
 		after.updateContent(msg);

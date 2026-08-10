@@ -9,7 +9,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export type CompactStyleMode = "on" | "off";
+export type CompactStyleMode = "on" | "compact" | "off";
 
 export type Config = {
 	mode: CompactStyleMode;
@@ -105,9 +105,9 @@ export function nearestPreset(value: number, presets: readonly string[]): string
 export function normalizeConfig(input: unknown): Config {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
 	const mode = source.mode;
-	// mode=compact 已日落：旧配置回退到 on（Claude Code 风格）。
+	// 旧 `enabled: boolean` 配置迁移；compact 已恢复为受支持模式，不再回退 on。
 	const migratedMode: CompactStyleMode =
-		mode === "on" || mode === "off"
+		mode === "on" || mode === "compact" || mode === "off"
 			? mode
 			: typeof source.enabled === "boolean"
 				? source.enabled
@@ -216,7 +216,12 @@ function loadConfig(): Config {
 			? (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>)
 			: {};
 		const normalized = normalizeConfig(source);
-		if (typeof source.enabled === "boolean" && source.mode !== "on" && source.mode !== "off") {
+		if (
+			typeof source.enabled === "boolean" &&
+			source.mode !== "on" &&
+			source.mode !== "compact" &&
+			source.mode !== "off"
+		) {
 			try {
 				writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
 			} catch {

@@ -2,7 +2,7 @@ export const SESSION_REFERENCE_CUSTOM_TYPE = "session-reference";
 export const SESSION_REFERENCE_PREFIX = "@session:";
 
 const SESSION_REFERENCE_PATTERN =
-	/(?:^|\s)@session:([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)(?![A-Za-z0-9._-])/g;
+	/(?:^|\s)@session:(?:\[([^\]]+)\]|([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?))(?![\w.\]-])/g;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/g;
 
 export interface ReferenceSessionInfo {
@@ -31,12 +31,13 @@ export const DEFAULT_REFERENCE_LIMITS: ReferenceLimits = {
 	maxTotalBytes: 48_000,
 };
 
+/** 提取 @session:[name]（组 1）或旧格式 @session:id（组 2），返回 name 或 id。 */
 export function extractSessionReferenceIds(text: string): string[] {
 	const ids: string[] = [];
 	const seen = new Set<string>();
 
 	for (const match of text.matchAll(SESSION_REFERENCE_PATTERN)) {
-		const id = match[1];
+		const id = (match[1] ?? match[2])?.trim();
 		if (id && !seen.has(id)) {
 			seen.add(id);
 			ids.push(id);

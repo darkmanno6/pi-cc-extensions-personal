@@ -1,6 +1,7 @@
 import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { hasActiveTextPreview, showTextPreview } from "../feature/context.ts";
 import { ToolGroupComponent } from "./tool-grouping.ts";
+import { isCompactAssistantComponent, setHoveredCompactAssistant } from "./compact-mode.ts";
 import { config } from "../config/config.ts";
 import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { setToolTuiFullscreen } from "./show-more-hint.ts";
@@ -610,6 +611,10 @@ function componentAtLocalRow(
 	if (isToolExecutionComponent(component)) {
 		return { component, row: localRow };
 	}
+	if (isCompactAssistantComponent(component)) {
+		// compact 摘要行整体作为可展开卡片（折叠摘要 / 展开内容）。
+		return { component, row: localRow };
+	}
 	if (component === scrollButtonWidget) {
 		return { component, row: localRow };
 	}
@@ -640,7 +645,11 @@ function componentAtLocalRow(
 function collectFullscreenToolCards(component: any, out: any[], seen = new Set<any>()): void {
 	if (!component || typeof component !== "object" || seen.has(component)) return;
 	seen.add(component);
-	if (isToolExecutionComponent(component) || component instanceof ToolGroupComponent) {
+	if (
+		isToolExecutionComponent(component) ||
+		component instanceof ToolGroupComponent ||
+		isCompactAssistantComponent(component)
+	) {
 		out.push(component);
 		return;
 	}
@@ -681,7 +690,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	if (typeof line !== "string" || /\x1b]8;[^;]*;/.test(line)) return false;
 	const isTool = isToolExecutionComponent(component);
 	const isGroup = component instanceof ToolGroupComponent;
-	if (!isTool && !isGroup) return false;
+	const isAssistant = isCompactAssistantComponent(component);
+	if (!isTool && !isGroup && !isAssistant) return false;
 	if (!component.expanded) {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
 		const hint = collapsedHintHitbox(line);
@@ -724,6 +734,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
+	setHoveredCompactAssistant(null);
 	card.invalidate?.();
 	tui.requestRender?.();
 	return true;
@@ -760,6 +771,7 @@ function cachedFullscreenComponentAtRow(
 type FullscreenHoverTarget =
 	| { kind: "button" }
 	| { kind: "group"; component: ToolGroupComponent }
+	| { kind: "assistant"; component: any }
 	| {
 			kind: "tool";
 			component: any;
@@ -825,6 +837,9 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 				} else if (overHint) {
 					target = { kind: "tool", component, view, section };
 				}
+			} else if (isCompactAssistantComponent(component)) {
+				// compact 摘要行：折叠时仅提示文字高亮，展开卡整体高亮。
+				if (component.expanded || overHint) target = { kind: "assistant", component };
 			}
 		}
 	}
@@ -844,6 +859,8 @@ function applyFullscreenHover(tui: any, target: FullscreenHoverTarget | null): v
 	}
 	const nextGroup = target?.kind === "group" ? target.component : null;
 	if (setHoveredToolGroup(nextGroup)) changed = true;
+	const nextAssistant = target?.kind === "assistant" ? target.component : null;
+	if (setHoveredCompactAssistant(nextAssistant)) changed = true;
 	const nextView = target?.kind === "tool" ? target.view : null;
 	const nextSection = target?.kind === "tool" ? target.section : null;
 	if (setHoveredToolIo(nextView, nextSection)) changed = true;
@@ -1245,6 +1262,7 @@ export function teardownToolMouseInteraction(
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
+	setHoveredCompactAssistant(null);
 	try {
 		if (isLazyProxyTui(toolMouseTui)) releaseFullscreenToolMouseMotion(toolMouseTui);
 		else toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
@@ -1271,6 +1289,7 @@ export function teardownToolMouseInteraction(
 /** off 模式清理：清空 hover 与回到底部按钮状态（跨模块 rebind 统一经由此函数）。 */
 export function resetToolHoverState(): void {
 	setHoveredToolCallId(null);
+	setHoveredCompactAssistant(null);
 	scrollButtonVisible = false;
 	scrollButtonHovered = false;
 	releaseFullscreenToolMouseMotion(toolMouseTui);

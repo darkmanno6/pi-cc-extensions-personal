@@ -39,14 +39,14 @@ pi install git:github.com/minuque/pi-cc-extensions
 ## 功能
 
 
-| 功能                 | 说明                                                                                                                   | 入口        |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `off` 两种模式                                                    | `/ccstyle`  |
-| Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、`[show more]` 预览、hover 高亮、回到底部按钮（tmux/zellij/screen 下自动补开 motion 上报） | `/ccstyle`  |
-| 配置面板             | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进                                                     | `/ccstyle`  |
-| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                                                         | `/context`  |
-| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                                    | `@session:` |
-| 主题                 | 随包提供内置 CC Dark、CC Light 主题                                                                                    | `/theme`    |
+| 功能                 | 说明                                                                                                     | 入口        |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------- | ------------- |
+| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式                          | `/ccstyle`  |
+| Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、预览、hover 高亮、回到底部按钮（tmux/zellij/screen 下自动补开 motion 上报） | `/ccstyle`  |
+| 配置面板             | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进                                       | `/ccstyle`  |
+| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                                           | `/context`  |
+| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                      | `@session:` |
+| 主题                 | 随包提供内置 CC Dark、CC Light 主题                                                                      | `/theme`    |
 
 ## 配置
 
@@ -54,7 +54,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ```js
 {
-  "mode": "on",                            // on：Claude Code 风格输出；off：Pi 原生渲染
+  "mode": "on",                            // on：Claude Code 风格；compact：单行摘要；off：Pi 原生渲染
   "excludeRenderers": [],                  // 走原生渲染的工具名列表（精确匹配），Agent 始终保留专用渲染器
   "diffViewMode": "auto",                  // diff 布局：auto / split / unified
   "diffIndicatorMode": "bars",             // diff 变更指示：bars / classic / none
@@ -83,9 +83,8 @@ npm run typecheck
 ## 兼容性
 
 - Node.js `>=22.19.0`，Pi `^0.84.0`（通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载）
-- fixed-editor相关功能已平滑迁移至官方管线：TUI mode=fullscreen 模式下 `/ccstyle` 全部鼠标交互功能类照常可用。
-- 需要已移除的 fixed-editor 布局或 `compact` 单行摘要模式？请使用 `0.8.46` 及更早版本
-- 已移除：固定编辑器布局与 `compact` 单行摘要模式（后续会有新版本 compact mode 发布）。旧配置 `mode: "compact"` 自动回退 `on`，`/ccstyle` 面板仅有 `on` / `off`。
+- fixed-editor 相关功能已迁移至官方管线：TUI mode=fullscreen 模式下 `/ccstyle` 鼠标交互仍可用。
+- 需要已移除的 fixed-editor 布局时，请使用 `0.8.46` 及更早版本。
 
 ## 推荐搭配
 

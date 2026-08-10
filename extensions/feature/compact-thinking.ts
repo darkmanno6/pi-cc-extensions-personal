@@ -28,6 +28,18 @@ export type CompactThinkingConfig = {
 
 export type CompactThinkingController = {
 	updateConfig(next: CompactThinkingConfig): void;
+	/**
+	 * 只读查询：某条 assistant message 的可见思考总时长（ms）。
+	 * 供 compact 渲染层生成 `Thought for 8s` 摘要，不建立第二套计时器。
+	 * 无记录且无进行中思考时返回 undefined。
+	 */
+	getMessageThinkingDurationMs?(messageTimestamp: number): number | undefined;
+	/** 当前消息是否仍处于 compact-thinking 的活动思考态。 */
+	isMessageThinkingActive?(messageTimestamp: number): boolean;
+	/** 复用 compact-thinking 配置的动画帧，不建立独立动画计时器。 */
+	getThinkingAnimationFrame?(): number;
+	/** compact 摘要保持 loading 时复用 compact-thinking 的动画循环。 */
+	setCompactSummaryActive?(active: boolean): void;
 };
 
 type DurationEntryData = {
@@ -86,6 +98,16 @@ const config: CompactThinkingConfig = {
 };
 
 const DURATION_ENTRY_TYPE = "compact-thinking-duration";
+const COMPACT_THINKING_PATCH_KEY = Symbol.for("pi.ccstyle.compact-thinking-update");
+const PROTOTYPE_ORIGINAL_KEY = Symbol.for("pi.ccstyle.prototype-original");
+
+/** 当前激活 session 的只读查询委托（compact 渲染层使用）。 */
+type ThinkingDurationQuery = (messageTimestamp: number) => number | undefined;
+type ThinkingActiveQuery = (messageTimestamp: number) => boolean;
+let activeThinkingQuery: ThinkingDurationQuery | undefined;
+let activeThinkingStateQuery: ThinkingActiveQuery | undefined;
+let activeThinkingAnimationFrameQuery: (() => number) | undefined;
+let activeCompactSummarySetter: ((active: boolean) => void) | undefined;
 
 function restoreDurationEntries(
 	entries: Array<{ type: string; customType?: string; data?: unknown }>,
@@ -134,6 +156,58 @@ function formatThoughtDuration(durationMs: number) {
 	const seconds = totalSeconds % 60;
 	if (minutes === 0) return `${seconds}s`;
 	return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+}
+
+export { formatThoughtDuration };
+
+type CompactThinkingTheme = Pick<Theme, "fg" | "italic" | "bold">;
+
+/** 与 compact-thinking 主渲染器共用的静态文字样式。 */
+export function styleCompactThinkingText(
+	text: string,
+	theme: CompactThinkingTheme | undefined,
+	bold = false,
+): string {
+	if (!theme) return text;
+	const colored = typeof theme.fg === "function" ? theme.fg("thinkingText", text) : text;
+	const weighted = bold && typeof theme.bold === "function" ? theme.bold(colored) : colored;
+	return typeof theme.italic === "function" ? theme.italic(weighted) : weighted;
+}
+
+/** 与 compact-thinking 主渲染器共用的活动思考扫光动画。 */
+export function animateCompactThinkingText(
+	text: string,
+	theme: CompactThinkingTheme | undefined,
+	animationFrame: number,
+	boldBase = false,
+): string {
+	if (!theme) return text;
+	const characters = Array.from(text);
+	if (characters.length === 0) return "";
+	const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
+	const start = (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
+	const end = start + highlightWidth;
+	const before = characters.slice(0, Math.max(0, start)).join("");
+	const highlighted = characters
+		.slice(Math.max(0, start), Math.min(characters.length, end))
+		.join("");
+	const after = characters.slice(Math.max(0, end)).join("");
+	const highlightedColored =
+		highlighted && typeof theme.fg === "function" ? theme.fg("text", highlighted) : highlighted;
+	const highlightedWeighted =
+		highlightedColored && typeof theme.bold === "function"
+			? theme.bold(highlightedColored)
+			: highlightedColored;
+	const highlightedText =
+		highlightedWeighted && typeof theme.italic === "function"
+			? theme.italic(highlightedWeighted)
+			: highlightedWeighted;
+
+	return (
+		styleCompactThinkingText(before, theme, boldBase) +
+		highlightedText +
+		styleCompactThinkingText(after, theme, boldBase)
+	);
 }
 
 function getThinkingToggleHint() {
@@ -253,6 +327,21 @@ function compactThinking(pi: ExtensionAPI) {
 	const prototype = AssistantMessageComponent.prototype as PatchedPrototype;
 	const originalUpdateContent = prototype.updateContent;
 
+	activeThinkingStateQuery = (messageTimestamp) =>
+		activeThinking?.messageTimestamp === messageTimestamp;
+	activeThinkingAnimationFrameQuery = () => animationFrame;
+	activeThinkingQuery = (messageTimestamp) => {
+		let total = 0;
+		const durations = completedDurations.get(messageTimestamp);
+		if (durations) {
+			for (const duration of durations.values()) total += duration;
+		}
+		if (activeThinking?.messageTimestamp === messageTimestamp) {
+			total += Math.max(1, Date.now() - activeThinking.startedAt);
+		}
+		return total > 0 ? total : undefined;
+	};
+
 	const completedDurations = new Map<number, Map<number, number>>();
 	const renderedComponents = new Set<AssistantMessageComponentLike>();
 	const streamingComponents = new Set<AssistantMessageComponentLike>();
@@ -263,6 +352,7 @@ function compactThinking(pi: ExtensionAPI) {
 	let latestComponentTimestamp: number | undefined;
 	let animationTimer: ReturnType<typeof setInterval> | undefined;
 	let animationFrame = 0;
+	let compactSummaryActive = false;
 	let patchInstalled = true;
 
 	function refreshRenderedComponents() {
@@ -274,35 +364,20 @@ function compactThinking(pi: ExtensionAPI) {
 	}
 
 	function thinkingStyle(text: string) {
-		return activeTheme ? activeTheme.italic(activeTheme.fg("thinkingText", text)) : text;
+		return styleCompactThinkingText(text, activeTheme);
 	}
 
 	function summaryTitleStyle(text: string) {
-		return activeTheme
-			? activeTheme.italic(activeTheme.bold(activeTheme.fg("thinkingText", text)))
-			: text;
+		return styleCompactThinkingText(text, activeTheme, true);
 	}
 
 	function animatedText(text: string, baseStyle: (value: string) => string, animate: boolean) {
-		if (!animate || !activeTheme) return baseStyle(text);
-
-		const characters = Array.from(text);
-		if (characters.length === 0) return "";
-		const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
-		const start = (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
-		const end = start + highlightWidth;
-		const before = characters.slice(0, Math.max(0, start)).join("");
-		const highlighted = characters
-			.slice(Math.max(0, start), Math.min(characters.length, end))
-			.join("");
-		const after = characters.slice(Math.max(0, end)).join("");
-
-		return (
-			baseStyle(before) +
-			(highlighted
-				? activeTheme.italic(activeTheme.bold(activeTheme.fg("text", highlighted)))
-				: "") +
-			baseStyle(after)
+		if (!animate) return baseStyle(text);
+		return animateCompactThinkingText(
+			text,
+			activeTheme,
+			animationFrame,
+			baseStyle === summaryTitleStyle,
 		);
 	}
 
@@ -506,6 +581,33 @@ function compactThinking(pi: ExtensionAPI) {
 			}
 		}
 	};
+	const installedUpdateContent = prototype.updateContent;
+	(installedUpdateContent as any)[COMPACT_THINKING_PATCH_KEY] = true;
+
+	function ensureAnimationTimer() {
+		if (animationTimer) return;
+		animationTimer = setInterval(() => {
+			animationFrame++;
+			for (const component of streamingComponents) {
+				const self = component as unknown as AssistantInternals;
+				if (self.lastMessage) self.updateContent(self.lastMessage);
+			}
+			activeTui?.requestRender();
+		}, config.animationIntervalMs);
+	}
+
+	function stopAnimationTimerIfIdle() {
+		if (activeThinking || compactSummaryActive || !animationTimer) return;
+		clearInterval(animationTimer);
+		animationTimer = undefined;
+	}
+
+	activeCompactSummarySetter = (active) => {
+		compactSummaryActive = active;
+		if (active) ensureAnimationTimer();
+		else stopAnimationTimerIfIdle();
+		activeTui?.requestRender();
+	};
 
 	function startThinking(message: AssistantMessage, contentIndex: number) {
 		activeThinking = {
@@ -528,14 +630,8 @@ function compactThinking(pi: ExtensionAPI) {
 		}
 
 		if (animationTimer) clearInterval(animationTimer);
-		animationTimer = setInterval(() => {
-			animationFrame++;
-			for (const component of streamingComponents) {
-				const self = component as unknown as AssistantInternals;
-				if (self.lastMessage) self.updateContent(self.lastMessage);
-			}
-			activeTui?.requestRender();
-		}, config.animationIntervalMs);
+		animationTimer = undefined;
+		ensureAnimationTimer();
 	}
 
 	function finishThinking() {
@@ -555,8 +651,7 @@ function compactThinking(pi: ExtensionAPI) {
 		} as DurationEntryData);
 
 		activeThinking = undefined;
-		if (animationTimer) clearInterval(animationTimer);
-		animationTimer = undefined;
+		stopAnimationTimerIfIdle();
 
 		const components = [...streamingComponents];
 		streamingComponents.clear();
@@ -674,6 +769,11 @@ function compactThinking(pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		finishThinking();
+		activeThinkingQuery = undefined;
+		activeThinkingStateQuery = undefined;
+		activeThinkingAnimationFrameQuery = undefined;
+		activeCompactSummarySetter = undefined;
+		compactSummaryActive = false;
 		if (animationTimer) clearInterval(animationTimer);
 		animationTimer = undefined;
 		activeTui = undefined;
@@ -686,7 +786,11 @@ function compactThinking(pi: ExtensionAPI) {
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);
 
 		if (patchInstalled) {
-			prototype.updateContent = originalUpdateContent;
+			if (prototype.updateContent === installedUpdateContent) {
+				const wrappedOriginal = (originalUpdateContent as any)[PROTOTYPE_ORIGINAL_KEY];
+				prototype.updateContent =
+					typeof wrappedOriginal === "function" ? wrappedOriginal : originalUpdateContent;
+			}
 			patchInstalled = false;
 		}
 	});
@@ -794,6 +898,18 @@ export function installCompactThinking(
 		updateConfig(next) {
 			Object.assign(initialConfig, next);
 			Object.assign(config, next);
+		},
+		getMessageThinkingDurationMs(messageTimestamp) {
+			return activeThinkingQuery?.(messageTimestamp);
+		},
+		isMessageThinkingActive(messageTimestamp) {
+			return activeThinkingStateQuery?.(messageTimestamp) ?? false;
+		},
+		getThinkingAnimationFrame() {
+			return activeThinkingAnimationFrameQuery?.() ?? 0;
+		},
+		setCompactSummaryActive(active) {
+			activeCompactSummarySetter?.(active);
 		},
 	};
 }

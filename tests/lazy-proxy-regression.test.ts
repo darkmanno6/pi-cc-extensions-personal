@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
@@ -10,7 +10,13 @@ import claudeCodeStyleExtension, {
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
 import { hoveredToolCallId, isToolCallHovered } from "../extensions/renderer/mouse-interaction.ts";
+import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
+import {
+	getMessageDisplayTheme,
+	setMessageDisplayTheme,
+} from "../extensions/renderer/message-display.ts";
 import { ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool-diff/write-execution.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
@@ -562,6 +568,55 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	installToolMouseInteraction({});
 	config.scrollStepLines = previousStep;
 	assert.equal(renderer.wheelScrollLines, 1, "teardown restores native wheel step");
+});
+
+test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", () => {
+	const previousMode = config.mode;
+	const previousTheme = getMessageDisplayTheme();
+	config.mode = "compact";
+	setMessageDisplayTheme({ fg: (_color: string, text: string) => text } as any);
+	const compact = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const message = {
+		role: "assistant",
+		timestamp: 1,
+		content: [
+			{ type: "text", text: "checking" },
+			{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "echo" } },
+		],
+	};
+	const assistant = new AssistantMessageComponent(message as any, true) as any;
+	assistant.updateContent(message);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(assistant, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		ui.widget.render();
+		renderer.currentLayout = fullscreenLayout(assistant, null);
+		const renderedAssistant = assistant.render(80);
+		const hintRow = renderedAssistant.findIndex((line: string) =>
+			line.includes("click to show more"),
+		);
+		const collapsedLine = renderedAssistant[hintRow] ?? "";
+		const hintCol = collapsedLine.indexOf("click to show more") + 1;
+		assert.ok(hintRow >= 0 && hintCol > 0);
+
+		const rendersBeforeHover = renderer.renderCalls;
+		tui.handleViewportInput(`\x1b[<32;${hintCol};${hintRow + 1}M`);
+		assert.ok(renderer.renderCalls > rendersBeforeHover, "assistant hint hover triggers render");
+
+		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
+		assert.equal(assistant.expanded, true);
+		renderer.currentLayout = fullscreenLayout(assistant, null);
+		tui.handleViewportInput(`\x1b[<0;2;1M`);
+		assert.equal(assistant.expanded, false, "expanded assistant card click collapses it");
+	} finally {
+		installToolMouseInteraction({});
+		compact.shutdown();
+		config.mode = previousMode;
+		setMessageDisplayTheme(previousTheme);
+	}
 });
 
 test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after reload", async () => {

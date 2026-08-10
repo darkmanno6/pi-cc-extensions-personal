@@ -154,39 +154,47 @@ function formatDate(date: Date): string {
 
 /** Stable across keystrokes while getReferences returns the same reference objects. */
 const sessionSearchTextCache = new WeakMap<SessionReference, string>();
-const sessionItemCache = new WeakMap<SessionReference, { cwd: string; item: AutocompleteItem }>();
+const sessionItemCache = new WeakMap<
+	SessionReference,
+	{ cwd: string; named?: AutocompleteItem; stable?: AutocompleteItem }
+>();
 
 function sessionSearchText(reference: SessionReference): string {
 	const cached = sessionSearchTextCache.get(reference);
 	if (cached !== undefined) return cached;
-	const text = [
-		reference.info.name,
-		reference.info.firstMessage,
-		reference.info.cwd,
-		reference.info.id,
-		...reference.referenceIds,
-	]
-		.filter(Boolean)
-		.join(" ");
+	// 会话只按显式 session name 匹配，避免 firstMessage、路径或 ID 产生噪声。
+	const text = reference.info.name?.trim() ?? "";
 	sessionSearchTextCache.set(reference, text);
 	return text;
 }
 
-function sessionItem(reference: SessionReference, currentCwd: string): AutocompleteItem {
-	const cached = sessionItemCache.get(reference);
-	if (cached && cached.cwd === currentCwd) return cached.item;
+function sessionItem(
+	reference: SessionReference,
+	currentCwd: string,
+	useStableId: boolean,
+): AutocompleteItem {
+	let cached = sessionItemCache.get(reference);
+	const variant = useStableId ? "stable" : "named";
+	if (cached?.cwd === currentCwd && cached[variant]) return cached[variant];
 
 	const session = reference.info;
 	const workspace = samePath(session.cwd, currentCwd)
 		? "current workspace"
 		: session.cwd || "unknown workspace";
 	const label = reference.kind === "subagent" ? "[SubAgent]" : "[Session]";
+	// 唯一名称保持短格式；同名或无名称时使用稳定 ID，避免引用歧义。
+	const sessionName = session.name?.trim();
+	const referenceId = useStableId
+		? reference.referenceIds[0]
+		: (sessionName ?? reference.referenceIds[0]);
 	const item: AutocompleteItem = {
-		value: `${SESSION_REFERENCE_PREFIX}${reference.referenceIds[0]}`,
+		value: `${SESSION_REFERENCE_PREFIX}[${referenceId}]`,
 		label: `${label} ${sessionTitle(session)}`,
 		description: `${workspace} · ${session.messageCount} messages · ${formatDate(session.modified)}`,
 	};
-	sessionItemCache.set(reference, { cwd: currentCwd, item });
+	if (cached?.cwd !== currentCwd) cached = { cwd: currentCwd };
+	cached[variant] = item;
+	sessionItemCache.set(reference, cached);
 	return item;
 }
 
@@ -222,14 +230,24 @@ function filterSessions(
 	if (query.startsWith("session:")) return [];
 
 	const ordered = orderSessionReferences(references, currentCwd);
+	const nameCounts = new Map<string, number>();
+	for (const reference of ordered) {
+		const name = reference.info.name?.trim();
+		if (name) nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+	}
 	const trimmed = query.trim();
-	// Empty query: top-N already sorted — no fuzzy scan over the full list.
+	// 模糊匹配只接受有 session name 的会话；subagent 按 agent name 匹配。
+	const searchable = ordered.filter(
+		(reference) => reference.kind === "subagent" || Boolean(reference.info.name?.trim()),
+	);
+	// Empty query: top-N already sorted — no fuzzy scan over the full list。
 	const matches = trimmed
-		? fuzzyFilter(ordered, trimmed, sessionSearchText)
+		? fuzzyFilter(searchable, trimmed, sessionSearchText)
 		: ordered.slice(0, MAX_SESSION_SUGGESTIONS);
-	return matches
-		.slice(0, MAX_SESSION_SUGGESTIONS)
-		.map((reference) => sessionItem(reference, currentCwd));
+	return matches.slice(0, MAX_SESSION_SUGGESTIONS).map((reference) => {
+		const name = reference.info.name?.trim();
+		return sessionItem(reference, currentCwd, Boolean(name && (nameCounts.get(name) ?? 0) > 1));
+	});
 }
 
 function isPathLikeQuery(query: string): boolean {
@@ -470,12 +488,22 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 				),
 			));
 		const referencesById = new Map<string, SessionReference>();
+		const referencesByName = new Map<string, SessionReference>();
+		const ambiguousNames = new Set<string>();
 		for (const reference of references) {
 			for (const id of reference.referenceIds) referencesById.set(id, reference);
+			const name = reference.info.name?.trim();
+			if (!name || ambiguousNames.has(name)) continue;
+			if (referencesByName.has(name)) {
+				referencesByName.delete(name);
+				ambiguousNames.add(name);
+			} else {
+				referencesByName.set(name, reference);
+			}
 		}
 		const seenReferences = new Set<SessionReference>();
 		const matchingReferences = referenceIds
-			.map((id) => referencesById.get(id))
+			.map((id) => referencesById.get(id) ?? referencesByName.get(id))
 			.filter((reference): reference is SessionReference => {
 				if (!reference || reference.info.id === currentSessionId || seenReferences.has(reference))
 					return false;

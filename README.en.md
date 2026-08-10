@@ -39,14 +39,14 @@ Run `/reload` after installation.
 ## Features
 
 
-| Feature                      | Description                                                                                                                                                   | Entry point |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| Claude Code-style output     | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `off` modes                                                                                 | `/ccstyle`  |
-| Fullscreen mouse interaction | Tool card/group click-to-toggle,`[show more]` previews, hover highlight, and a back-to-bottom button (motion reporting auto-enabled under tmux/zellij/screen) | `/ccstyle`  |
-| Settings panel               | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step                                                                                | `/ccstyle`  |
-| Context inspection           | Usage breakdown and previews for the system prompt, tools, skills, and messages                                                                               | `/context`  |
-| Session references           | Search and inject effective context from previous Sessions or existing SubAgents                                                                              | `@session:` |
-| Theme                        | Bundled CC Dark and CC Light themes                                                                                                                           | `/theme`    |
+| Feature                      | Description                                                                                                                                       | Entry point |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| Claude Code-style output     | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `compact` / `off` modes                                                         | `/ccstyle`  |
+| Fullscreen mouse interaction | Tool card/group click-to-toggle, previews, hover highlight, and a back-to-bottom button (motion reporting auto-enabled under tmux/zellij/screen) | `/ccstyle`  |
+| Settings panel               | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step                                                                    | `/ccstyle`  |
+| Context inspection           | Usage breakdown and previews for the system prompt, tools, skills, and messages                                                                   | `/context`  |
+| Session references           | Search and inject effective context from previous Sessions or existing SubAgents                                                                  | `@session:` |
+| Theme                        | Bundled CC Dark and CC Light themes                                                                                                               | `/theme`    |
 
 ## Configuration
 
@@ -54,7 +54,7 @@ Run `/reload` after installation.
 
 ```js
 {
-  "mode": "on",                            // on: Claude Code-style output; off: Pi native rendering
+  "mode": "on",                            // on: Claude Code style; compact: one-line summaries; off: Pi native rendering
   "excludeRenderers": [],                  // exact tool names that keep their native renderer; Agent always keeps its dedicated renderer
   "diffViewMode": "auto",                  // diff layout: auto / split / unified
   "diffIndicatorMode": "bars",             // diff change indicators: bars / classic / none
@@ -83,9 +83,8 @@ Run `/reload` after changing extensions.
 ## Compatibility
 
 - Node.js `>=22.19.0`, Pi `^0.84.0` (loaded through `pi.extensions` and `pi.themes` in the root `package.json`)
-- Fixed-editor features have been smoothly migrated to the official pipeline: in TUI fullscreen mode, all `/ccstyle` mouse interactions work as usual.
-- Need the removed fixed-editor layout or `compact` one-line summary mode? Use version `0.8.46` or earlier
-- Removed: the fixed-editor layout and the `compact` one-line summary mode (a new compact mode is planned for a future release). Old configs with `"mode": "compact"` automatically fall back to `on`, and the `/ccstyle` panel only offers `on` / `off`.
+- Fixed-editor features have moved to the official pipeline. `/ccstyle` mouse interactions remain available in TUI fullscreen mode.
+- Use version `0.8.46` or earlier only if you need the removed fixed-editor layout.
 
 ## Recommended companions
 

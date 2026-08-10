@@ -26,6 +26,15 @@ test("extractSessionReferenceIds finds boundary-delimited references and dedupli
 	);
 });
 
+test("extractSessionReferenceIds accepts bracketed names and keeps legacy ids working", () => {
+	assert.deepEqual(
+		extractSessionReferenceIds(
+			"Review @session:[Release plan] and @session:[T-42] plus legacy @session:abc-123",
+		),
+		["Release plan", "T-42", "abc-123"],
+	);
+});
+
 test("sessionTitle normalizes and truncates display text", () => {
 	assert.equal(sessionTitle(info), "Refactor the auth module");
 	assert.equal(sessionTitle({ ...info, name: "Named session" }), "Named session");

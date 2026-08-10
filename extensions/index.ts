@@ -22,6 +22,18 @@ export default function (pi: ExtensionAPI): void {
 		updateConfig(next) {
 			compactThinking?.updateConfig(next);
 		},
+		getMessageThinkingDurationMs(messageTimestamp) {
+			return compactThinking?.getMessageThinkingDurationMs?.(messageTimestamp);
+		},
+		isMessageThinkingActive(messageTimestamp) {
+			return compactThinking?.isMessageThinkingActive?.(messageTimestamp) ?? false;
+		},
+		getThinkingAnimationFrame() {
+			return compactThinking?.getThinkingAnimationFrame?.() ?? 0;
+		},
+		setCompactSummaryActive(active) {
+			compactThinking?.setCompactSummaryActive?.(active);
+		},
 	};
 	claudeCodeStyle(pi, undefined, compactThinkingBridge);
 	compactThinking = installCompactThinking(pi, getCompactThinkingConfig());

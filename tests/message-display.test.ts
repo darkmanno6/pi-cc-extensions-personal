@@ -80,6 +80,22 @@ test("message-display: ccstyle on 时三个组件渲染为工具调用风格", (
 	setConfig(normalizeConfig({ ...DEFAULT_CONFIG, mode: "off" }));
 });
 
+test("message-display: compact 继续接管三个消息组件", () => {
+	setConfig(normalizeConfig({ ...DEFAULT_CONFIG, mode: "compact" }));
+	const dispose = installMessageDisplayRendering();
+	setMessageDisplayTheme(fakeTheme());
+	const components = [makeSkillBlock(), makeCompaction(), makeBranch()];
+
+	for (const component of components) {
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		assert.match(rendered, /✓/);
+		assert.doesNotMatch(rendered, /\[(?:skill|compaction|branch)\]/);
+	}
+
+	dispose();
+	setConfig(normalizeConfig({ ...DEFAULT_CONFIG, mode: "off" }));
+});
+
 test("message-display: mode off 或 dispose 后回退原生渲染", () => {
 	setConfig(normalizeConfig({ ...DEFAULT_CONFIG, mode: "on" }));
 	const dispose = installMessageDisplayRendering();

@@ -14,6 +14,7 @@ type AgentInfo = {
 	displayName: string;
 	description: string;
 	model?: string;
+	thinking?: string;
 	filePath: string;
 };
 
@@ -53,6 +54,7 @@ function loadAgents(): AgentInfo[] {
 				displayName: fm.display_name || name,
 				description: fm.description || "",
 				model: fm.model,
+				thinking: fm.thinking,
 				filePath,
 			};
 		});
@@ -94,7 +96,7 @@ export function createAgentAutocompleteProvider(
 			const agentItems: AutocompleteItem[] = matches.slice(0, MAX_SUGGESTIONS).map((agent) => ({
 				value: `@${agent.name}`,
 				label: `[SubAgent] ${agent.displayName}`,
-				description: agent.description + (agent.model ? ` · ${agent.model}` : ""),
+				description: `${agent.model ?? "?"} · ${agent.thinking ?? "?"}`,
 			}));
 			const hasCompatibleBaseSuggestions = baseSuggestions?.prefix === `@${query}`;
 			const agentValues = new Set(agents.map((agent) => `@${agent.name}`));

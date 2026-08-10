@@ -1359,6 +1359,14 @@ function resolveDiffIndicatorMode(
 /** Snapshot or live getter — panel changes must apply on the next paint. */
 export type DisplayConfigInput = ToolDisplayConfig | (() => ToolDisplayConfig);
 
+const RICH_DIFF_COMPONENT = Symbol.for("pi.ccstyle.rich-diff-component");
+
+export function isRichDiffComponent(value: unknown): boolean {
+	return Boolean(
+		value && typeof value === "object" && (value as any)[RICH_DIFF_COMPONENT] === true,
+	);
+}
+
 function resolveLiveDisplayConfig(input: DisplayConfigInput): ToolDisplayConfig {
 	return typeof input === "function" ? input() : input;
 }
@@ -2465,6 +2473,53 @@ function createDiffRenderCache() {
 	};
 }
 
+/**
+ * edit 变更行统计（compact 单行 `(+A -D)` 用）：复用现有 parser，diff 文件头不计入。
+ * 无 diff 或解析失败时返回 undefined，不把未知状态误报为零变更。
+ */
+export function countEditDiffStats(
+	details: unknown,
+): { added: number; removed: number } | undefined {
+	const diffText = sanitizeToolResultText(safeGetDiff(details));
+	if (!diffText.trim()) return undefined;
+	try {
+		const parsed = parseDiff(diffText);
+		return { added: parsed.stats.added, removed: parsed.stats.removed };
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * write 变更行统计（compact 单行用）：复用当前 write diff 算法。
+ * 新文件 = 全部新内容为 added；覆盖已有文件用 LCS 精确统计。
+ * content 非字符串、元数据缺失或超过矩阵预算时返回 undefined（不显示计数）。
+ */
+export function countWriteDiffStats(
+	content: string | undefined,
+	previousContent: string | undefined,
+	fileExistedBeforeWrite: boolean | undefined,
+): { added: number; removed: number } | undefined {
+	if (typeof content !== "string" || fileExistedBeforeWrite === undefined) return undefined;
+	const lines = splitWriteContentLines(sanitizeToolResultText(content));
+	if (fileExistedBeforeWrite === false) return { added: lines.length, removed: 0 };
+	if (typeof previousContent !== "string") return undefined;
+	const previousLines = splitWriteContentLines(sanitizeToolResultText(previousContent));
+	if (previousLines.length === 0 || lines.length === 0) {
+		return { added: lines.length, removed: previousLines.length };
+	}
+	if (previousLines.length * lines.length > MAX_COLLAPSED_WRITE_OVERWRITE_DIFF_MATRIX_CELLS) {
+		return undefined;
+	}
+	let added = 0;
+	let removed = 0;
+	for (const operation of buildWriteDiffOperations(previousLines, lines)) {
+		if (operation.kind === "add") added++;
+		else if (operation.kind === "remove") removed++;
+	}
+	return { added, removed };
+}
+
 export function renderEditDiffResult(
 	details: unknown,
 	options: DiffRenderOptions,
@@ -2510,6 +2565,7 @@ export function renderEditDiffResult(
 	});
 
 	return {
+		[RICH_DIFF_COMPONENT]: true,
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);
@@ -2897,6 +2953,7 @@ export function renderWriteDiffResult(
 	}
 
 	return {
+		[RICH_DIFF_COMPONENT]: true,
 		render(width: number): string[] {
 			// Live config: panel can change indicator/wrap/limits after this component is created.
 			const live = resolveLiveDisplayConfig(config);

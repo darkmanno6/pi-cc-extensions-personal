@@ -11,8 +11,20 @@ export function toolViewportWidth(width: number): number {
 	return Math.max(1, Math.floor(width * TOOL_VIEWPORT_WIDTH_RATIO));
 }
 
+/** 与默认工具结果相同的一级缩进包装。 */
+export function insetComponent(component: any): any {
+	return {
+		render: (width: number) =>
+			component.render(Math.max(1, width - 1)).map((line: string) => {
+				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
+				return ` ${nestedMarker}`;
+			}),
+		invalidate: () => component.invalidate?.(),
+	};
+}
+
 export function oneLine(value: unknown, max = 72): string {
-	const text = String(value ?? "")
+	const text = sanitizeToolResultText(String(value ?? ""))
 		.replace(/\s+/g, " ")
 		.trim();
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -555,7 +567,7 @@ export function middleTruncateToWidth(text: string, width: number): string {
 export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
 	if (args === undefined || args === null) return "";
 	if (typeof args !== "object") {
-		const text = String(args);
+		const text = sanitizeToolResultText(String(args));
 		return text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
 	}
 	if (Array.isArray(args)) {
@@ -563,7 +575,7 @@ export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
 			const json = JSON.stringify(args, null, 2);
 			return json.length > maxChars ? `${json.slice(0, maxChars)}…` : json;
 		} catch {
-			return String(args);
+			return sanitizeToolResultText(String(args));
 		}
 	}
 
@@ -596,15 +608,17 @@ export function formatToolInputArgs(args: unknown, maxChars = 8_000): string {
 	});
 
 	const lines: string[] = [];
-	for (const [key, value] of entries) {
+	for (const [rawKey, value] of entries) {
+		const key = sanitizeToolResultText(rawKey);
 		if (typeof value === "string") {
-			if (value.includes("\n")) {
+			const safeValue = sanitizeToolResultText(value);
+			if (safeValue.includes("\n")) {
 				lines.push(`${key}:`);
-				for (const line of value.replace(/\t/g, "   ").split("\n")) {
+				for (const line of safeValue.replace(/\t/g, "   ").split("\n")) {
 					lines.push(`  ${line}`);
 				}
 			} else {
-				lines.push(`${key}: ${value}`);
+				lines.push(`${key}: ${safeValue}`);
 			}
 			continue;
 		}
@@ -709,7 +723,9 @@ function withIoViewMarkers(view: ExpandedToolIoView, lines: string[]): string[] 
 const ioViewInvalidators = new WeakMap<ExpandedToolIoView, () => void>();
 function rememberIoView(context: any, view: ExpandedToolIoView): void {
 	if (!context || typeof context !== "object") return;
-	if (typeof context.invalidate === "function") ioViewInvalidators.set(view, context.invalidate);
+	if (typeof context.invalidate === "function") {
+		ioViewInvalidators.set(view, () => context.invalidate());
+	}
 	if (!context.state || typeof context.state !== "object") context.state = {};
 	context.state.ccstyleIoView = view;
 }

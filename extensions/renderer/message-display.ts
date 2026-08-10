@@ -100,7 +100,7 @@ export function installMessageDisplayRendering(): () => void {
 		const prototype = ComponentClass.prototype;
 		const original = prototype.updateDisplay;
 		const installed = function (this: any) {
-			if (patch.active && config.mode === "on") {
+			if (patch.active && config.mode !== "off") {
 				try {
 					renderCcstyle(this, kind);
 					return;

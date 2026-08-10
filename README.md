@@ -83,8 +83,6 @@ npm run typecheck
 ## 兼容性
 
 - Node.js `>=22.19.0`，Pi `^0.84.0`（通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载）
-- fixed-editor 相关功能已迁移至官方管线：TUI mode=fullscreen 模式下 `/ccstyle` 鼠标交互仍可用。
-- 需要已移除的 fixed-editor 布局时，请使用 `0.8.46` 及更早版本。
 
 ## 推荐搭配
 

@@ -83,8 +83,6 @@ Run `/reload` after changing extensions.
 ## Compatibility
 
 - Node.js `>=22.19.0`, Pi `^0.84.0` (loaded through `pi.extensions` and `pi.themes` in the root `package.json`)
-- Fixed-editor features have moved to the official pipeline. `/ccstyle` mouse interactions remain available in TUI fullscreen mode.
-- Use version `0.8.46` or earlier only if you need the removed fixed-editor layout.
 
 ## Recommended companions
 

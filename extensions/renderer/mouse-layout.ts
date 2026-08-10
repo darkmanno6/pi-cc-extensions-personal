@@ -1,7 +1,10 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { isCompactAssistantComponent } from "./compact-mode.ts";
 import { ToolGroupComponent } from "./tool-grouping.ts";
-import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./mouse-packets.ts";
+import {
+	isToolExecutionComponent,
+	stripTerminalSequencesPreservingLayout,
+} from "./mouse-packets.ts";
 import { scrollButtonWidget } from "./mouse-scroll.ts";
 
 export type ComponentRowHit = {
@@ -137,7 +140,11 @@ export function componentAtLocalRow(
 }
 
 /** fullscreen single-expand：group 作为整体，不继续递归其内部工具。 */
-export function collectFullscreenToolCards(component: any, out: any[], seen = new Set<any>()): void {
+export function collectFullscreenToolCards(
+	component: any,
+	out: any[],
+	seen = new Set<any>(),
+): void {
 	if (!component || typeof component !== "object" || seen.has(component)) return;
 	seen.add(component);
 	if (

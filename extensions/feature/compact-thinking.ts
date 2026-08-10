@@ -13,6 +13,13 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import { Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
+import {
+	animateCompactThinkingText,
+	formatThoughtDuration,
+	styleCompactThinkingText,
+} from "../renderer/compact-mode.ts";
+// 保持导出兼容：渲染函数已并入 renderer/compact-mode.ts，这里 re-export。
+export { animateCompactThinkingText, formatThoughtDuration, styleCompactThinkingText };
 
 // pi-tui 类型声明中 TUI 的 re-export 解析失败，本地用最小结构化类型（只用到 requestRender）。
 type RenderTui = { requestRender(force?: boolean): void };
@@ -144,70 +151,6 @@ function restoreDurationEntries(
 		}
 		durations.set(data.contentIndex, data.durationMs);
 	}
-}
-
-function formatThoughtDuration(durationMs: number) {
-	if (durationMs < 1_000) {
-		return `${Math.max(1, Math.round(durationMs))}ms`;
-	}
-
-	const totalSeconds = Math.max(1, Math.round(durationMs / 1_000));
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = totalSeconds % 60;
-	if (minutes === 0) return `${seconds}s`;
-	return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
-}
-
-export { formatThoughtDuration };
-
-type CompactThinkingTheme = Pick<Theme, "fg" | "italic" | "bold">;
-
-/** 与 compact-thinking 主渲染器共用的静态文字样式。 */
-export function styleCompactThinkingText(
-	text: string,
-	theme: CompactThinkingTheme | undefined,
-	bold = false,
-): string {
-	if (!theme) return text;
-	const colored = typeof theme.fg === "function" ? theme.fg("thinkingText", text) : text;
-	const weighted = bold && typeof theme.bold === "function" ? theme.bold(colored) : colored;
-	return typeof theme.italic === "function" ? theme.italic(weighted) : weighted;
-}
-
-/** 与 compact-thinking 主渲染器共用的活动思考扫光动画。 */
-export function animateCompactThinkingText(
-	text: string,
-	theme: CompactThinkingTheme | undefined,
-	animationFrame: number,
-	boldBase = false,
-): string {
-	if (!theme) return text;
-	const characters = Array.from(text);
-	if (characters.length === 0) return "";
-	const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
-	const start = (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
-	const end = start + highlightWidth;
-	const before = characters.slice(0, Math.max(0, start)).join("");
-	const highlighted = characters
-		.slice(Math.max(0, start), Math.min(characters.length, end))
-		.join("");
-	const after = characters.slice(Math.max(0, end)).join("");
-	const highlightedColored =
-		highlighted && typeof theme.fg === "function" ? theme.fg("text", highlighted) : highlighted;
-	const highlightedWeighted =
-		highlightedColored && typeof theme.bold === "function"
-			? theme.bold(highlightedColored)
-			: highlightedColored;
-	const highlightedText =
-		highlightedWeighted && typeof theme.italic === "function"
-			? theme.italic(highlightedWeighted)
-			: highlightedWeighted;
-
-	return (
-		styleCompactThinkingText(before, theme, boldBase) +
-		highlightedText +
-		styleCompactThinkingText(after, theme, boldBase)
-	);
 }
 
 function getThinkingToggleHint() {

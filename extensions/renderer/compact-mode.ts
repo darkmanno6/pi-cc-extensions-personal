@@ -12,15 +12,14 @@
  * 补丁生命周期遵循仓库既有模式：Symbol 所有权、dispose 仅恢复仍由本安装持有的
  * 方法、重入守卫防止 /reload 后残留闭包递归。
  */
-import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	ToolExecutionComponent,
+	type Theme,
+} from "@earendil-works/pi-coding-agent";
 import * as PiTui from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
-import {
-	animateCompactThinkingText,
-	formatThoughtDuration,
-	styleCompactThinkingText,
-} from "../feature/compact-thinking.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { getMessageDisplayTheme } from "./message-display.ts";
@@ -59,6 +58,70 @@ const ASSISTANT_REENTRY_KEY = Symbol.for(ASSISTANT_REENTRY_DESCRIPTION);
 
 const Box = (PiTui as any).Box;
 const EDIT_WRITE_TOOLS = new Set(["edit", "write"]);
+
+type CompactThinkingTheme = Pick<Theme, "fg" | "italic" | "bold">;
+
+/** 与 compact-thinking 主渲染器共用的静态文字样式。 */
+export function styleCompactThinkingText(
+	text: string,
+	theme: CompactThinkingTheme | undefined,
+	bold = false,
+): string {
+	if (!theme) return text;
+	const colored = typeof theme.fg === "function" ? theme.fg("thinkingText", text) : text;
+	const weighted = bold && typeof theme.bold === "function" ? theme.bold(colored) : colored;
+	return typeof theme.italic === "function" ? theme.italic(weighted) : weighted;
+}
+
+/** 与 compact-thinking 主渲染器共用的活动思考扫光动画。 */
+export function animateCompactThinkingText(
+	text: string,
+	theme: CompactThinkingTheme | undefined,
+	animationFrame: number,
+	boldBase = false,
+): string {
+	if (!theme) return text;
+	const characters = Array.from(text);
+	if (characters.length === 0) return "";
+	const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
+	const start = (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
+	const end = start + highlightWidth;
+	const before = characters.slice(0, Math.max(0, start)).join("");
+	const highlighted = characters
+		.slice(Math.max(0, start), Math.min(characters.length, end))
+		.join("");
+	const after = characters.slice(Math.max(0, end)).join("");
+	const highlightedColored =
+		highlighted && typeof theme.fg === "function" ? theme.fg("text", highlighted) : highlighted;
+	const highlightedWeighted =
+		highlightedColored && typeof theme.bold === "function"
+			? theme.bold(highlightedColored)
+			: highlightedColored;
+	const highlightedText =
+		highlightedWeighted && typeof theme.italic === "function"
+			? theme.italic(highlightedWeighted)
+			: highlightedWeighted;
+
+	return (
+		styleCompactThinkingText(before, theme, boldBase) +
+		highlightedText +
+		styleCompactThinkingText(after, theme, boldBase)
+	);
+}
+
+function formatThoughtDuration(durationMs: number) {
+	if (durationMs < 1_000) {
+		return `${Math.max(1, Math.round(durationMs))}ms`;
+	}
+
+	const totalSeconds = Math.max(1, Math.round(durationMs / 1_000));
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	if (minutes === 0) return `${seconds}s`;
+	return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
+}
+
+export { formatThoughtDuration };
 
 /**
  * 逐条 assistant message 的摘要文本（无工具计数时可为空串）：

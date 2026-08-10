@@ -771,7 +771,7 @@ function installToolExpandedBackground(): () => void {
 	const host = globalThis as any;
 	const previous = host[TOOL_EXPANDED_BACKGROUND_PATCH] as ToolExpandedBackgroundPatch | undefined;
 	if (previous) previous.dispose();
-	const prototype = ToolExecutionComponent.prototype;
+	const prototype = ToolExecutionComponent.prototype as unknown as { updateDisplay: () => void };
 	const original = prototype.updateDisplay;
 	const patch: ToolExpandedBackgroundPatch = {
 		active: true,
@@ -888,7 +888,7 @@ export default function (
 						compactThinking,
 					);
 				} else {
-					applyStyleMode(arg, ctx, hooks.toolGrouping);
+					applyStyleMode(arg as CompactStyleMode, ctx, hooks.toolGrouping);
 				}
 				return;
 			}

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	AssistantMessageComponent,
 	ToolExecutionComponent,
@@ -67,7 +68,7 @@ function toolCallMessage(timestamp: number, name = "bash") {
 		role: "assistant",
 		timestamp,
 		content: [{ type: "toolCall", name, arguments: { command: "echo" } }],
-	};
+	} as unknown as AssistantMessage;
 }
 
 test("buildMessageSummary: duration first, read dedup by path, counts, first-seen order, edit/write excluded", () => {
@@ -179,7 +180,10 @@ test("compact collapses tool-calling assistant to one line; native render outsid
 		assert.deepEqual(renderText(read), []);
 
 		// 无 toolCall 的 final assistant 走原生渲染。
-		const finalMessage = { role: "assistant", content: [{ type: "text", text: "task done" }] };
+		const finalMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "task done" }],
+		} as unknown as AssistantMessage;
 		const final = new AssistantMessageComponent(finalMessage, true) as any;
 		final.updateContent(finalMessage);
 		assert.match(renderText(final).join("\n"), /task done/);

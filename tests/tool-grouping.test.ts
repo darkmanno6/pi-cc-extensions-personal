@@ -5,6 +5,7 @@ import {
 	ToolExecutionComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
 
@@ -65,7 +66,10 @@ test("mixed tools group across three empty separators while edit/write and conte
 		);
 		parent.addChild(tool("write", "write"));
 		const assistant = new AssistantMessageComponent(
-			{ role: "assistant", content: [{ type: "text", text: "boundary" }] },
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "boundary" }],
+			} as unknown as AssistantMessage,
 			true,
 		);
 		parent.addChild(assistant);

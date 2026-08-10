@@ -6,6 +6,7 @@ import {
 	getMarkdownTheme,
 	initTheme,
 	SkillInvocationMessageComponent,
+	type ParsedSkillBlock,
 } from "@earendil-works/pi-coding-agent";
 import {
 	installMessageDisplayRendering,
@@ -24,19 +25,30 @@ function fakeTheme() {
 	return { fg: (_color: string, text: string) => text };
 }
 
+type CompactionSummaryMessageProps = ConstructorParameters<
+	typeof CompactionSummaryMessageComponent
+>[0];
+type BranchSummaryMessageProps = ConstructorParameters<typeof BranchSummaryMessageComponent>[0];
+
 function makeSkillBlock(name = "ponytail", content = "**lazy** content\n\n- rule 1") {
 	return new SkillInvocationMessageComponent(
-		{ name, content, userMessage: null },
+		{ name, content, userMessage: null } as unknown as ParsedSkillBlock,
 		getMarkdownTheme(),
 	);
 }
 
 function makeCompaction(summary = "summarized history", tokensBefore = 12345) {
-	return new CompactionSummaryMessageComponent({ summary, tokensBefore }, getMarkdownTheme());
+	return new CompactionSummaryMessageComponent(
+		{ summary, tokensBefore } as unknown as CompactionSummaryMessageProps,
+		getMarkdownTheme(),
+	);
 }
 
 function makeBranch(summary = "branch work") {
-	return new BranchSummaryMessageComponent({ summary }, getMarkdownTheme());
+	return new BranchSummaryMessageComponent(
+		{ summary } as unknown as BranchSummaryMessageProps,
+		getMarkdownTheme(),
+	);
 }
 
 test("message-display: ccstyle on 时三个组件渲染为工具调用风格", () => {
@@ -135,7 +147,7 @@ test("message-display: refreshMessageDisplays 遍历并刷新已挂载组件", (
 	for (const component of components) {
 		component.invalidate = () => {
 			invalidated++;
-			component.updateDisplay();
+			(component as unknown as { updateDisplay(): void }).updateDisplay();
 		};
 	}
 	const root = {

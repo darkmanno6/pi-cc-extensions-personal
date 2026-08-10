@@ -2653,7 +2653,7 @@ export function renderEditDiffResult(
 			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, clampedLines);
 		},
 		invalidate: cache.invalidate,
-	};
+	} as Component;
 }
 
 function renderWriteHeader(
@@ -3079,5 +3079,5 @@ export function renderWriteDiffResult(
 			return cache.set(safeWidth, options.expanded, mode, configKey, hovered, finalLines);
 		},
 		invalidate: cache.invalidate,
-	};
+	} as Component;
 }

@@ -684,7 +684,7 @@ function compactThinking(pi: ExtensionAPI) {
 					content?.type === "toolCall" &&
 					(content.name === "Agent" ||
 						content.name === "Agents" ||
-						content.args?.subagent_type != null),
+						content.arguments?.subagent_type != null),
 			)
 		);
 	}
@@ -728,7 +728,9 @@ function compactThinking(pi: ExtensionAPI) {
 	// OpenAI-compatible providers may not close reasoning until the response ends.
 	pi.on("tool_execution_start", (event: any) => {
 		if (event.toolName === "Agent" || event.toolName === "Agents") {
-			resumeAgentThinking(latestComponent?.lastMessage ?? undefined);
+			const lastMessage = (latestComponent as unknown as { lastMessage?: AssistantMessage })
+				?.lastMessage;
+			resumeAgentThinking(lastMessage);
 		} else {
 			finishThinking();
 		}

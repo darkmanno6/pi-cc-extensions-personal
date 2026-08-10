@@ -1,4 +1,10 @@
-import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	getKeybindings,
+	matchesKey,
+	truncateToWidth,
+	visibleWidth,
+	type Keybinding,
+} from "@earendil-works/pi-tui";
 import { hasActiveTextPreview, showTextPreview } from "../feature/context.ts";
 import { ToolGroupComponent } from "./tool-grouping.ts";
 import { isCompactAssistantComponent, setHoveredCompactAssistant } from "./compact-mode.ts";
@@ -252,7 +258,7 @@ function isScrollNavigationInput(data: string): boolean {
 			"tui.altScreen.nextPrompt",
 			"tui.altScreen.top",
 			"tui.altScreen.bottom",
-		].some((key) => getKeybindings().matches(data, key))
+		].some((key) => getKeybindings().matches(data, key as Keybinding))
 	) {
 		return true;
 	}

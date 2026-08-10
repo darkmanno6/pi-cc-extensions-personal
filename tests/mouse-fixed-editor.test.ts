@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
-import { Container, visibleWidth } from "@earendil-works/pi-tui";
+import { Container, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { createJiti } from "jiti";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
@@ -346,7 +346,10 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 		group.setExpanded(true);
 		const longOut = "x\n".repeat(30);
 		const ioView = new ExpandedToolIoView(theme, "a\nb\nc\nd\ne", longOut, false, 2, 2);
-		const childTool = group.children[0];
+		const childTool = group.children[0] as Component & {
+			setExpanded: (value: boolean) => void;
+			expanded: boolean;
+		};
 		childTool.render = (width: number) => [`✓ child`, ...ioView.render(Math.max(1, width - 2))];
 		childTool.setExpanded = (value: boolean) => {
 			childTool.expanded = value;
@@ -584,9 +587,9 @@ test("expanded group identical show-more labels open their own content", () => {
 		const longOut = (tag: string) => `${tag}\n${"line\n".repeat(20)}`;
 		const viewA = new ExpandedToolIoView(theme, "", longOut("UNIQUE_A_CONTENT"), false, 2, 2);
 		const viewB = new ExpandedToolIoView(theme, "", longOut("UNIQUE_B_CONTENT"), false, 2, 2);
-		const childA = group.children[0];
-		const childB = group.children[1];
-		const childC = group.children[2];
+		const childA = group.children[0] as Component & { expanded: boolean };
+		const childB = group.children[1] as Component & { expanded: boolean };
+		const childC = group.children[2] as Component & { expanded: boolean };
 		childA.expanded = true;
 		childB.expanded = true;
 		childC.expanded = true;

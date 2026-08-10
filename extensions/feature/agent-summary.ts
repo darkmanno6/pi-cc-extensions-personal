@@ -13,13 +13,14 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	bindAgentSummary,
 	summaryMarkdown,
+	type AgentSummaryData,
 } from "../utils/agent-summary.ts";
 
 export const AGENT_SUMMARY_ENTRY_TYPE = "agent-summary";
 
 export default function (pi: ExtensionAPI): void {
 	pi.registerEntryRenderer(AGENT_SUMMARY_ENTRY_TYPE, (entry, _options, theme) => {
-		const line = summaryMarkdown(entry.data, true, {
+		const line = summaryMarkdown(entry.data as AgentSummaryData, true, {
 			success: theme.getFgAnsi("success"),
 			failed: theme.getFgAnsi("error"),
 		});

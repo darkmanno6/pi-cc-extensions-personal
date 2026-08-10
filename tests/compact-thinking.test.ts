@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { AssistantMessageComponent } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import {
 	animateCompactThinkingText,
@@ -169,9 +170,9 @@ function thinkingMessage(timestamp: number, withAgent = true) {
 				thinking: "plan",
 				thinkingSignature: { kind: "agent_summary", title: "Plan", body: "..." },
 			},
-			...(withAgent ? [{ type: "toolCall", name: "Agent", args: {} }] : []),
+			...(withAgent ? [{ type: "toolCall", name: "Agent", arguments: {} }] : []),
 		],
-	};
+	} as unknown as AssistantMessage;
 }
 
 function themeCtx(sessionManager: any = { getBranch: () => [], getEntries: () => [] }) {

@@ -1,5 +1,11 @@
 import { AssistantMessageComponent, ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
-import { Container, Spacer, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import {
+	Container,
+	Spacer,
+	truncateToWidth,
+	visibleWidth,
+	type Component,
+} from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
@@ -285,7 +291,8 @@ export class ToolGroupComponent extends Container {
 
 	setExpanded(expanded: boolean): void {
 		this._expanded = expanded;
-		for (const tool of this.children) tool.setExpanded?.(expanded);
+		for (const tool of this.children)
+			(tool as Component & { setExpanded?: (expanded: boolean) => void }).setExpanded?.(expanded);
 	}
 
 	setHintHovered(hovered: boolean): void {

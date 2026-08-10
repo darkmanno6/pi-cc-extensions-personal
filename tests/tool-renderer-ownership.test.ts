@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	ToolExecutionComponent,
+	initTheme,
+	type ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import { Text, visibleWidth } from "@earendil-works/pi-tui";
+type AnyToolDefinition = ToolDefinition<any, any, any>;
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	humanizeMcpToolName,
@@ -209,7 +214,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 				`${name}-id`,
 				{},
 				{},
-				{ name },
+				{ name } as unknown as AnyToolDefinition,
 				ui as any,
 				process.cwd(),
 			) as any;
@@ -240,7 +245,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 			"agent-result-id",
 			{ agent_id: "agent-123" },
 			{},
-			{ name: "get_subagent_result" },
+			{ name: "get_subagent_result" } as unknown as AnyToolDefinition,
 			ui as any,
 			process.cwd(),
 		) as any;
@@ -264,7 +269,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 				`${name}-summary`,
 				args,
 				{},
-				{ name },
+				{ name } as unknown as AnyToolDefinition,
 				ui as any,
 				process.cwd(),
 			) as any;
@@ -279,7 +284,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 			"task-list-result",
 			{},
 			{},
-			{ name: "TaskList" },
+			{ name: "TaskList" } as unknown as AnyToolDefinition,
 			ui as any,
 			process.cwd(),
 		) as any;
@@ -307,7 +312,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 			"task-create-result",
 			{ subject: "Fix tests" },
 			{},
-			{ name: "TaskCreate" },
+			{ name: "TaskCreate" } as unknown as AnyToolDefinition,
 			ui as any,
 			process.cwd(),
 		) as any;
@@ -329,7 +334,7 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 			"duplicate",
 			{},
 			{},
-			{ name: "custom" },
+			{ name: "custom" } as unknown as AnyToolDefinition,
 			ui as any,
 			process.cwd(),
 		) as any;
@@ -392,7 +397,7 @@ test("Agent keeps its dedicated renderer under ccstyle", async () => {
 		renderShell: "default",
 		renderCall: () => new Text("agent dedicated call", 0, 0),
 		renderResult: () => new Text("agent dedicated result", 0, 0),
-	};
+	} as unknown as AnyToolDefinition;
 	const component = new ToolExecutionComponent(
 		"Agent",
 		"agent-renderer",

@@ -25,8 +25,8 @@ import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/message-display.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool-diff/write-execution.ts";
-import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool-result.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
 

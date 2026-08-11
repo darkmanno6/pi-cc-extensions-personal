@@ -1,9 +1,9 @@
-import { hasActiveTextPreview, showTextPreview } from "../feature/context.ts";
-import { ToolGroupComponent } from "./tool-grouping.ts";
-import { isCompactAssistantComponent, setHoveredCompactAssistant } from "./compact-mode.ts";
-import { config } from "../config/config.ts";
-import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
-import { setToolTuiFullscreen } from "./show-more-hint.ts";
+import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
+import { ToolGroupComponent } from "../tool/grouping.ts";
+import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
+import { config } from "../../config/config.ts";
+import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
+import { setToolTuiFullscreen } from "../show-more-hint.ts";
 import {
 	type ExpandedToolIoView,
 	getActiveIoViewFrame,
@@ -11,7 +11,7 @@ import {
 	type IoViewFrameState,
 	setActiveIoViewFrame,
 	type ToolIoSection,
-} from "./tool-result.ts";
+} from "../tool/result.ts";
 import {
 	collectToolComponents,
 	extractToolFramePlacements,
@@ -23,7 +23,7 @@ import {
 	toolFrameMarker,
 	type FrameToolPlacement,
 	type SgrMousePacket,
-} from "./mouse-packets.ts";
+} from "./packets.ts";
 import {
 	collectFullscreenToolCards,
 	componentAtLocalRow,
@@ -31,7 +31,7 @@ import {
 	fullscreenContentWidth,
 	fullscreenLeafAt,
 	isScrollbarColumnAt,
-} from "./mouse-layout.ts";
+} from "./layout.ts";
 import {
 	fullscreenLazyTui,
 	hideScrollButton,
@@ -48,7 +48,7 @@ import {
 	toolMouseInteractionActive,
 	toolMouseTui,
 	updateScrollButtonFromInput,
-} from "./mouse-scroll.ts";
+} from "./scroll.ts";
 import {
 	applyFullscreenHover,
 	cachedFullscreenComponentAtRow,
@@ -57,7 +57,7 @@ import {
 	setHoveredToolGroup,
 	setHoveredToolIo,
 	type FullscreenHoverTarget,
-} from "./mouse-hover.ts";
+} from "./hover.ts";
 
 type FrameToolRender = {
 	component: any;
@@ -877,10 +877,10 @@ export function scheduleSessionRender(refresh?: () => void): void {
 	}, 0);
 }
 
-export { toolMouseTui } from "./mouse-scroll.ts";
+export { toolMouseTui } from "./scroll.ts";
 export {
 	hoveredToolCallId,
 	isToolCallHovered,
 	setHoveredToolGroup,
 	setHoveredToolIo,
-} from "./mouse-hover.ts";
+} from "./hover.ts";

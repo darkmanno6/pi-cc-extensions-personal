@@ -4,7 +4,7 @@ import {
 	type DiffIndicatorMode,
 	type DiffViewMode,
 	type ToolDisplayConfig,
-} from "../renderer/tool-diff/index.ts";
+} from "../renderer/tool/diff/index.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

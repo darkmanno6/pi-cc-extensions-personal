@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { installToolGrouping, type ToolGroupingHooks } from "./tool-grouping.ts";
+import { installToolGrouping, type ToolGroupingHooks } from "./tool/grouping.ts";
 import {
 	installCompactMode,
 	refreshCompactModeComponents,
@@ -32,7 +32,7 @@ import {
 	teardownToolMouseInteraction,
 	toolMouseTui,
 	TOOL_MOUSE_DISABLE,
-} from "./mouse-interaction.ts";
+} from "./mouse/interaction.ts";
 import {
 	clearAllAnimations,
 	countLines,
@@ -53,14 +53,14 @@ import {
 	textFromResult,
 	toolIconColor,
 	toolViewportWidth,
-} from "./tool-result.ts";
+} from "./tool/result.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import type { CompactThinkingQuery } from "./compact-mode.ts";
 import {
 	installWriteOverride,
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
-} from "./tool-diff/index.ts";
+} from "./tool/diff/index.ts";
 import {
 	getMessageDisplayTheme,
 	installMessageDisplayRendering,
@@ -1009,6 +1009,6 @@ export {
 	renderCollapsedToolResult,
 	renderCollapsedToolResultToWidth,
 	SHOW_MORE_LABEL,
-} from "./tool-result.ts";
-export type { ToolIoSection } from "./tool-result.ts";
-export { installToolMouseInteraction } from "./mouse-interaction.ts";
+} from "./tool/result.ts";
+export type { ToolIoSection } from "./tool/result.ts";
+export { installToolMouseInteraction } from "./mouse/interaction.ts";

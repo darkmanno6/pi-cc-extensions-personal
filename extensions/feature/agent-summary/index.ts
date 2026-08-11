@@ -2,7 +2,7 @@
  * Agent 回合摘要展示：agent_end 时把本回合工具统计写入会话条目，
  * 由 entry renderer 渲染为 markdown 引用块 `> [!TIP] *斜体内容*`。
  *
- * 统计复用 utils/agent-summary.ts（口径同旧 compact-style，ea64df0 删除）。
+ * 统计复用 ./core.ts（口径同旧 compact-style，ea64df0 删除）。
  * appendEntry 不进 LLM 上下文，只显示在聊天区。
  * 引用块文字色取主题 mdQuote（cc 主题下为 muted 灰），内容用 *斜体* 语法。
  */
@@ -10,11 +10,7 @@
 import { Markdown } from "@earendil-works/pi-tui";
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	bindAgentSummary,
-	summaryMarkdown,
-	type AgentSummaryData,
-} from "../utils/agent-summary.ts";
+import { bindAgentSummary, summaryMarkdown, type AgentSummaryData } from "./core.ts";
 
 export const AGENT_SUMMARY_ENTRY_TYPE = "agent-summary";
 

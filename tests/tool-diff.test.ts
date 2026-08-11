@@ -9,19 +9,19 @@ import { shouldRenderRichDiff } from "../extensions/renderer/index.ts";
 import {
 	renderEditDiffResult,
 	renderWriteDiffResult,
-} from "../extensions/renderer/tool-diff/diff-renderer.ts";
+} from "../extensions/renderer/tool/diff/diff-renderer.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	installWriteOverride,
 	renderRichToolResult,
 	WriteExecutionMetadataStore,
 	type ToolDisplayConfig,
-} from "../extensions/renderer/tool-diff/index.ts";
+} from "../extensions/renderer/tool/diff/index.ts";
 import {
 	executeWriteWithMetadata,
 	MAX_COMPARABLE_WRITE_BYTES,
 	MAX_WRITE_METADATA_ENTRIES,
-} from "../extensions/renderer/tool-diff/write-execution.ts";
+} from "../extensions/renderer/tool/diff/write-execution.ts";
 
 const theme = {
 	fg(_color: string, text: string) {

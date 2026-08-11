@@ -9,14 +9,14 @@ import claudeCodeStyleExtension, {
 } from "../extensions/renderer/index.ts";
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
-import { hoveredToolCallId, isToolCallHovered } from "../extensions/renderer/mouse-interaction.ts";
+import { hoveredToolCallId, isToolCallHovered } from "../extensions/renderer/mouse/interaction.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/message-display.ts";
-import { ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
-import { WriteExecutionMetadataStore } from "../extensions/renderer/tool-diff/write-execution.ts";
+import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
 // doRender/render/handleInput；regular 的工具点击改为按左键输入即时捕获内存 frame。
@@ -668,8 +668,8 @@ test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after 
 	tui.handleViewportInput(`\x1b[<32;${hintCol};8M`);
 	assert.equal(hoveredToolCallId, "width-tool-b");
 	assert.equal(renderer.renderCalls, rendersBefore + 1);
-	const reloadSpecifier = `../extensions/renderer/mouse-interaction.ts?reload=${Date.now()}`;
-	const reloadedMouse: typeof import("../extensions/renderer/mouse-interaction.ts") = await import(
+	const reloadSpecifier = `../extensions/renderer/mouse/interaction.ts?reload=${Date.now()}`;
+	const reloadedMouse: typeof import("../extensions/renderer/mouse/interaction.ts") = await import(
 		reloadSpecifier
 	);
 	assert.equal(reloadedMouse.isToolCallHovered("width-tool-b"), true);

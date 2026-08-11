@@ -4,7 +4,7 @@ import test from "node:test";
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
-import { ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
+import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 
 initTheme("dark");
 

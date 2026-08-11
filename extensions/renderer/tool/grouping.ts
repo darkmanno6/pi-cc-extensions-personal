@@ -6,9 +6,9 @@ import {
 	visibleWidth,
 	type Component,
 } from "@earendil-works/pi-tui";
-import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
-import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { showMoreHintText } from "../show-more-hint.ts";
 
 const PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");
 const PARENT_KEY = Symbol.for("pi.ccstyle.tool-grouping-parent");

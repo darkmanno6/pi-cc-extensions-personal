@@ -13,7 +13,7 @@ import claudeCodeStyleExtension, {
 	installToolMouseInteraction,
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
-import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool-grouping.ts";
+import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 
 initTheme("dark");
 

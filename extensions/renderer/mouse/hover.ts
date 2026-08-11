@@ -1,13 +1,13 @@
-import { setHoveredCompactAssistant } from "./compact-mode.ts";
+import { setHoveredCompactAssistant } from "../compact-mode.ts";
 import {
 	isExpandedToolIoView,
 	invalidateIoView,
 	type ExpandedToolIoView,
 	type ToolIoSection,
-} from "./tool-result.ts";
-import type { ToolGroupComponent } from "./tool-grouping.ts";
-import { componentAtLocalRow, type ComponentRowHit } from "./mouse-layout.ts";
-import { setScrollButtonHovered } from "./mouse-scroll.ts";
+} from "../tool/result.ts";
+import type { ToolGroupComponent } from "../tool/grouping.ts";
+import { componentAtLocalRow, type ComponentRowHit } from "./layout.ts";
+import { setScrollButtonHovered } from "./scroll.ts";
 
 const TOOL_HOVER_STATE_KEY = Symbol.for("pi.ccstyle.tool-hover-state");
 

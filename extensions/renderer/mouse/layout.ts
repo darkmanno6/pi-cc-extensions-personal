@@ -1,11 +1,8 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { isCompactAssistantComponent } from "./compact-mode.ts";
-import { ToolGroupComponent } from "./tool-grouping.ts";
-import {
-	isToolExecutionComponent,
-	stripTerminalSequencesPreservingLayout,
-} from "./mouse-packets.ts";
-import { scrollButtonWidget } from "./mouse-scroll.ts";
+import { isCompactAssistantComponent } from "../compact-mode.ts";
+import { ToolGroupComponent } from "../tool/grouping.ts";
+import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
+import { scrollButtonWidget } from "./scroll.ts";
 
 export type ComponentRowHit = {
 	component: any;

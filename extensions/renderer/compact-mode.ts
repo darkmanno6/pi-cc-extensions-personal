@@ -4,10 +4,10 @@
  * 普通工具折叠时不显示独立行；展开（Ctrl+O / fullscreen 点击）在单个工具卡中恢复
  * compact-thinking/Pi 原生或专用 renderer。edit/write 折叠时显示统计，展开时显示 rich diff。
  *
- * 统计口径与 utils/agent-summary.ts 对齐：read 按非空路径去重、bash 按调用计数、
+ * 统计口径与 feature/agent-summary/core.ts 对齐：read 按非空路径去重、bash 按调用计数、
  * 其他工具按首次出现顺序计数；edit/write 不进入摘要。思考时长复用
  * compact-thinking 的 completedDurations/activeThinking 与持久化 entry（只读查询），
- * 不建立第二套计时器。最终 agent summary 仍由 feature/agent-summary.ts 独占。
+ * 不建立第二套计时器。最终 agent summary 仍由 feature/agent-summary/index.ts 独占。
  *
  * 补丁生命周期遵循仓库既有模式：Symbol 所有权、dispose 仅恢复仍由本安装持有的
  * 方法、重入守卫防止 /reload 后残留闭包递归。
@@ -29,15 +29,15 @@ import {
 	countEditDiffStats,
 	countWriteDiffStats,
 	isRichDiffComponent,
-} from "./tool-diff/diff-renderer.ts";
-import { renderRichToolResult } from "./tool-diff/index.ts";
-import type { WriteExecutionMetadataStore } from "./tool-diff/write-execution.ts";
+} from "./tool/diff/diff-renderer.ts";
+import { renderRichToolResult } from "./tool/diff/index.ts";
+import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import {
 	insetComponent,
 	oneLine,
 	renderExpandedToolResult,
 	scheduleAnimation,
-} from "./tool-result.ts";
+} from "./tool/result.ts";
 
 /** compact 渲染层对 compact-thinking 的只读查询面（不建第二套计时器）。 */
 export type CompactThinkingQuery = {

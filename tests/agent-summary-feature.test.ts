@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { initTheme, getMarkdownTheme } from "@earendil-works/pi-coding-agent";
 import agentSummaryFeature, {
 	AGENT_SUMMARY_ENTRY_TYPE,
-} from "../extensions/feature/agent-summary.ts";
-import { summaryMarkdown } from "../extensions/utils/agent-summary.ts";
+} from "../extensions/feature/agent-summary/index.ts";
+import { summaryMarkdown } from "../extensions/feature/agent-summary/core.ts";
 
 function stripAnsi(text: string): string {
 	return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");

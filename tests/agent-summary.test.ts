@@ -8,7 +8,7 @@ import {
 	summaryLine,
 	summaryMarkdown,
 	type AgentSummaryData,
-} from "../extensions/utils/agent-summary.ts";
+} from "../extensions/feature/agent-summary/core.ts";
 
 test("classifyTool 按旧 compact-style 口径分类", () => {
 	assert.equal(classifyTool("read"), "read");

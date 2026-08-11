@@ -1,4 +1,4 @@
-import type { ExpandedToolIoView, ToolIoSection } from "./tool-result.ts";
+import type { ExpandedToolIoView, ToolIoSection } from "../tool/result.ts";
 
 /** SGR 鼠标协议包（code;col;row + M/m 终结符）。 */
 export type SgrMousePacket = {

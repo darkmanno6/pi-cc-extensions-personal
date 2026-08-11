@@ -1,9 +1,9 @@
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { inspect } from "node:util";
-import { config } from "../config/config.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
-import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../utils/tool-loading-icon.ts";
-import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
+import { config } from "../../config/config.ts";
+import { showMoreHintText } from "../show-more-hint.ts";
+import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
 

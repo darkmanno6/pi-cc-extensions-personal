@@ -79,22 +79,27 @@ test("buildMessageSummary: duration first, read dedup by path, counts, first-see
 	const message = {
 		timestamp: 1,
 		content: [
-			{ type: "toolCall", name: "read", arguments: { path: "a.ts" } },
-			{ type: "toolCall", name: "read", arguments: { path: "a.ts" } },
-			{ type: "toolCall", name: "read", arguments: { path: "b.ts" } },
-			{ type: "toolCall", name: "bash", arguments: { command: "echo" } },
-			{ type: "toolCall", name: "edit", arguments: {} },
-			{ type: "toolCall", name: "write", arguments: {} },
-			{ type: "toolCall", name: "grep", arguments: { pattern: "x" } },
+			{ type: "toolCall", id: "r1", name: "read", arguments: { path: "a.ts" } },
+			{ type: "toolCall", id: "r2", name: "read", arguments: { path: "a.ts" } },
+			{ type: "toolCall", id: "r3", name: "read", arguments: { path: "b.ts" } },
+			{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo" } },
+			{ type: "toolCall", id: "e1", name: "edit", arguments: {} },
+			{ type: "toolCall", id: "w1", name: "write", arguments: {} },
+			{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "x" } },
 		],
 	};
-	assert.equal(buildMessageSummary(message, query), "Thought for 9s, read×2, bash×1, grep×1");
+	assert.equal(buildMessageSummary(message, query), "Ran for 9s, read×2, bash×1, grep×1");
 	assert.equal(
 		buildMessageSummary(message, {
 			getMessageThinkingDurationMs: () => 8500,
 			isMessageThinkingActive: () => true,
 		}),
-		"Thinking... · 9s, read×2, bash×1, grep×1",
+		"Running... · 9s, read×2, bash×1, grep×1",
+	);
+	// 显式挂钟覆盖 thinking query
+	assert.equal(
+		buildMessageSummary(message, query, 15_000),
+		"Ran for 15s, read×2, bash×1, grep×1",
 	);
 	// 新 message 独立：计数不跨消息累积；无时长无工具时为空串。
 	assert.equal(buildMessageSummary({ timestamp: 2, content: [] }, query), "");
@@ -164,7 +169,7 @@ test("compact collapses tool-calling assistant to one line; native render outsid
 		assistant.updateContent(msg);
 		const collapsed = renderText(assistant);
 		assert.equal(collapsed.length, 1, "tool-calling assistant collapses to a single line");
-		assert.match(collapsed[0], /^Thinking\.\.\., bash×1/);
+		assert.match(collapsed[0], /^Running\.\.\.(?: · \d+ms)?, bash×1/);
 		assert.match(collapsed[0], /click to show more/);
 		const narrow = assistant.render(30);
 		assert.equal(narrow[0], "", "compact summary keeps one leading blank row");
@@ -192,13 +197,13 @@ test("compact collapses tool-calling assistant to one line; native render outsid
 		// 切 on：assistant 与 tool 都走原生。
 		config.mode = "on";
 		assistant.updateContent(msg);
-		assert.ok(!renderText(assistant).some((line) => /Thinking\.\.\., bash×1/.test(line)));
+		assert.ok(!renderText(assistant).some((line) => /Running\.\.\., bash×1/.test(line)));
 		assert.ok(renderText(read).length > 0, "tool renders natively in on mode");
 
 		// 切 off：同样原生。
 		config.mode = "off";
 		assistant.updateContent(msg);
-		assert.ok(!renderText(assistant).some((line) => /Thinking\.\.\., bash×1/.test(line)));
+		assert.ok(!renderText(assistant).some((line) => /Running\.\.\., bash×1/.test(line)));
 		assert.ok(renderText(read).length > 0, "tool renders natively in off mode");
 	} finally {
 		restore();
@@ -262,10 +267,10 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		};
 		const assistant2 = new AssistantMessageComponent(message2Thinking as any, true) as any;
 		assistant2.updateContent(message2Thinking as any);
-		assert.match(renderText(assistant1).join("\n"), /^Thinking\.\.\. · 900ms, bash×1/);
-		assert.doesNotMatch(renderText(assistant1).join("\n"), /Thought for/);
+		assert.match(renderText(assistant1).join("\n"), /^Running\.\.\. · 900ms, bash×1/);
+		assert.doesNotMatch(renderText(assistant1).join("\n"), /Ran for/);
 		animationFrame = 1;
-		assert.match(renderText(assistant1).join("\n"), /^Thinking\.\.\. · 900ms, bash×1/);
+		assert.match(renderText(assistant1).join("\n"), /^Running\.\.\. · 900ms, bash×1/);
 
 		activeTimestamp = undefined;
 		assistant2.updateContent(message2);
@@ -276,7 +281,7 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		assert.deepEqual(renderText(assistant3), []);
 		assert.match(
 			renderText(assistant1).join("\n"),
-			/^Thinking\.\.\. · 2s, bash×2, fffind×1, read×1/,
+			/^Running\.\.\. · 2s, bash×2, fffind×1, read×1/,
 		);
 
 		const bash = tool("bash", "b1", { command: "one" });
@@ -330,11 +335,11 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		};
 		const final = new AssistantMessageComponent(finalThinking as any, true) as any;
 		final.updateContent(finalThinking as any);
-		assert.match(renderText(assistant1).join("\n"), /^Thinking\.\.\. · 5s, bash×2/);
+		assert.match(renderText(assistant1).join("\n"), /^Running\.\.\. · 5s, bash×2/);
 
 		activeTimestamp = undefined;
 		final.updateContent(finalMessage);
-		assert.match(renderText(assistant1).join("\n"), /^Thought for 5s, bash×2/);
+		assert.match(renderText(assistant1).join("\n"), /^Ran for 5s, bash×2/);
 		assert.match(renderText(final).join("\n"), /final answer/);
 		assert.doesNotMatch(renderText(final).join("\n"), /Thought|final thought/);
 
@@ -350,11 +355,164 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 		next.updateContent(nextMessage);
 		const nextLines = renderText(next).join("\n");
 		assert.match(nextLines, /next round/);
-		assert.match(nextLines, /Thinking\.\.\., grep×1/);
+		assert.match(nextLines, /Running\.\.\.(?: · \d+ms)?, grep×1/);
 		assert.doesNotMatch(nextLines, /bash×2/);
-		assert.match(renderText(assistant1).join("\n"), /^Thought for 5s, bash×2/);
+		assert.match(renderText(assistant1).join("\n"), /^Ran for 5s, bash×2/);
 	} finally {
 		setMessageDisplayTheme(previousTheme);
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
+});
+
+test("Running duration recomputes on each render via round wall clock", async () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const hooks = installCompactMode({
+		query: {
+			getMessageThinkingDurationMs: () => undefined,
+			isMessageThinkingActive: () => false,
+			getThinkingAnimationFrame: () => 0,
+		},
+		writeMetadata: new WriteExecutionMetadataStore(),
+	});
+	try {
+		const msg = {
+			role: "assistant",
+			timestamp: 1,
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } }],
+		} as unknown as AssistantMessage;
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		assert.match(renderText(assistant).join("\n"), /Running\.\.\./);
+
+		// 不 updateContent：挂钟在 render 时前进
+		await new Promise((r) => setTimeout(r, 1100));
+		assert.match(renderText(assistant).join("\n"), /Running\.\.\. · [1-9]\d*s, bash×1/);
+	} finally {
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
+});
+
+test("compact folds Agent/Task tools always; no pending outer flash", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const hooks = installCompactMode({
+		query: {
+			getMessageThinkingDurationMs: () => 1000,
+			isMessageThinkingActive: () => false,
+		},
+		writeMetadata: new WriteExecutionMetadataStore(),
+	});
+	try {
+		const msg = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "ls" } },
+				{ type: "toolCall", id: "a1", name: "Agent", arguments: { description: "review" } },
+				{ type: "toolCall", id: "t1", name: "TaskCreate", arguments: { subject: "fix" } },
+				{ type: "toolCall", id: "e1", name: "TaskExecute", arguments: { task_ids: ["1"] } },
+			],
+		} as unknown as AssistantMessage;
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		assistant.updateContent(msg);
+		const bash = tool("bash", "b1", { command: "ls" });
+		const agent = tool("Agent", "a1", { description: "review" });
+		const task = tool("TaskCreate", "t1", { subject: "fix" });
+		const exec = tool("TaskExecute", "e1", { task_ids: ["1"] });
+
+		// pending 即折叠：禁止先外置再收回（会抖）
+		assert.deepEqual(renderText(bash), []);
+		assert.deepEqual(renderText(agent), [], "pending Agent folds");
+		assert.deepEqual(renderText(task), [], "pending TaskCreate folds");
+		assert.deepEqual(renderText(exec), [], "pending TaskExecute folds");
+		assert.match(renderText(assistant).join("\n"), /Agent×1/);
+		assert.match(renderText(assistant).join("\n"), /TaskCreate×1/);
+		assert.match(renderText(assistant).join("\n"), /TaskExecute×1/);
+
+		// 完成后仍折叠进摘要
+		agent.updateResult({ content: [{ type: "text", text: "done" }], isError: false });
+		task.updateResult({
+			content: [{ type: "text", text: "Task #1 created successfully: fix" }],
+			isError: false,
+		});
+		exec.updateResult({
+			content: [{ type: "text", text: "Launched 1 agent(s)" }],
+			isError: false,
+		});
+		assert.deepEqual(renderText(agent), []);
+		assert.deepEqual(renderText(task), []);
+		assert.deepEqual(renderText(exec), []);
+
+		// background Agent tool 卡也折叠；live 面板不走此路径
+		const bg = tool("Agent", "a2", {
+			description: "bg",
+			run_in_background: true,
+		});
+		bg.updateResult({
+			content: [
+				{
+					type: "text",
+					text: "Agent started in background.\nAgent ID: abc-123",
+				},
+			],
+			isError: false,
+		});
+		assert.deepEqual(renderText(bg), [], "background Agent tool card folds");
+	} finally {
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
+});
+
+test("compact surfaces abort outside folded tools", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const hooks = installCompactMode({
+		query: {
+			getMessageThinkingDurationMs: () => 2000,
+			isMessageThinkingActive: () => false,
+		},
+		writeMetadata: new WriteExecutionMetadataStore(),
+	});
+	try {
+		const msg = {
+			role: "assistant",
+			timestamp: 1,
+			stopReason: "aborted",
+			errorMessage: "Operation aborted",
+			content: [{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "sleep" } }],
+		} as unknown as AssistantMessage;
+		const assistant = new AssistantMessageComponent(msg, true) as any;
+		const bash = tool("bash", "b1", { command: "sleep" });
+		bash.updateResult({
+			content: [{ type: "text", text: "Operation aborted" }],
+			isError: true,
+		});
+		assistant.updateContent(msg);
+
+		const lines = renderText(assistant);
+		assert.ok(
+			lines.some((line) => /Ran for |Running\.\.\./.test(line) && /bash×1/.test(line)),
+			`summary present, got: ${JSON.stringify(lines)}`,
+		);
+		assert.ok(
+			lines.some((line) => line === "Operation aborted"),
+			`abort must be outermost, got: ${JSON.stringify(lines)}`,
+		);
+		assert.deepEqual(renderText(bash), [], "aborted tool stays folded");
+
+		// length / error 同样外露
+		const lenMsg = {
+			...msg,
+			stopReason: "length",
+			errorMessage: undefined,
+		};
+		assistant.updateContent(lenMsg as any);
+		assert.ok(renderText(assistant).some((line) => /truncated before completion/.test(line)));
+	} finally {
 		config.mode = previousMode;
 		hooks.shutdown();
 	}

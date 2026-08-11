@@ -553,4 +553,6 @@ export async function showCcstylePanel(
 			},
 		};
 	});
+	// 面板卸下后主 transcript 重新挂载；再刷一次，吃掉打开期间扫树失败的切换。
+	hooks.refreshCurrentTranscript(ctx, toolGrouping);
 }

@@ -7,22 +7,25 @@
 
 ## 1. 消息折叠摘要行
 
-含 toolCall 的 assistant 折叠为单行摘要（思考时长 + 工具计数）：
+含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）：
 
 ```text
- Thinking... · 9s, bash×1, read×2, grep×1 • click to show more
+ Running... · 9s, bash×1, read×2, grep×1 • click to show more
 ```
 
-- 思考中：`Thinking... · <时长>`；结束后：`Thought for <时长>`。
+- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。
+- 时长 = 思考时间 + 工具执行时间。
 - 工具按消息内首次出现顺序；`read` 按非空路径去重。
 - `edit` / `write` **不进**摘要计数（各自独立单行）。
+- Agent/Task 进行中保留底部 live render；完成后折叠进摘要计数。
+- abort/error/length 状态行挂在摘要外层，不被折叠吞掉。
 - 行末 `click to show more`；摘要永不换行。
 
 纯函数口径（`buildMessageSummary`）：
 
 ```text
-Thought for 9s, read×2, bash×1, grep×1
-Thinking... · 9s, bash×1, read×1
+Ran for 9s, read×2, bash×1, grep×1
+Running... · 9s, bash×1, read×1
 ```
 
 ## 2. 普通工具行隐藏
@@ -69,7 +72,7 @@ edit/write 折叠时显示统计单行，展开时走 rich diff：
 ## 5. 回合聚合规则
 
 - 连续含 toolCall 的 assistant 消息累加进同一回合摘要，直到出现可见最终文本。
-- 思考时长跨消息累加（只读 compact-thinking 查询，不建第二套计时器）。
+- 运行时长跨消息累加（思考只读 compact-thinking + 工具执行计时）。
 - 最终 agent 回合摘要仍由 `feature/agent-summary` 独占（bash/read/edit/write/other）。
 - mode 切回 `on`/`off` 后，assistant 与 tool 均恢复对应原生/default 渲染。
 

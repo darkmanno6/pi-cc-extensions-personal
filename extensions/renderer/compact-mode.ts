@@ -1,11 +1,14 @@
 /**
  * Compact mode：每条含 toolCall 的 assistant message 折叠为一条逐步累加的摘要行
- * （`Thought for 8s, bash×2, read×2`），edit/write 独立单行（`✓ write <path> (+25 -0)`），
+ * （`Ran for 8s, bash×2, read×2`），edit/write 独立单行（`✓ write <path> (+25 -0)`），
  * 普通工具折叠时不显示独立行；展开（Ctrl+O / fullscreen 点击）在单个工具卡中恢复
  * compact-thinking/Pi 原生或专用 renderer。edit/write 折叠时显示统计，展开时显示 rich diff。
+ * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
+ * 底部 Agents/Tasks 面板由 pi-subagents/pi-tasks 独立 widget 负责，不经 tool 卡外置。
  *
  * 工具计数：read 按非空路径去重、其余按调用计数（首次出现顺序）；edit/write 不进摘要。
- * 思考时长复用 compact-thinking 只读查询，不建第二套计时器。
+ * 时长 = 回合流逝挂钟；进行中 Running...，结束 Ran for。
+ * abort/error/length 状态行挂在摘要外层，避免被折叠吞掉。
  * 最终 agent 回合摘要由 feature/agent-summary 独占（bash/read/edit/write/other）。
  *
  * 补丁生命周期遵循仓库既有模式：Symbol 所有权、dispose 仅恢复仍由本安装持有的
@@ -123,26 +126,52 @@ function formatThoughtDuration(durationMs: number) {
 
 export { formatThoughtDuration };
 
+/** assistant stopReason → 外层状态文案（与 Pi 原生口径对齐）。 */
+export function messageStopStatus(message: any): string | undefined {
+	const reason = message?.stopReason;
+	if (reason === "aborted") {
+		return message.errorMessage && message.errorMessage !== "Request was aborted"
+			? String(message.errorMessage)
+			: "Operation aborted";
+	}
+	if (reason === "error") {
+		return `Error: ${message.errorMessage || "Unknown error"}`;
+	}
+	if (reason === "length") {
+		return "Response was truncated before completion.";
+	}
+	return undefined;
+}
+
+function roundStopStatus(messages: Iterable<any>): string | undefined {
+	for (const message of messages) {
+		const status = messageStopStatus(message);
+		if (status) return status;
+	}
+	return undefined;
+}
+
 /**
  * 逐条 assistant message 的摘要文本（无工具计数时可为空串）：
- * 思考时长在前，工具按消息内首次出现顺序排列；read 按非空路径去重。
+ * 时长 = max(thinking query, durationFloorMs 挂钟)；工具首次出现顺序；read 路径去重。
  */
 function buildMessagesSummary(
 	messages: Iterable<any>,
 	query?: CompactThinkingQuery,
-	thinkingActiveOverride?: boolean,
+	runningActiveOverride?: boolean,
+	durationFloorMs?: number,
 ): string {
 	const parts: string[] = [];
 	const counts = new Map<string, number>();
 	const readPaths = new Set<string>();
 	const durationTimestamps = new Set<number>();
 	let durationMs = 0;
-	let thinkingActive = false;
+	let runningActive = false;
 
 	for (const message of messages) {
 		if (typeof message?.timestamp === "number" && !durationTimestamps.has(message.timestamp)) {
 			durationTimestamps.add(message.timestamp);
-			if (query?.isMessageThinkingActive?.(message.timestamp)) thinkingActive = true;
+			if (query?.isMessageThinkingActive?.(message.timestamp)) runningActive = true;
 			const value = query?.getMessageThinkingDurationMs(message.timestamp);
 			if (typeof value === "number" && Number.isFinite(value) && value > 0) durationMs += value;
 		}
@@ -164,18 +193,28 @@ function buildMessagesSummary(
 		}
 	}
 
-	thinkingActive = thinkingActiveOverride ?? thinkingActive;
-	if (thinkingActive) {
-		parts.push(
-			durationMs > 0 ? `Thinking... · ${formatThoughtDuration(durationMs)}` : "Thinking...",
-		);
-	} else if (durationMs > 0) parts.push(`Thought for ${formatThoughtDuration(durationMs)}`);
+	if (
+		typeof durationFloorMs === "number" &&
+		Number.isFinite(durationFloorMs) &&
+		durationFloorMs > durationMs
+	) {
+		durationMs = durationFloorMs;
+	}
+
+	runningActive = runningActiveOverride ?? runningActive;
+	if (runningActive) {
+		parts.push(durationMs > 0 ? `Running... · ${formatThoughtDuration(durationMs)}` : "Running...");
+	} else if (durationMs > 0) parts.push(`Ran for ${formatThoughtDuration(durationMs)}`);
 	for (const [name, count] of counts) parts.push(`${name}×${count}`);
 	return parts.join(", ");
 }
 
-export function buildMessageSummary(message: any, query?: CompactThinkingQuery): string {
-	return buildMessagesSummary([message], query);
+export function buildMessageSummary(
+	message: any,
+	query?: CompactThinkingQuery,
+	durationFloorMs?: number,
+): string {
+	return buildMessagesSummary([message], query, undefined, durationFloorMs);
 }
 
 function fallbackTheme(): any {
@@ -248,7 +287,7 @@ export type CompactModeHooks = {
 	refresh(): void;
 	/** compact 模式下重新认领 assistant patch（位于 compact-thinking 之上）。 */
 	assertOwnership(): void;
-	/** 重新渲染包含指定 toolCallId 的 assistant 消息（思考收尾时刷新时长）。 */
+	/** 重新渲染包含指定 toolCallId 的 assistant 消息（思考收尾时刷新）。 */
 	refreshToolCallMessage(toolCallId: string | undefined): void;
 	shutdown(): void;
 };
@@ -395,7 +434,8 @@ function compactEditWriteExpandedLines(
 
 function compactAssistantLineComponent(
 	component: any,
-	summary: string,
+	/** 静态串或每次 render 重算（Running 时长需逐步跳动）。 */
+	summary: string | (() => string),
 	query?: CompactThinkingQuery,
 	options: { hint?: boolean; leadingBlank?: boolean; pad?: number } = {},
 ): any {
@@ -407,17 +447,15 @@ function compactAssistantLineComponent(
 			const available = Math.max(0, width - pad);
 			const hintText = options.hint === false ? "" : ` • ${showMoreHintText()}`;
 			const summaryWidth = Math.max(0, available - visibleWidth(hintText));
-			const thinkingActive = summary.startsWith("Thinking...");
-			const displaySummary = thinkingActive
-				? `${self.hiddenThinkingLabel || "Thinking..."}${summary.slice("Thinking...".length)}`
-				: summary;
-			const plainText = truncateToWidth(displaySummary, summaryWidth, "…");
+			const resolved = typeof summary === "function" ? summary() : summary;
+			const runningActive = resolved.startsWith("Running...");
+			const plainText = truncateToWidth(resolved, summaryWidth, "…");
 			let text = theme.fg("muted", plainText);
-			if (thinkingActive || plainText.startsWith("Thought for ")) {
+			if (runningActive || plainText.startsWith("Ran for ")) {
 				const separator = plainText.indexOf(", ");
 				const heading = separator < 0 ? plainText : plainText.slice(0, separator);
 				const tools = separator < 0 ? "" : plainText.slice(separator);
-				if (thinkingActive) {
+				if (runningActive) {
 					const durationSeparator = heading.indexOf(" · ");
 					const label = durationSeparator < 0 ? heading : heading.slice(0, durationSeparator);
 					const duration = durationSeparator < 0 ? "" : heading.slice(durationSeparator);
@@ -439,9 +477,33 @@ function compactAssistantLineComponent(
 	};
 }
 
-function compactAssistantLine(component: any, summary: string, query?: CompactThinkingQuery): void {
-	if (!summary) return;
+function compactStopStatusLine(status: string, pad = 0): any {
+	return {
+		render(width: number): string[] {
+			const theme = themeOf();
+			const prefix = " ".repeat(Math.max(0, pad));
+			const line = `${prefix}${theme.fg("error", status)}`;
+			return ["", truncateToWidth(line, width, "")];
+		},
+		invalidate() {},
+	};
+}
+
+function compactAssistantLine(
+	component: any,
+	summary: string | (() => string),
+	query?: CompactThinkingQuery,
+): void {
+	// 空静态串跳过；getter 留给 render 判断（Running 可能稍后才有时长）。
+	if (typeof summary === "string" && !summary) return;
 	component.contentContainer.addChild(compactAssistantLineComponent(component, summary, query));
+}
+
+function appendStopStatus(component: any, status: string | undefined): void {
+	if (!status || !component?.contentContainer?.addChild) return;
+	component.contentContainer.addChild(
+		compactStopStatusLine(status, Number(component.outputPad) || 0),
+	);
 }
 
 function ensureAssistantSetExpanded(component: any): void {
@@ -507,10 +569,17 @@ function collectMountedComponents(root: any): void {
 		}
 	};
 	visit(root);
-	trackedAssistantComponents.clear();
-	trackedToolComponents.clear();
-	for (const component of assistants) trackedAssistantComponents.add(component);
-	for (const component of tools) trackedToolComponents.add(component);
+	// 扫到组件才替换跟踪表。面板/custom UI 打开时 root 往往扫不到 transcript，
+	// 若此时清空会丢掉 live updateContent/updateDisplay 已登记的实例，
+	// /ccstyle 切换就只能靠 /reload 重建。
+	if (assistants.size > 0 || tools.size > 0) {
+		trackedAssistantComponents.clear();
+		trackedToolComponents.clear();
+		for (const component of assistants) trackedAssistantComponents.add(component);
+		for (const component of tools) trackedToolComponents.add(component);
+	} else if (config.mode === "compact") {
+		for (const component of trackedAssistantComponents) ensureAssistantSetExpanded(component);
+	}
 }
 
 export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHooks {
@@ -552,10 +621,62 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		detachedMessages: any[];
 		active: boolean;
 		suppressedToolIds: Set<string>;
+		/** 回合挂钟起点，保证 Running 时长连续递增。 */
+		startedAt: number;
+		endedAt?: number;
 	};
 	let activeRound: CompactRound | undefined;
 	let roundByComponent = new WeakMap<object, CompactRound>();
 	const expandedRoundToolIds = new Set<string>();
+	let uiRef: { requestRender?: (force?: boolean) => void } | undefined;
+	let roundTickTimer: ReturnType<typeof setInterval> | undefined;
+
+	const roundWallMs = (round: CompactRound): number => {
+		const end = round.active ? Date.now() : (round.endedAt ?? Date.now());
+		return Math.max(1, end - round.startedAt);
+	};
+
+	const summarize = (messages: Iterable<any>, runningActive?: boolean, round?: CompactRound) =>
+		buildMessagesSummary(
+			messages,
+			deps.query,
+			runningActive,
+			round ? roundWallMs(round) : undefined,
+		);
+
+	const stopRoundTick = (): void => {
+		if (!roundTickTimer) return;
+		clearInterval(roundTickTimer);
+		roundTickTimer = undefined;
+	};
+
+	// 自备 tick：getter 在 render 重算挂钟；兼驱动 Running 扫光（setCompactSummaryActive）。
+	const ensureRoundTick = (): void => {
+		if (roundTickTimer) return;
+		roundTickTimer = setInterval(() => {
+			if (!patch.active || !activeRound?.active) {
+				stopRoundTick();
+				return;
+			}
+			try {
+				uiRef?.requestRender?.(true);
+			} catch {
+				/* 无 UI */
+			}
+		}, 250);
+	};
+
+	/** 结束回合活动态；可选立即重绘。 */
+	const endRound = (round: CompactRound, render = false): void => {
+		round.active = false;
+		if (round.endedAt === undefined) round.endedAt = Date.now();
+		if (activeRound === round) {
+			activeRound = undefined;
+			deps.query?.setCompactSummaryActive?.(false);
+			stopRoundTick();
+		}
+		if (render) renderRound(round);
+	};
 
 	const renderAssistantWithoutThinking = (component: any, message: any): any => {
 		const content = Array.isArray(message?.content) ? message.content : [];
@@ -583,7 +704,12 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	const renderRound = (round: CompactRound): void => {
-		const summary = buildMessagesSummary(roundMessages(round), deps.query, round.active);
+		const messages = roundMessages(round);
+		const stopStatus = roundStopStatus(messages);
+		if (stopStatus) endRound(round);
+		// Running 时每次 render 重算时长（含挂钟下限）；结束后固定。
+		const getSummary = () => summarize(roundMessages(round), round.active, round);
+		const summary = getSummary();
 		for (const id of round.suppressedToolIds) expandedRoundToolIds.delete(id);
 		round.suppressedToolIds.clear();
 
@@ -634,7 +760,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					const theme = themeOf();
 					const box = expandedToolCard(theme);
 					box.addChild(
-						compactAssistantLineComponent(round.anchor, summary, deps.query, {
+						compactAssistantLineComponent(round.anchor, getSummary, deps.query, {
 							hint: false,
 							leadingBlank: false,
 							pad: 0,
@@ -643,7 +769,10 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					for (const child of assistantChildren) box.addChild(child);
 					const ids = roundToolCallIds(round);
 					for (const tool of trackedToolComponents) {
-						if (!ids.has(tool.toolCallId) || EDIT_WRITE_TOOLS.has(String(tool.toolName ?? ""))) {
+						if (
+							!ids.has(tool.toolCallId) ||
+							EDIT_WRITE_TOOLS.has(String(tool.toolName ?? ""))
+						) {
 							continue;
 						}
 						box.addChild({
@@ -657,13 +786,18 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					for (const child of assistantChildren) child.invalidate?.();
 				},
 			});
+			// 展开卡内工具会显示 error，外层仍挂 abort/length，避免只藏在折叠工具里。
+			appendStopStatus(round.anchor, stopStatus);
 			return;
 		}
 
 		for (const [component, message] of round.messages) {
 			if (component === round.anchor) {
 				renderAssistantWithoutThinking(component, message);
-				compactAssistantLine(component, summary, deps.query);
+				// 空摘要不挂行（getter 在 Running 启动瞬间也可能短暂为空）
+				if (summary || round.active) compactAssistantLine(component, getSummary, deps.query);
+				// 折叠时工具行被隐藏：abort/error/length 必须挂在摘要外层。
+				appendStopStatus(component, stopStatus);
 			} else {
 				component.contentContainer?.clear?.();
 			}
@@ -672,24 +806,21 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 
 	const activateRound = (round: CompactRound): void => {
 		round.active = true;
+		if (!round.startedAt) round.startedAt = Date.now();
+		delete round.endedAt;
 		activeRound = round;
 		deps.query?.setCompactSummaryActive?.(true);
+		ensureRoundTick();
 	};
 
-	const finishRound = (round: CompactRound): void => {
-		round.active = false;
-		renderRound(round);
-		if (activeRound === round) {
-			activeRound = undefined;
-			deps.query?.setCompactSummaryActive?.(false);
-		}
-	};
+	const finishRound = (round: CompactRound): void => endRound(round, true);
 
 	const resetRounds = (): void => {
 		activeRound = undefined;
 		roundByComponent = new WeakMap();
 		expandedRoundToolIds.clear();
 		deps.query?.setCompactSummaryActive?.(false);
+		stopRoundTick();
 	};
 
 	patch.assistantInstalled = function (this: any, message: any) {
@@ -724,6 +855,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					detachedMessages: [],
 					active: true,
 					suppressedToolIds: new Set(),
+					startedAt: Date.now(),
 				};
 				roundByComponent.set(this, round);
 				activateRound(round);
@@ -734,6 +866,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					detachedMessages: [],
 					active: true,
 					suppressedToolIds: new Set(),
+					startedAt: Date.now(),
 				};
 				roundByComponent.set(this, round);
 				if (!activeRound) activateRound(round);
@@ -756,12 +889,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				return renderAssistantWithoutThinking(this, message);
 			}
 			if (round) {
-				round.active = false;
+				endRound(round);
 				roundByComponent.delete(this);
-				if (activeRound === round) {
-					activeRound = undefined;
-					deps.query?.setCompactSummaryActive?.(false);
-				}
 				return passThroughAssistant(this, message);
 			}
 			if (activeRound) finishRound(activeRound);
@@ -778,12 +907,22 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					detachedMessages: [],
 					active: true,
 					suppressedToolIds: new Set(),
+					startedAt: Date.now(),
 				};
 				roundByComponent.set(this, round);
 				if (!activeRound) activateRound(round);
 			}
 			round.messages.set(this, message);
 			renderRound(round);
+			return undefined;
+		}
+
+		// 无可见内容的 abort/error/length：直接外层状态行，并结束进行中的回合。
+		const loneStatus = messageStopStatus(message);
+		if (loneStatus) {
+			if (activeRound) finishRound(activeRound);
+			self.contentContainer.clear();
+			appendStopStatus(this, loneStatus);
 			return undefined;
 		}
 
@@ -802,6 +941,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 			if (this.expanded !== true) return lines;
 			return compactEditWriteExpandedLines(this, width, deps.writeMetadata);
 		}
+		// Agent/Task 等同普通工具：折叠不外置（live 面板走独立 widget）。
 		if (expandedRoundToolIds.has(String(this.toolCallId ?? ""))) return [];
 		// 普通工具折叠时不显示独立行（摘要行已统计），独立展开走原 renderer。
 		if (this.expanded === true) {
@@ -825,12 +965,18 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	};
 
 	patch.assertAssistantOwnership = () => {
-		// 仅从已标记的 compact-thinking 包装器重新认领。未知外部包装器必须保留所有权。
+		// compact 必须在外层：从 compact-thinking 包装器认领，或收回 mode=on/off
+		// 时主动释放给 original/native 的所有权。未知外部包装器不抢，避免递归。
 		if (!patch.active || assistantPrototype.updateContent === patch.assistantInstalled) return;
 		const current = assistantPrototype.updateContent;
-		if ((current as any)[COMPACT_THINKING_PATCH_KEY] !== true) return;
-		patch.assistantOriginal = current;
-		assistantPrototype.updateContent = patch.assistantInstalled;
+		if ((current as any)[COMPACT_THINKING_PATCH_KEY] === true) {
+			patch.assistantOriginal = current;
+			assistantPrototype.updateContent = patch.assistantInstalled;
+			return;
+		}
+		if (current === patch.assistantOriginal || current === patch.assistantNative) {
+			assistantPrototype.updateContent = patch.assistantInstalled;
+		}
 	};
 
 	(patch.assistantInstalled as any)[PROTOTYPE_ORIGINAL_KEY] = patch.assistantNative;
@@ -871,31 +1017,23 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		for (const component of trackedToolComponents) component.expanded = globalExpanded;
 	};
 
-	const releaseAssistantOwnership = (): void => {
-		if (assistantPrototype.updateContent === patch.assistantInstalled) {
-			assistantPrototype.updateContent = patch.assistantOriginal;
-		}
-	};
-
 	return {
 		sync(ctx: any) {
 			if (!patch.active) return;
+			uiRef = ctx?.ui;
 			resetRounds();
-			if (config.mode === "compact") {
-				patch.assertAssistantOwnership();
-				syncGlobalExpanded(ctx);
-			} else {
-				releaseAssistantOwnership();
-			}
+			// 始终保持补丁在链上：mode=on/off 走 passThrough，仍写入 lastMessage
+			// 与 tracked 集合，这样 /ccstyle 切回 compact 时不必 /reload。
+			patch.assertAssistantOwnership();
+			if (config.mode === "compact") syncGlobalExpanded(ctx);
+			else hoveredAssistantComponent = undefined;
 			refreshTrackedComponents();
 		},
 		refresh() {
 			if (!patch.active) return;
 			resetRounds();
-			if (config.mode !== "compact") {
-				releaseAssistantOwnership();
-				hoveredAssistantComponent = undefined;
-			}
+			patch.assertAssistantOwnership();
+			if (config.mode !== "compact") hoveredAssistantComponent = undefined;
 			refreshTrackedComponents();
 		},
 		assertOwnership() {

@@ -8,7 +8,7 @@
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠏ Bash rg -n 'renderCall' extensions/ --type ts
+ ⠙ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more
@@ -172,9 +172,9 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠋ Read extensions/index.ts
- ├ ⠋ Bash npm test
- └ ⠋ Ffgrep extensions/
+ ├ ⠹ Read extensions/index.ts
+ ├ ⠹ Bash npm test
+ └ ⠹ Ffgrep extensions/
 ```
 
 ### 收起：完成/失败

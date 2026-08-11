@@ -84,7 +84,13 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGro
 		// 切入 compact：先收集当前 transcript，再同步全局展开状态和补丁所有权。
 		syncCompactMode(ctx);
 	}
+	// 立即重塑一次；再延迟一帧（与 session_start 同款），等面板/custom
+	// 卸下、主 transcript 重新挂载后再扫树，避免必须 /reload。
 	refreshCurrentTranscript(ctx, toolGrouping);
+	scheduleSessionRender(() => {
+		if (mode === "compact") syncCompactMode(ctx);
+		refreshCurrentTranscript(ctx, toolGrouping);
+	});
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
 
@@ -200,8 +206,7 @@ export default function (
 
 	pi.on("tool_execution_end", async (event) => {
 		if (config.mode !== "compact") return;
-		// Agent 工具在 tool_execution_end 收尾思考：延迟到所有监听器之后刷新，
-		// 让 compact-thinking 先写入最终时长，再重绘摘要行。
+		// Agent 等工具收尾后延迟刷新，让 compact-thinking 先落最终态。
 		const toolCallId: string | undefined = event?.toolCallId;
 		setTimeout(() => {
 			compactModeHooks?.refreshToolCallMessage(toolCallId);
@@ -251,7 +256,7 @@ export default function (
 		scheduleSessionRender(() => syncCompactMode(ctx));
 	});
 
-	pi.on("tool_execution_start", async (event, ctx) => {
+	pi.on("tool_execution_start", async (_event, ctx) => {
 		installation?.toolGrouping.setTheme(ctx.ui.theme);
 	});
 

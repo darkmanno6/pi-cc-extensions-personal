@@ -534,12 +534,15 @@ async function generateCompact() {
 				section(
 					"1. 消息折叠摘要行",
 					[
-						"含 toolCall 的 assistant 折叠为单行摘要（思考时长 + 工具计数）：",
+						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）：",
 						fence([...activeLines, ...doneLines]),
 						[
-							"- 思考中：`Thinking... · <时长>`；结束后：`Thought for <时长>`。",
+							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",
+							"- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。",
 							"- 工具按消息内首次出现顺序；`read` 按非空路径去重。",
 							"- `edit` / `write` **不进**摘要计数（各自独立单行）。",
+							"- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。",
+							"- abort/error/length 状态行挂在摘要外层，不被折叠吞掉。",
 							"- 行末 `click to show more`；摘要永不换行。",
 						].join("\n"),
 						"纯函数口径（`buildMessageSummary`）：",
@@ -664,7 +667,7 @@ async function generateCompact() {
 				[
 					[
 						"- 连续含 toolCall 的 assistant 消息累加进同一回合摘要，直到出现可见最终文本。",
-						"- 思考时长跨消息累加（只读 compact-thinking 查询，不建第二套计时器）。",
+						"- 运行时长跨消息累加（thinking query + 回合挂钟 floor）。",
 						"- 最终 agent 回合摘要仍由 `feature/agent-summary` 独占（bash/read/edit/write/other）。",
 						"- mode 切回 `on`/`off` 后，assistant 与 tool 均恢复对应原生/default 渲染。",
 					].join("\n"),

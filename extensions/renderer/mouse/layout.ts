@@ -2,7 +2,7 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { isCompactAssistantComponent } from "../compact-mode.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
-import { scrollButtonWidget } from "./scroll.ts";
+import { getScrollButtonWidget } from "./scroll.ts";
 
 export type ComponentRowHit = {
 	component: any;
@@ -97,7 +97,7 @@ export function componentAtLocalRow(
 		// compact 摘要行整体作为可展开卡片（折叠摘要 / 展开内容）。
 		return { component, row: localRow };
 	}
-	if (component === scrollButtonWidget) {
+	if (component === getScrollButtonWidget()) {
 		return { component, row: localRow };
 	}
 	if (!Array.isArray(component.children)) return null;

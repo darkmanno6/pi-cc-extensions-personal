@@ -43,10 +43,10 @@ import {
 	setScrollButtonVisible,
 	setScrollButtonWidget,
 	setToolMouseTui,
-	scrollButtonVisible,
-	scrollButtonWidget,
+	getScrollButtonVisible,
+	getScrollButtonWidget,
+	getToolMouseTui,
 	toolMouseInteractionActive,
-	toolMouseTui,
 	updateScrollButtonFromInput,
 } from "./scroll.ts";
 import {
@@ -264,7 +264,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	const component = target.component;
 	const card = target.group ?? component;
 	// 回到底部按钮：按组件引用命中，不依赖渲染行缓存。
-	if (scrollButtonVisible && component === scrollButtonWidget) {
+	if (getScrollButtonVisible() && component === getScrollButtonWidget()) {
 		tui.scrollToBottom?.();
 		hideScrollButton(tui);
 		return true;
@@ -338,7 +338,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 	if (hit) {
 		const line = hit.box.lines?.[hit.localRow];
 		// 回到底部按钮：渲染行文本 + 列区间识别（零组件树开销）。
-		if (typeof line === "string" && scrollButtonVisible && line.includes("[ ↓")) {
+		if (typeof line === "string" && getScrollButtonVisible() && line.includes("[ ↓")) {
 			const plain = stripTerminalSequencesPreservingLayout(line);
 			const idx = plain.indexOf("[ ↓");
 			if (idx >= 0 && x >= idx && x <= idx + plain.length - 1) {
@@ -729,40 +729,40 @@ function patchToolMouseMotionAfterRender(tui: any): void {
 }
 
 function handleToolMouseInput(data: string): { consume: true } | undefined {
-	if (!toolMouseTui) return undefined;
+	if (!getToolMouseTui()) return undefined;
 	// 惰性 Proxy fullscreen：鼠标由 handleViewportInput 包装消费（官方链之前），
 	// 此处只处理键盘（鼠标事件在官方 listener 已被 consume，到不了这里）。
-	if (fullscreenLazyTui(toolMouseTui)) {
-		scheduleScrollButtonSync(toolMouseTui, data);
+	if (fullscreenLazyTui(getToolMouseTui())) {
+		scheduleScrollButtonSync(getToolMouseTui(), data);
 		if (isScrollBottomInput(data)) {
-			toolMouseTui.scrollToBottom?.();
-			hideScrollButton(toolMouseTui);
+			getToolMouseTui().scrollToBottom?.();
+			hideScrollButton(getToolMouseTui());
 			return { consume: true };
 		}
 		return undefined;
 	}
-	updateScrollButtonFromInput(toolMouseTui, data);
+	updateScrollButtonFromInput(getToolMouseTui(), data);
 	// Off mode restores native input: wheel keeps scrolling through Pi's normal
 	// dispatcher, while hover/click affordances are entirely inactive.
 	if (!toolMouseInteractionActive()) return undefined;
 	const packets = parseSgrMousePackets(data);
 	if (!packets) {
-		scheduleScrollButtonSync(toolMouseTui, data);
+		scheduleScrollButtonSync(getToolMouseTui(), data);
 		return undefined;
 	}
 
 	let consumed = false;
 	for (const packet of packets) {
-		updateToolSummaryHover(toolMouseTui, packet);
+		updateToolSummaryHover(getToolMouseTui(), packet);
 		if (!isSgrLeftPress(packet)) continue;
-		if (toggleToolAtMouseClick(toolMouseTui, packet)) {
+		if (toggleToolAtMouseClick(getToolMouseTui(), packet)) {
 			consumed = true;
 		}
 	}
 
 	// Let scrolling, motion, release, and clicks outside tool results reach the
 	// normal TUI input chain (including other extensions such as pi-zentui).
-	scheduleScrollButtonSync(toolMouseTui, data);
+	scheduleScrollButtonSync(getToolMouseTui(), data);
 	return consumed ? { consume: true } : undefined;
 }
 
@@ -782,8 +782,8 @@ export function teardownToolMouseInteraction(
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	try {
-		if (isLazyProxyTui(toolMouseTui)) releaseFullscreenToolMouseMotion(toolMouseTui);
-		else toolMouseTui?.terminal?.write?.(TOOL_MOUSE_DISABLE);
+		if (isLazyProxyTui(getToolMouseTui())) releaseFullscreenToolMouseMotion(getToolMouseTui());
+		else getToolMouseTui()?.terminal?.write?.(TOOL_MOUSE_DISABLE);
 	} catch {
 		// The terminal may already be closed during shutdown.
 	}
@@ -793,7 +793,7 @@ export function teardownToolMouseInteraction(
 		// The UI context may already have been reset during /reload.
 	}
 	restoreToolMouseRenderPatch();
-	restoreFullscreenViewportInput(toolMouseTui);
+	restoreFullscreenViewportInput(getToolMouseTui());
 	resetScrollButtonState();
 	setToolMouseTui(null);
 	toolMouseUi = null;
@@ -807,7 +807,7 @@ export function resetToolHoverState(): void {
 	setHoveredCompactAssistant(null);
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);
-	releaseFullscreenToolMouseMotion(toolMouseTui);
+	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
 
 export function installToolMouseInteraction(
@@ -839,7 +839,7 @@ export function installToolMouseInteraction(
 				},
 				invalidate() {},
 			});
-			return scrollButtonWidget;
+			return getScrollButtonWidget();
 		}
 		// Wrap doRender to capture the live frame for tool click/hover mapping.
 		patchToolMouseMotionAfterRender(tui);
@@ -861,7 +861,7 @@ function refreshToolRendererComponents(tui: any): void {
 }
 
 export function scheduleSessionRender(refresh?: () => void): void {
-	const tui = toolMouseTui;
+	const tui = getToolMouseTui();
 	if (!tui || typeof tui.requestRender !== "function") return;
 	if (sessionRenderTimer) clearTimeout(sessionRenderTimer);
 	// Restored transcripts are populated at different points for startup, reload,
@@ -869,7 +869,7 @@ export function scheduleSessionRender(refresh?: () => void): void {
 	// rebuild finish so messages are not left hidden until the next terminal input.
 	sessionRenderTimer = setTimeout(() => {
 		sessionRenderTimer = null;
-		if (toolMouseTui !== tui) return;
+		if (getToolMouseTui() !== tui) return;
 		patchToolMouseMotionAfterRender(tui);
 		refreshToolRendererComponents(tui);
 		refresh?.();
@@ -877,6 +877,8 @@ export function scheduleSessionRender(refresh?: () => void): void {
 	}, 0);
 }
 
+// toolMouseTui 跨模块读取一律走 getToolMouseTui()（jiti 转译下 let 绑定可能是快照）；
+// 此 re-export 仅保留兼容旧导入，新代码请用 getToolMouseTui。
 export { toolMouseTui } from "./scroll.ts";
 export {
 	hoveredToolCallId,

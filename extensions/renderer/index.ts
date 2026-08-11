@@ -30,9 +30,9 @@ import {
 	setHoveredToolGroup,
 	setHoveredToolIo,
 	teardownToolMouseInteraction,
-	toolMouseTui,
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
+import { getToolMouseTui } from "./mouse/scroll.ts";
 import { clearAllAnimations } from "./tool/result.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import {
@@ -54,16 +54,17 @@ const GLOBAL_COMPACTION_RENDER_PATCH = Symbol.for("pi.ccstyle.compaction-render-
 let compactModeHooks: CompactModeHooks | undefined;
 
 function refreshCurrentTranscript(ctx?: any, toolGrouping?: ToolGroupingHooks): void {
-	toolGrouping?.refresh(toolMouseTui);
-	refreshMessageDisplays(toolMouseTui);
-	refreshCompactModeComponents(toolMouseTui);
+	const tui = getToolMouseTui();
+	toolGrouping?.refresh(tui);
+	refreshMessageDisplays(tui);
+	refreshCompactModeComponents(tui);
 	compactModeHooks?.refresh();
-	toolMouseTui?.requestRender?.(true);
+	tui?.requestRender?.(true);
 	ctx?.ui?.requestRender?.(true);
 }
 
 function syncCompactMode(ctx: any): void {
-	refreshCompactModeComponents(toolMouseTui);
+	refreshCompactModeComponents(getToolMouseTui());
 	compactModeHooks?.sync(ctx);
 }
 
@@ -77,8 +78,9 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGro
 		setHoveredToolIo(null, null);
 		// 惰性 Proxy（regular/fullscreen）不持有 reporting：regular 保终端回滚，
 		// fullscreen 归官方所有，均不能在此关闭。
-		if (toolMouseTui && !isLazyProxyTui(toolMouseTui)) {
-			toolMouseTui.terminal?.write?.(TOOL_MOUSE_DISABLE);
+		const tui = getToolMouseTui();
+		if (tui && !isLazyProxyTui(tui)) {
+			tui.terminal?.write?.(TOOL_MOUSE_DISABLE);
 		}
 	} else if (mode === "compact") {
 		// 切入 compact：先收集当前 transcript，再同步全局展开状态和补丁所有权。
@@ -231,7 +233,7 @@ export default function (
 		// compact-thinking 的 session_start 处理在本 handler 之后执行（在其之上再装
 		// 一层 updateContent）；延迟再同步一次，保证 compact 补丁最终位于外层。
 		setTimeout(() => syncCompactMode(ctx), 0);
-		scheduleSessionRender(() => hooks.toolGrouping.refresh(toolMouseTui));
+		scheduleSessionRender(() => hooks.toolGrouping.refresh(getToolMouseTui()));
 	});
 
 	pi.on("session_compact", async (event, ctx) => {
@@ -245,7 +247,7 @@ export default function (
 		syncCompactMode(ctx);
 		scheduleSessionRender(() => {
 			syncCompactMode(ctx);
-			hooks.toolGrouping.refresh(toolMouseTui);
+			hooks.toolGrouping.refresh(getToolMouseTui());
 		});
 	});
 

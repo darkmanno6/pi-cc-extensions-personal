@@ -485,6 +485,7 @@ async function generateCompact() {
 		getMessageThinkingDurationMs: (timestamp: number) => {
 			if (timestamp === 1) return 8500;
 			if (timestamp === 2) return 1200;
+			if (timestamp === 3) return 8500;
 			return 0;
 		},
 		isMessageThinkingActive: (timestamp: number) => timestamp === 1 && thinkingActive,
@@ -530,12 +531,45 @@ async function generateCompact() {
 			done.updateContent(doneMsg);
 			const doneLines = renderLines(done);
 
+			// 结束 active 回合，避免污染下方展开预览的独立回合。
+			active.updateContent({
+				role: "assistant",
+				content: [{ type: "text", text: "done" }],
+			} as unknown as AssistantMessage);
+
+			// 展开预览：setExpanded(true) 后恢复原生渲染（摘要行 + Thinking + 工具卡）。
+			const expandMsg = {
+				role: "assistant",
+				timestamp: 3,
+				content: [
+					{ type: "thinking", thinking: "check" },
+					{ type: "toolCall", id: "x1", name: "bash", arguments: { command: "npm test" } },
+					{ type: "toolCall", id: "x2", name: "read", arguments: { path: "a.ts" } },
+				],
+			} as unknown as AssistantMessage;
+			const expand = new AssistantMessageComponent(expandMsg, true) as any;
+			expand.updateContent(expandMsg);
+			succeed(tool("bash", "x1", { command: "npm test" }), "pass 79/79");
+			succeed(tool("read", "x2", { path: "a.ts" }), "line1\nline2");
+			// 发送最终文本结束回合，展开时摘要显示 Ran for（而非 Running...）。
+			new AssistantMessageComponent(
+				{ role: "assistant", content: [{ type: "text", text: "done" }] } as unknown as AssistantMessage,
+				true,
+			).updateContent({
+				role: "assistant",
+				content: [{ type: "text", text: "done" }],
+			} as unknown as AssistantMessage);
+			expand.setExpanded(true);
+			const expandedLines = renderLines(expand);
+
 			chunks.push(
 				section(
 					"1. 消息折叠摘要行",
 					[
 						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）：",
 						fence([...activeLines, ...doneLines]),
+						"展开（Ctrl+O / 点击摘要行）后恢复原生渲染：",
+						fence(expandedLines),
 						[
 							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",
 							"- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。",
@@ -544,6 +578,7 @@ async function generateCompact() {
 							"- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。",
 							"- abort/error/length 状态行挂在摘要外层，不被折叠吞掉。",
 							"- 行末 `click to show more`；摘要永不换行。",
+							"- 展开后：摘要行隐藏，thinking 与工具卡恢复原生渲染，子卡片背景更深且带内部 padding。",
 						].join("\n"),
 						"纯函数口径（`buildMessageSummary`）：",
 						fence([

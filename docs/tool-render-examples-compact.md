@@ -13,13 +13,26 @@
  Running... · 9s, bash×1, read×2, grep×1 • click to show more
 ```
 
+展开（Ctrl+O / 点击摘要行）后恢复原生渲染：
+
+```text
+  Thinking...
+
+   $ npm test
+
+   pass 79/79
+
+   read a.ts
+```
+
 - 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。
-- 时长 = 思考时间 + 工具执行时间。
+- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。
 - 工具按消息内首次出现顺序；`read` 按非空路径去重。
 - `edit` / `write` **不进**摘要计数（各自独立单行）。
-- Agent/Task 进行中保留底部 live render；完成后折叠进摘要计数。
+- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。
 - abort/error/length 状态行挂在摘要外层，不被折叠吞掉。
 - 行末 `click to show more`；摘要永不换行。
+- 展开后：摘要行隐藏，thinking 与工具卡恢复原生渲染，子卡片背景更深且带内部 padding。
 
 纯函数口径（`buildMessageSummary`）：
 
@@ -72,7 +85,7 @@ edit/write 折叠时显示统计单行，展开时走 rich diff：
 ## 5. 回合聚合规则
 
 - 连续含 toolCall 的 assistant 消息累加进同一回合摘要，直到出现可见最终文本。
-- 运行时长跨消息累加（思考只读 compact-thinking + 工具执行计时）。
+- 运行时长跨消息累加（thinking query + 回合挂钟 floor）。
 - 最终 agent 回合摘要仍由 `feature/agent-summary` 独占（bash/read/edit/write/other）。
 - mode 切回 `on`/`off` 后，assistant 与 tool 均恢复对应原生/default 渲染。
 

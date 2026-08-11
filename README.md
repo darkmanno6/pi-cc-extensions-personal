@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  类 Claude Code TUI 输出风格、上下文检查，以及 Agent / Session 引用。
+  类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
 </p>
 
 <p align="center">
@@ -41,11 +41,11 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 | 功能                 | 说明                                                                                                     | 入口        |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------- | ------------- |
-| Claude Code 风格输出 | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式                          | `/ccstyle`  |
-| Fullscreen 鼠标交互  | 工具卡/group 点击展开与收起、预览、hover 高亮、回到底部按钮 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| Claude Code UI | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式                          | `/ccstyle`  |
+| Fullscreen mode  | 工具卡/group 点击展开与收起、预览、hover 高亮、回到底部按钮 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板             | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进                                       | `/ccstyle`  |
 | 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                                           | `/context`  |
-| Session 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                      | `@session:` |
+| Session/Subagent 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                      | `@` |
 | 主题                 | 随包提供内置 CC Dark、CC Light 主题                                                                      | `/theme`    |
 
 ## 配置
@@ -78,7 +78,6 @@ npm run typecheck
 ./test.bat # or pi -e .
 ```
 
-修改扩展后执行 `/reload`。
 
 ## 兼容性
 

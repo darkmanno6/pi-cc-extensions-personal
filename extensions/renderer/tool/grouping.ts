@@ -101,7 +101,7 @@ function stripLeadingStatusIcon(line: string): string {
 	);
 }
 
-function stripBackgroundAnsi(line: string): string {
+export function stripBackgroundAnsi(line: string): string {
 	return line.replace(/\x1b\[(?:4[0-9]|10[0-7]|48(?:(?:;|:)[0-9]+)+|49)m/g, "");
 }
 
@@ -126,15 +126,25 @@ function stripLeadingSpaces(line: string, count: number): string {
 	return ansi + line.slice(offset);
 }
 
-function paddedBackgroundRow(theme: any, slot: string, content: string, width: number): string {
+/** 生成一行铺满 width 的 slot 背景行；bgAnsiOverride 可替换背景 ANSI（用于提亮等）。 */
+export function paddedBackgroundRow(
+	theme: any,
+	slot: string,
+	content: string,
+	width: number,
+	bgAnsiOverride?: string,
+): string {
 	const innerWidth = Math.max(0, width - 2);
 	const clipped = truncateToWidth(stripBackgroundAnsi(content), innerWidth, "");
 	const row = ` ${clipped}${" ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)))} `;
-	if (typeof theme?.bg !== "function") return row;
 	const bgAnsi =
-		theme.getBgAnsi?.(slot) ?? theme.bg(slot, "").match(/^\x1b\[[0-?]*[ -/]*[@-~]/)?.[0] ?? "";
+		bgAnsiOverride ||
+		(typeof theme?.bg === "function"
+			? theme.getBgAnsi?.(slot) || theme.bg(slot, "").match(/^\x1b\[[0-?]*[ -/]*[@-~]/)?.[0] || ""
+			: "");
 	const stable = bgAnsi ? row.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi) : row;
-	return theme.bg(slot, stable);
+	if (!bgAnsi) return typeof theme?.bg === "function" ? theme.bg(slot, stable) : row;
+	return `${bgAnsi}${stable}\x1b[49m`;
 }
 
 function oneLine(value: unknown, max = 96): string {

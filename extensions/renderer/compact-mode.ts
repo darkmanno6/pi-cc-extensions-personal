@@ -19,8 +19,7 @@ import {
 	ToolExecutionComponent,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import * as PiTui from "@earendil-works/pi-tui";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, Box } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
@@ -40,6 +39,7 @@ import {
 	renderExpandedToolResult,
 	scheduleAnimation,
 } from "./tool/result.ts";
+import { paddedBackgroundRow, stripBackgroundAnsi } from "./tool/grouping.ts";
 
 /** compact 渲染层对 compact-thinking 的只读查询面（不建第二套计时器）。 */
 export type CompactThinkingQuery = {
@@ -59,7 +59,6 @@ const ASSISTANT_SET_EXPANDED_KEY = Symbol.for(ASSISTANT_SET_EXPANDED_DESCRIPTION
 const ASSISTANT_TOGGLE_ROUND_KEY = Symbol.for(ASSISTANT_TOGGLE_ROUND_DESCRIPTION);
 const ASSISTANT_REENTRY_KEY = Symbol.for(ASSISTANT_REENTRY_DESCRIPTION);
 
-const Box = (PiTui as any).Box;
 const EDIT_WRITE_TOOLS = new Set(["edit", "write"]);
 
 type CompactThinkingTheme = Pick<Theme, "fg" | "italic" | "bold">;
@@ -229,12 +228,165 @@ function themeOf(): any {
 	return getMessageDisplayTheme() ?? fallbackTheme();
 }
 
-function expandedToolCard(theme: any): any {
+/** RGB → HSL（h∈[0,1), l/s∈[0,1]）。 */
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+	r /= 255;
+	g /= 255;
+	b /= 255;
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const l = (max + min) / 2;
+	if (max === min) return [0, 0, l];
+	const d = max - min;
+	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+	let h: number;
+	switch (max) {
+		case r:
+			h = (g - b) / d + (g < b ? 6 : 0);
+			break;
+		case g:
+			h = (b - r) / d + 2;
+			break;
+		default:
+			h = (r - g) / d + 4;
+	}
+	return [h / 6, l, s];
+}
+
+/** HSL → RGB（h∈[0,1)，l/s∈[0,1]）。 */
+function hslToRgb(h: number, l: number, s: number): [number, number, number] {
+	if (s === 0) {
+		const v = Math.round(l * 255);
+		return [v, v, v];
+	}
+	const hue2rgb = (p: number, q: number, t: number): number => {
+		if (t < 0) t += 1;
+		if (t > 1) t -= 1;
+		if (t < 1 / 6) return p + (q - p) * 6 * t;
+		if (t < 1 / 2) return q;
+		if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+		return p;
+	};
+	const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+	const p = 2 * l - q;
+	return [
+		Math.round(hue2rgb(p, q, h + 1 / 3) * 255),
+		Math.round(hue2rgb(p, q, h) * 255),
+		Math.round(hue2rgb(p, q, h - 1 / 3) * 255),
+	];
+}
+
+/** 内部 tool call card 背景：在 userMessageBg 基础上按 HSL 变暗（l×0.7），
+ *  与外卡片形成嵌套层次；非 RGB 色或已足够暗时原样返回。 */
+function darkenBgAnsi(theme: any, slot: string): string {
+	const prefix = typeof theme?.getBgAnsi === "function" ? String(theme.getBgAnsi(slot)) : "";
+	const m = prefix.match(/48;2;(\d+);(\d+);(\d+)/);
+	if (!m) return prefix;
+	const [h, l, s] = rgbToHsl(Number(m[1]), Number(m[2]), Number(m[3]));
+	if (l <= 0.05) return prefix; // 已足够暗，不再变暗
+	const [r, g, b] = hslToRgb(h, l * 0.7, s);
+	return `\x1b[48;2;${r};${g};${b}m`;
+}
+
+/** 去掉行内所有 CSI/OSC 序列后是否有可见文本（判断工具卡首尾内容行）。 */
+function hasVisibleText(line: string): boolean {
+	return line
+		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+		.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+		.trim().length > 0;
+}
+
+/** 工具卡深色行：左右内缩（左 2 右 3 格，含工具卡自身 padding），背景只到内容区，
+ *  修复行尾 reset 截断。 */
+function toolCardBgRow(theme: any, slot: string, bgAnsi: string, line: string, width: number): string {
+	const leftInset = 2;
+	const rightInset = 3;
+	const contentWidth = Math.max(0, width - leftInset - rightInset);
+	// 深色块内左右各 1 格内部 padding；去掉行首原有空格后重新对齐
+	const text = stripBackgroundAnsi(line).replace(/^ +/, "");
+	const innerPad = 2;
+	const clipped = truncateToWidth(text, Math.max(0, contentWidth - innerPad), "");
+	const pad = Math.max(0, contentWidth - innerPad - visibleWidth(clipped));
+	const body = ` ${clipped}${' '.repeat(pad)} `;
+	const stable = body.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi);
+	const outerBg = typeof theme?.getBgAnsi === "function" ? String(theme.getBgAnsi(slot)) : "";
+	const inset = (n) => (outerBg ? `${outerBg}${" ".repeat(n)}\x1b[49m` : " ".repeat(n));
+	return `${inset(leftInset)}${bgAnsi}${stable}\x1b[49m${inset(rightInset)}`;
+}
+/** edit/write 展开卡：保持原样式（userMessageBg Box），不应用工具卡深色/间距改动。 */
+function editWriteExpandedCard(theme: any): any {
 	return new Box(
 		1,
 		1,
 		typeof theme.bg === "function" ? (text: string) => theme.bg("userMessageBg", text) : undefined,
 	);
+}
+
+/** compact 展开卡：外卡片保持 userMessageBg 原色；内部 tool call card（addToolChild）
+ *  背景更深一层且只覆盖内容区（左右内缩、上下限首尾文本行），形成嵌套层次。
+ *  逐行重建背景同时修复嵌套 Box 的右侧截断。 */
+function expandedToolCard(theme: any): any {
+	const slot = "userMessageBg";
+	const toolBgAnsi = darkenBgAnsi(theme, slot);
+	const children: any[] = [];
+	return {
+		children,
+		addChild(child: any) {
+			children.push(child);
+		},
+		addToolChild(child: any) {
+			child.__ccToolCard = true;
+			children.push(child);
+		},
+		render(width: number): string[] {
+			const innerWidth = Math.max(0, width - 2);
+			const lines: string[] = [];
+			lines.push(paddedBackgroundRow(theme, slot, "", width));
+			// 展开不再显示摘要行：跳过第一个 child 的首行空白，避免白占一行
+			let skipLeadingBlank = true;
+			for (const child of children) {
+				const childLines = child.render(innerWidth);
+				if (!child.__ccToolCard) {
+					let start = 0;
+					if (skipLeadingBlank) {
+						while (start < childLines.length && !hasVisibleText(childLines[start])) start++;
+						skipLeadingBlank = false;
+					}
+					for (let i = start; i < childLines.length; i++) {
+						lines.push(paddedBackgroundRow(theme, slot, childLines[i], width));
+					}
+					continue;
+				}
+				// 工具卡：前导 1 空行 + 首尾文本行之间的内容区（深色）；不保留尾随，
+				// 相邻工具卡之间正好 1 空行，底部由卡片 padding 收尾。
+				skipLeadingBlank = false;
+				let first = -1;
+				let last = -1;
+				for (let i = 0; i < childLines.length; i++) {
+					if (hasVisibleText(childLines[i])) {
+						if (first < 0) first = i;
+						last = i;
+					}
+				}
+				if (first < 0) {
+					for (const line of childLines) {
+						lines.push(paddedBackgroundRow(theme, slot, line, width));
+					}
+					continue;
+				}
+				lines.push(paddedBackgroundRow(theme, slot, "", width));
+				// 子卡片内部上下各 1 行深色 padding
+				lines.push(toolCardBgRow(theme, slot, toolBgAnsi, "", width));
+				for (let i = first; i <= last; i++) {
+					lines.push(toolCardBgRow(theme, slot, toolBgAnsi, childLines[i], width));
+				}
+				lines.push(toolCardBgRow(theme, slot, toolBgAnsi, "", width));
+			}
+			lines.push(paddedBackgroundRow(theme, slot, "", width));
+			return lines;
+		},
+		invalidate() {},
+	};
 }
 
 function isAssistantComponent(value: any): boolean {
@@ -421,7 +573,7 @@ function compactEditWriteExpandedLines(
 		component.resultRendererComponent = detail;
 	}
 
-	const box = expandedToolCard(theme);
+	const box = editWriteExpandedCard(theme);
 	box.addChild({
 		render(innerWidth: number): string[] {
 			return compactEditWriteLine(component, innerWidth, writeMetadata).slice(1);
@@ -759,13 +911,6 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				render(width: number): string[] {
 					const theme = themeOf();
 					const box = expandedToolCard(theme);
-					box.addChild(
-						compactAssistantLineComponent(round.anchor, getSummary, deps.query, {
-							hint: false,
-							leadingBlank: false,
-							pad: 0,
-						}),
-					);
 					for (const child of assistantChildren) box.addChild(child);
 					const ids = roundToolCallIds(round);
 					for (const tool of trackedToolComponents) {
@@ -775,7 +920,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 						) {
 							continue;
 						}
-						box.addChild({
+						box.addToolChild({
 							render: (innerWidth: number) => patch.toolOriginalRender.call(tool, innerWidth),
 							invalidate: () => tool.invalidate?.(),
 						});

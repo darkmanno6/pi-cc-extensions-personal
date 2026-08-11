@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-	getToolMouseTui,
-	setToolMouseTui,
-} from "../extensions/renderer/mouse/scroll.ts";
+import { getToolMouseTui, setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
 
 // 回归：jiti 转译下经 re-export 链读取的模块级 let 绑定是初始值快照（死绑定），
 // 跨模块读取必须走 getToolMouseTui()（globalThis Symbol 槽镜像），否则 resume

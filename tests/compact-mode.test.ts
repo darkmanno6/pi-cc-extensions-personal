@@ -97,10 +97,7 @@ test("buildMessageSummary: duration first, read dedup by path, counts, first-see
 		"Running... · 9s, read×2, bash×1, grep×1",
 	);
 	// 显式挂钟覆盖 thinking query
-	assert.equal(
-		buildMessageSummary(message, query, 15_000),
-		"Ran for 15s, read×2, bash×1, grep×1",
-	);
+	assert.equal(buildMessageSummary(message, query, 15_000), "Ran for 15s, read×2, bash×1, grep×1");
 	// 新 message 独立：计数不跨消息累积；无时长无工具时为空串。
 	assert.equal(buildMessageSummary({ timestamp: 2, content: [] }, query), "");
 	assert.equal(

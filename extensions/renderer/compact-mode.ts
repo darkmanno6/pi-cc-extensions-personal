@@ -290,15 +290,23 @@ function darkenBgAnsi(theme: any, slot: string): string {
 
 /** 去掉行内所有 CSI/OSC 序列后是否有可见文本（判断工具卡首尾内容行）。 */
 function hasVisibleText(line: string): boolean {
-	return line
-		.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-		.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-		.trim().length > 0;
+	return (
+		line
+			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+			.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+			.trim().length > 0
+	);
 }
 
 /** 工具卡深色行：左右内缩（左 2 右 3 格，含工具卡自身 padding），背景只到内容区，
  *  修复行尾 reset 截断。 */
-function toolCardBgRow(theme: any, slot: string, bgAnsi: string, line: string, width: number): string {
+function toolCardBgRow(
+	theme: any,
+	slot: string,
+	bgAnsi: string,
+	line: string,
+	width: number,
+): string {
 	const leftInset = 2;
 	const rightInset = 3;
 	const contentWidth = Math.max(0, width - leftInset - rightInset);
@@ -307,7 +315,7 @@ function toolCardBgRow(theme: any, slot: string, bgAnsi: string, line: string, w
 	const innerPad = 2;
 	const clipped = truncateToWidth(text, Math.max(0, contentWidth - innerPad), "");
 	const pad = Math.max(0, contentWidth - innerPad - visibleWidth(clipped));
-	const body = ` ${clipped}${' '.repeat(pad)} `;
+	const body = ` ${clipped}${" ".repeat(pad)} `;
 	const stable = body.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi);
 	const outerBg = typeof theme?.getBgAnsi === "function" ? String(theme.getBgAnsi(slot)) : "";
 	const inset = (n) => (outerBg ? `${outerBg}${" ".repeat(n)}\x1b[49m` : " ".repeat(n));
@@ -914,10 +922,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 					for (const child of assistantChildren) box.addChild(child);
 					const ids = roundToolCallIds(round);
 					for (const tool of trackedToolComponents) {
-						if (
-							!ids.has(tool.toolCallId) ||
-							EDIT_WRITE_TOOLS.has(String(tool.toolName ?? ""))
-						) {
+						if (!ids.has(tool.toolCallId) || EDIT_WRITE_TOOLS.has(String(tool.toolName ?? ""))) {
 							continue;
 						}
 						box.addToolChild({

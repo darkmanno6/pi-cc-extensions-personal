@@ -7,7 +7,7 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { applyStartupHeader } from "../feature/pi-startup-header.ts";
+import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import type { DiffIndicatorMode, DiffViewMode } from "../renderer/tool/diff/index.ts";
 import {

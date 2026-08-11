@@ -1,7 +1,7 @@
 import { VERSION, type AppKeybinding } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { config } from "../config/config.ts";
+import { config } from "../../config/config.ts";
 
 type Rgb = [number, number, number];
 type StyledPart = {

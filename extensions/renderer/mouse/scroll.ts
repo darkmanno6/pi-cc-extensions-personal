@@ -80,17 +80,6 @@ export function isScrollBottomInput(data: string): boolean {
 	return matchesKey(data, SCROLL_BOTTOM_SHORTCUT);
 }
 
-function wheelDirection(data: string): "up" | "down" | null {
-	const packets = parseSgrMousePackets(data);
-	for (const packet of packets ?? []) {
-		if (packet.final !== "M") continue;
-		const baseButton = packet.code & ~(4 | 8 | 16 | 32);
-		if (baseButton === 64) return "up";
-		if (baseButton === 65) return "down";
-	}
-	return null;
-}
-
 function isScrollNavigationInput(data: string): boolean {
 	if (
 		matchesKey(data, "pageUp") ||

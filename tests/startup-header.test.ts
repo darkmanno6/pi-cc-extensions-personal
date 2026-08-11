@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
-import { renderHeaderLines } from "../extensions/feature/pi-startup-header.ts";
+import { renderHeaderLines } from "../extensions/feature/shell/startup-header.ts";
 
 // 模拟 pi 运行时：注册 app.* 键绑定（默认与 pi 内置一致）
 setKeybindings(

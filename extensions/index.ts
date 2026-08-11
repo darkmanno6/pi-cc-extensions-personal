@@ -8,10 +8,10 @@ import {
 } from "./feature/compact-thinking.ts";
 import context from "./feature/context.ts";
 import markdownEnhance from "./renderer/markdown-enhance.ts";
-import piAliases from "./feature/pi-aliases.ts";
-import piStartupHeader from "./feature/pi-startup-header.ts";
+import piAliases from "./feature/shell/aliases.ts";
+import piStartupHeader from "./feature/shell/startup-header.ts";
 import sessionReference from "./feature/reference/index.ts";
-import workingMessage from "./feature/working-message.ts";
+import workingMessage from "./feature/shell/working-message.ts";
 
 export default function (pi: ExtensionAPI): void {
 	piAliases(pi);

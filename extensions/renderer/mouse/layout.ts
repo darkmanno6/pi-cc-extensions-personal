@@ -11,19 +11,6 @@ export type ComponentRowHit = {
 	group?: ToolGroupComponent;
 };
 
-/** 深度渲染组件树（容器 render 隐藏时回退 children）。 */
-export function renderComponentTree(component: any, width: number): string[] {
-	if (!component || typeof component !== "object") return [];
-	try {
-		const lines = component.render?.(width);
-		if (Array.isArray(lines) && lines.length > 0) return lines;
-	} catch {
-		// Fall through to children for hidden container renderers.
-	}
-	if (!Array.isArray(component.children)) return [];
-	return component.children.flatMap((child: any) => renderComponentTree(child, width));
-}
-
 /** 行内 [click to show more] 提示的命中列区间（1-based，含两端）。 */
 export function collapsedHintHitbox(line: string): { startCol: number; endCol: number } | null {
 	const plain = stripTerminalSequencesPreservingLayout(line);

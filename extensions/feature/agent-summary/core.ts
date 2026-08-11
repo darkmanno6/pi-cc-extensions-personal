@@ -1,26 +1,24 @@
 /**
  * Agent 回合摘要：统计一次 agent 运行的工具使用并格式化成摘要文本。
  *
- * 统计口径参考已删除的 compact-style（ea64df0 "sunset fixed-editor and compact
- * mode"）：read 按文件去重、edit/write 按文件去重、bash 计命令数、其余工具计数、
- * 失败计数、回合耗时。与旧实现一致，`read`/`edit`/`write` 只认精确的工具名
- * （MCP 风格 `server__read` 归入 other）。
+ * 分类：bash / read / edit / write / other（精确工具名；MCP 风格名归 other）。
+ * 计数：bash 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
+ * 失败单独累计；另记回合耗时。
  *
- * 呈现：`summaryLine` 输出纯文本（旧格式），`summaryMarkdown` 输出 Markdown
- * 增强版——加粗统计词，box 模式包 `> [!TIP]` 提示框（由 markdown-enhance 渲染
- * 成带图标的表格框），供当前 Markdown 渲染管线使用。
+ * 呈现：`summaryLine` 纯文本，`summaryMarkdown` Markdown（可 box 引用块）。
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-/** 工具分类，与旧 compact-style 统计口径一致。 */
-export type AgentToolCategory = "read" | "edit" | "bash" | "other";
+/** 工具分类。 */
+export type AgentToolCategory = "bash" | "read" | "edit" | "write" | "other";
 
 /** 一次 agent 回合的统计快照。 */
 export type AgentSummaryData = {
+	commands: number;
 	reads: number;
 	edits: number;
-	commands: number;
+	writes: number;
 	others: number;
 	failed: number;
 	durationMs: number;
@@ -28,9 +26,10 @@ export type AgentSummaryData = {
 
 export function classifyTool(toolName: string): AgentToolCategory {
 	const base = toolName.split(".").pop() ?? toolName;
-	if (base === "read") return "read";
-	if (base === "edit" || base === "write") return "edit";
 	if (base === "bash") return "bash";
+	if (base === "read") return "read";
+	if (base === "edit") return "edit";
+	if (base === "write") return "write";
 	return "other";
 }
 
@@ -38,12 +37,18 @@ function nonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.length > 0;
 }
 
+function toolPath(args?: Record<string, unknown> | null): string | undefined {
+	const path = args?.path ?? args?.file_path;
+	return nonEmptyString(path) ? path : undefined;
+}
+
 /** 累积一次 agent 回合的工具统计；agent_start 时新建实例。 */
 export class AgentRunSummary {
 	toolCount = 0;
+	commandCount = 0;
 	readFiles = new Set<string>();
 	editFiles = new Set<string>();
-	commandCount = 0;
+	writeFiles = new Set<string>();
 	otherCount = 0;
 	failedCount = 0;
 
@@ -56,16 +61,19 @@ export class AgentRunSummary {
 	/** tool_execution_start 时调用。 */
 	recordToolStart(toolName: string, args?: Record<string, unknown> | null): void {
 		this.toolCount++;
-		const path = args?.path ?? args?.file_path;
+		const path = toolPath(args);
 		switch (classifyTool(toolName)) {
-			case "read":
-				if (nonEmptyString(path)) this.readFiles.add(path);
-				break;
-			case "edit":
-				if (nonEmptyString(path)) this.editFiles.add(path);
-				break;
 			case "bash":
 				this.commandCount++;
+				break;
+			case "read":
+				if (path) this.readFiles.add(path);
+				break;
+			case "edit":
+				if (path) this.editFiles.add(path);
+				break;
+			case "write":
+				if (path) this.writeFiles.add(path);
 				break;
 			default:
 				this.otherCount++;
@@ -79,9 +87,10 @@ export class AgentRunSummary {
 
 	snapshot(now = Date.now()): AgentSummaryData {
 		return {
+			commands: this.commandCount,
 			reads: this.readFiles.size,
 			edits: this.editFiles.size,
-			commands: this.commandCount,
+			writes: this.writeFiles.size,
 			others: this.otherCount,
 			failed: this.failedCount,
 			durationMs: now - this.startedAt,
@@ -103,17 +112,19 @@ export function formatDuration(ms: number): string {
 
 const plural = (count: number) => (count === 1 ? "" : "s");
 
+/** 输出顺序：bash → read → edit → write → other → failed。 */
 function summaryParts(data: AgentSummaryData): string[] {
 	const parts: string[] = [];
+	if (data.commands) parts.push(`ran ${data.commands} command${plural(data.commands)}`);
 	if (data.reads) parts.push(`read ${data.reads} file${plural(data.reads)}`);
 	if (data.edits) parts.push(`edited ${data.edits} file${plural(data.edits)}`);
+	if (data.writes) parts.push(`wrote ${data.writes} file${plural(data.writes)}`);
 	if (data.others) parts.push(`${data.others} other tool${plural(data.others)}`);
-	if (data.commands) parts.push(`ran ${data.commands} command${plural(data.commands)}`);
 	if (data.failed) parts.push(`${data.failed} failed`);
 	return parts;
 }
 
-/** 纯文本摘要行（旧 compact-style 格式）："Read 3 files, edited 2 files · 42s"。 */
+/** 纯文本摘要行：句首大写 + 可选耗时。 */
 export function summaryLine(data: AgentSummaryData): string {
 	const parts = summaryParts(data);
 	if (parts.length === 0) return "";
@@ -125,13 +136,8 @@ export function summaryLine(data: AgentSummaryData): string {
 
 /**
  * Markdown 摘要行。
- * `box` 为 true：markdown 引用块 `> *斜体内容*`（渲染为引用，主题 mdQuote=muted 即灰色，
- * 内容斜体）。entry renderer 场景直接用。
- * `box` 为 false：整体加粗单行。
- * `colors`：成功/失败计数的 ANSI 前缀，取自主题（`theme.getFgAnsi("success")` /
- * `theme.getFgAnsi("error")`），缺省不染色。仅数字染色：成功计数的数字染
- * success 色、failed 计数的数字染 error 色，文本与时长不染色。颜色 span 以
- * `\x1b[0m` 复位，引用块渲染器会在复位后重贴引用样式，后续文本不受影响。
+ * `box` 为 true：引用块 `> *斜体*`；false：整体加粗。
+ * `colors`：仅数字染色（success / failed）。
  */
 export function summaryMarkdown(
 	data: AgentSummaryData,
@@ -140,12 +146,10 @@ export function summaryMarkdown(
 ): string {
 	const parts = summaryParts(data);
 	if (parts.length === 0) return "";
-	// 仅首段动词大写（与纯文本版“句首大写”一致）
 	const capitalizeFirst = (part: string, first: boolean) => {
 		const verb = part.match(/^[a-z]+/)?.[0] ?? "";
 		return first && verb ? verb[0].toUpperCase() + verb.slice(1) + part.slice(verb.length) : part;
 	};
-	// 仅染数字：`Read 2 files` → `Read <色>2</色> files`
 	const paintNumber = (code: string, part: string) =>
 		code ? part.replace(/(\d+)/, `${code}$1\x1b[0m`) : part;
 	const text = parts
@@ -159,11 +163,9 @@ export function summaryMarkdown(
 
 /**
  * 绑定 pi 事件到摘要统计：
- * - agent_start 重置统计
- * - tool_execution_start / tool_execution_end 累计
- * - agent_end 时回调快照（工具数 < minToolCount 不回调：单工具行本身已是摘要）
- *
- * 返回取消函数：清除当前统计引用（pi.on 不支持解绑，取消后不再产生回调）。
+ * - agent_start 重置
+ * - tool_execution_start / end 累计
+ * - agent_end 回调（toolCount < minToolCount 跳过）
  */
 export function bindAgentSummary(
 	pi: ExtensionAPI,

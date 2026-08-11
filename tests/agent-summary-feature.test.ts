@@ -49,13 +49,23 @@ test("agent-summary feature 注册 entry renderer，agent_end 渲染 markdown �
 	// 引用块渲染：无表格框、无标签，`>` 转为竖线前缀，斜体语法被消费
 	assert.doesNotMatch(plain, /[┌├└]/, "不使用表格框");
 	assert.doesNotMatch(plain, /TIP/);
-	assert.match(plain, /Read 1 file, ran 1 command/);
+	assert.match(plain, /Ran 1 command, read 1 file/);
 	assert.doesNotMatch(plain, /\*/);
 
 	// 空数据 → 无组件
 	assert.equal(
 		renderer(
-			{ data: { reads: 0, edits: 0, commands: 0, others: 0, failed: 0, durationMs: 0 } },
+			{
+				data: {
+					commands: 0,
+					reads: 0,
+					edits: 0,
+					writes: 0,
+					others: 0,
+					failed: 0,
+					durationMs: 0,
+				},
+			},
 			{ expanded: false },
 			fakeTheme,
 		),
@@ -65,29 +75,30 @@ test("agent-summary feature 注册 entry renderer，agent_end 渲染 markdown �
 
 test("summaryMarkdown box=true 输出引用块斜体，无标签", () => {
 	const data = {
+		commands: 3,
 		reads: 2,
 		edits: 1,
-		commands: 3,
+		writes: 1,
 		others: 0,
 		failed: 0,
 		durationMs: 42_000,
 	};
 	assert.equal(
 		summaryMarkdown(data, true),
-		"> *Read 2 files, edited 1 file, ran 3 commands · 42s*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
 	);
 	assert.equal(
 		summaryMarkdown(data, false),
-		"**Read 2 files, edited 1 file, ran 3 commands · 42s**",
+		"**Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s**",
 	);
 
-	// 计数染色：仅数字染 success/error 色，文本与时长不染色（无默认色时保持原样）
+	// 计数染色：仅数字染 success/error 色，文本与时长不染色
 	assert.equal(
 		summaryMarkdown({ ...data, failed: 1 }, true, { success: "\x1b[32m", failed: "\x1b[31m" }),
-		"> *Read \x1b[32m2\x1b[0m files, edited \x1b[32m1\x1b[0m file, ran \x1b[32m3\x1b[0m commands, \x1b[31m1\x1b[0m failed · 42s*",
+		"> *Ran \x1b[32m3\x1b[0m commands, read \x1b[32m2\x1b[0m files, edited \x1b[32m1\x1b[0m file, wrote \x1b[32m1\x1b[0m file, \x1b[31m1\x1b[0m failed · 42s*",
 	);
 	assert.equal(
 		summaryMarkdown(data, true),
-		"> *Read 2 files, edited 1 file, ran 3 commands · 42s*",
+		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
 	);
 });

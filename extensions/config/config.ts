@@ -86,22 +86,6 @@ export function pickPositiveNumber(value: unknown, fallback: number, min = 1): n
 	return Number.isFinite(n) ? Math.max(min, n) : fallback;
 }
 
-export function nearestPreset(value: number, presets: readonly string[]): string {
-	const numeric = presets.map((p) => Number(p));
-	let best = presets[0] ?? String(value);
-	let bestDist = Number.POSITIVE_INFINITY;
-	for (let i = 0; i < numeric.length; i++) {
-		const dist = Math.abs((numeric[i] ?? 0) - value);
-		if (dist < bestDist) {
-			bestDist = dist;
-			best = presets[i] ?? best;
-		}
-	}
-	// Prefer exact match when value is already a preset.
-	const exact = presets.find((p) => Number(p) === value);
-	return exact ?? best;
-}
-
 export function normalizeConfig(input: unknown): Config {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
 	const mode = source.mode;

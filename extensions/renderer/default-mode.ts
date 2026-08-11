@@ -6,11 +6,7 @@
  */
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import {
-	config,
-	getToolDisplayConfig,
-	type CompactStyleMode,
-} from "../config/config.ts";
+import { config, getToolDisplayConfig, type CompactStyleMode } from "../config/config.ts";
 import { isToolCallHovered } from "./mouse/interaction.ts";
 import {
 	countLines,
@@ -32,10 +28,7 @@ import {
 	toolViewportWidth,
 } from "./tool/result.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
-import {
-	renderRichToolResult,
-	type WriteExecutionMetadataStore,
-} from "./tool/diff/index.ts";
+import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./message-display.ts";
 
 // 成功勾：亮绿 truecolor（与 message-display 一致）

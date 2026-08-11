@@ -113,10 +113,7 @@ test("summaryMarkdown 整体加粗 / box 引用块", () => {
 		summaryMarkdown(data, true),
 		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
 	);
-	assert.equal(
-		summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }),
-		"",
-	);
+	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");
 });
 
 test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", async () => {

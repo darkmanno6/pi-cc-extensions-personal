@@ -2,7 +2,7 @@ import { VERSION, type AppKeybinding } from "@earendil-works/pi-coding-agent";
 import { getKeybindings } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
-
+import { ansi16ToRgb, ansi256ToRgb } from "../../utils/ansi-color.ts";
 type Rgb = [number, number, number];
 type StyledPart = {
 	raw: string;
@@ -39,25 +39,6 @@ const PALETTE_MAX_LIGHTEN = 0.18;
 const PALETTE_SPAN = 0.25;
 // 行间相位偏移：小步累加 → 整体左上暗→右下亮的对角渐变
 const LOGO_ROW_PHASE_STEP = 0.08;
-
-const ANSI_16_RGB_TABLE: Rgb[] = [
-	[0, 0, 0],
-	[128, 0, 0],
-	[0, 128, 0],
-	[128, 128, 0],
-	[0, 0, 128],
-	[128, 0, 128],
-	[0, 128, 128],
-	[192, 192, 192],
-	[128, 128, 128],
-	[255, 0, 0],
-	[0, 255, 0],
-	[255, 255, 0],
-	[0, 0, 255],
-	[255, 0, 255],
-	[0, 255, 255],
-	[255, 255, 255],
-];
 
 function stripAnsi(text: string): string {
 	return text.replace(ANSI_PATTERN, "");
@@ -102,27 +83,6 @@ function lightenRgb(rgb: Rgb, amount: number): Rgb {
 function applyTruecolor(rgb: Rgb, text: string): string {
 	const [red, green, blue] = rgb;
 	return `\x1b[38;2;${red};${green};${blue}m${text}${ANSI_RESET}`;
-}
-
-function ansi16ToRgb(index: number): Rgb {
-	return ANSI_16_RGB_TABLE[index] ?? [255, 255, 255];
-}
-
-function ansi256ToRgb(index: number): Rgb {
-	if (index < 16) return ansi16ToRgb(index);
-
-	if (index >= 232) {
-		const gray = 8 + (index - 232) * 10;
-		return [gray, gray, gray];
-	}
-
-	const cubeIndex = index - 16;
-	const redIndex = Math.floor(cubeIndex / 36);
-	const greenIndex = Math.floor((cubeIndex % 36) / 6);
-	const blueIndex = cubeIndex % 6;
-	const values = [0, 95, 135, 175, 215, 255];
-
-	return [values[redIndex]!, values[greenIndex]!, values[blueIndex]!];
 }
 
 function parseTruecolorAnsi(ansi: string): Rgb | undefined {

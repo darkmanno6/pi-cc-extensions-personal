@@ -78,7 +78,7 @@ test("tool built before patch stays visible after resume (mounted scan refreshes
 	const prev = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const parent = new Container() as any;
-	const { tui, ctx } = makeCtx(parent, { getBranch: () => [], getEntries: () => [] });
+	const { ctx } = makeCtx(parent, { getBranch: () => [], getEntries: () => [] });
 	const bashDefinition = {
 		name: "bash",
 		renderCall: () => ({ render: () => ["$ bash"], invalidate() {} }),
@@ -136,7 +136,7 @@ test("resume rebuild keeps assistant thinking and tool call rendering", async ()
 	const entries: any[] = [];
 	const sessionManager = { getBranch: () => entries, getEntries: () => entries };
 	const parent = new Container() as any;
-	const { tui, ctx } = makeCtx(parent, sessionManager);
+	const { ctx } = makeCtx(parent, sessionManager);
 	const first = runtime();
 	first.pi.appendEntry = (_t: string, data: unknown) =>
 		entries.push({ type: "custom", customType: "compact-thinking-duration", data });

@@ -7,14 +7,13 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig, type CompactStyleMode } from "../config/config.ts";
-import { isToolCallHovered } from "./mouse/interaction.ts";
+import { isToolCallHovered } from "./mouse/hover.ts";
 import {
 	countLines,
 	hasExpandableDetail,
 	headTruncateToWidth,
 	insetComponent,
 	isToolExpanded,
-	oneLine,
 	outputLineCount,
 	pendingIcon,
 	renderCollapsedToolResultToWidth,
@@ -27,6 +26,7 @@ import {
 	toolIconColor,
 	toolViewportWidth,
 } from "./tool/result.ts";
+import { oneLine } from "../utils/format.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./message-display.ts";
@@ -393,7 +393,8 @@ function createCcstyleTool(
 				? taskListSummary(tasks)
 				: isError
 					? text
-						? oneLine(text)
+						? // 72 与原 result.ts 默认一致，保持错误摘要截断宽度。
+							oneLine(text, 72)
 						: "Failed"
 					: outputLines
 						? `${outputLines} ${lineWord} ${action}`

@@ -18,13 +18,6 @@ import { dirname, resolve } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
-// Codes we treat as hard errors.
-const FATAL_CODES = new Set([
-	2300, // Duplicate identifier
-	2393, // Duplicate function implementation
-	18003, // No inputs were found in config file（tsconfig 失效 → 空检查）
-]);
-
 // 诊断行如 `path(line,col): error TS1234: message`；TS 错误码 4~5 位。
 const TS_CODE_RE = /\bTS(\d{4,5})\b/;
 

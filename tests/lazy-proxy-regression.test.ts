@@ -9,7 +9,7 @@ import claudeCodeStyleExtension, {
 } from "../extensions/renderer/index.ts";
 import { showTextPreview } from "../extensions/feature/context.ts";
 import { config } from "../extensions/config/config.ts";
-import { hoveredToolCallId, isToolCallHovered } from "../extensions/renderer/mouse/interaction.ts";
+import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/mouse/hover.ts";
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
@@ -666,13 +666,15 @@ test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after 
 	const hintCol = docLines[7].indexOf("/ click") + 1;
 	const rendersBefore = renderer.renderCalls;
 	tui.handleViewportInput(`\x1b[<32;${hintCol};8M`);
-	assert.equal(hoveredToolCallId, "width-tool-b");
+	assert.equal(sharedToolHoverState().toolCallId, "width-tool-b");
 	assert.equal(renderer.renderCalls, rendersBefore + 1);
+	// isToolCallHovered 已移入 hover.ts（interaction.ts 不再 re-export）；
+	// reload 语义不变：reset 走 interaction.ts 原生导出，状态读 globalThis 槽。
+	assert.equal(isToolCallHovered("width-tool-b"), true);
 	const reloadSpecifier = `../extensions/renderer/mouse/interaction.ts?reload=${Date.now()}`;
 	const reloadedMouse: typeof import("../extensions/renderer/mouse/interaction.ts") = await import(
 		reloadSpecifier
 	);
-	assert.equal(reloadedMouse.isToolCallHovered("width-tool-b"), true);
 	reloadedMouse.resetToolHoverState();
 	assert.equal(isToolCallHovered("width-tool-b"), false, "hover state is shared across reloads");
 	installToolMouseInteraction({});
@@ -886,7 +888,7 @@ test("lazy-proxy frame capture rolls back partial render wrappers on failure", (
 			return () => ["✓ hostile", "  └ 1 line output (ctrl+o expand / click)"];
 		},
 	};
-	const { terminal, writes } = createTerminalFixture();
+	const { terminal } = createTerminalFixture();
 	let renderer = createRenderer("regular", [first, hostile], terminal);
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);

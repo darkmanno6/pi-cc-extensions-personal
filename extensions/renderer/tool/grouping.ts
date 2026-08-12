@@ -7,7 +7,7 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
-import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
+import { oneLine } from "../../utils/format.ts";
 import { showMoreHintText } from "../show-more-hint.ts";
 
 const PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");
@@ -145,13 +145,6 @@ export function paddedBackgroundRow(
 	const stable = bgAnsi ? row.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi) : row;
 	if (!bgAnsi) return typeof theme?.bg === "function" ? theme.bg(slot, stable) : row;
 	return `${bgAnsi}${stable}\x1b[49m`;
-}
-
-function oneLine(value: unknown, max = 96): string {
-	const text = sanitizeToolResultText(String(value ?? ""), 4096)
-		.replace(/\s+/g, " ")
-		.trim();
-	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
 function humanizeToolName(name: string): string {

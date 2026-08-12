@@ -33,12 +33,8 @@ import {
 } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult } from "./tool/diff/index.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
-import {
-	insetComponent,
-	oneLine,
-	renderExpandedToolResult,
-	scheduleAnimation,
-} from "./tool/result.ts";
+import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
+import { oneLine } from "../utils/format.ts";
 import { paddedBackgroundRow, stripBackgroundAnsi } from "./tool/grouping.ts";
 
 /** compact 渲染层对 compact-thinking 的只读查询面（不建第二套计时器）。 */

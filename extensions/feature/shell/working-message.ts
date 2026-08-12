@@ -1,18 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { formatDuration } from "../../utils/format.ts";
 
 const REFRESH_INTERVAL_MS = 1_000;
 /** Elapsed time is only shown once the turn has run this long. */
 const SHOW_TIMER_AFTER_MS = 3_000;
-
-function formatDuration(ms: number): string {
-	const totalSec = Math.floor(ms / 1000);
-	const hours = Math.floor(totalSec / 3600);
-	const minutes = Math.floor((totalSec % 3600) / 60);
-	const seconds = totalSec % 60;
-	if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-	if (minutes > 0) return `${minutes}m ${seconds}s`;
-	return `${seconds}s`;
-}
 
 function formatCount(value: number): string {
 	return new Intl.NumberFormat("en-US").format(value);
@@ -91,7 +82,10 @@ export default function (pi: ExtensionAPI): void {
 		const tokens = tokenCount();
 		const parts: string[] = [];
 		if (tokens > 0) parts.push(`↓ ${formatCount(tokens)} tokens`);
-		if (elapsed >= SHOW_TIMER_AFTER_MS || tokens > 0) parts.push(formatDuration(elapsed));
+		if (elapsed >= SHOW_TIMER_AFTER_MS || tokens > 0) {
+			// formatDuration 低于 1 秒返回 ""，此处回退 "0s" 保持计时器连续跳动。
+			parts.push(formatDuration(elapsed) || "0s");
+		}
 		return parts.length ? `Working... (${parts.join(" · ")})` : "";
 	}
 

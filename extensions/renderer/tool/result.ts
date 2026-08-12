@@ -23,13 +23,6 @@ export function insetComponent(component: any): any {
 	};
 }
 
-export function oneLine(value: unknown, max = 72): string {
-	const text = sanitizeToolResultText(String(value ?? ""))
-		.replace(/\s+/g, " ")
-		.trim();
-	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
-}
-
 function rawTextFromResult(result: any): string {
 	return Array.isArray(result?.content)
 		? result.content

@@ -74,10 +74,10 @@ export function resetScrollButtonState(): void {
 
 let scrollButtonSyncScheduled = false;
 
+// 交互开关只取决于配置模式：原实现按 isLazyProxyTui(toolMouseTui) 分两分支，
+// 两分支恒真（0.84+ 惰性 Proxy 下判定不再影响开关），折叠为单条件。
 export function toolMouseInteractionActive(): boolean {
-	if (config.mode === "off") return false;
-	if (isLazyProxyTui(toolMouseTui)) return true;
-	return true;
+	return config.mode !== "off";
 }
 
 /** 惰性 Proxy 官方 fullscreen（TuiAltScreen）判定。 */

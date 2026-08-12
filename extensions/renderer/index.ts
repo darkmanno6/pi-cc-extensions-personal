@@ -27,12 +27,11 @@ import {
 	installToolMouseInteraction,
 	resetToolHoverState,
 	scheduleSessionRender,
-	setHoveredToolGroup,
-	setHoveredToolIo,
 	teardownToolMouseInteraction,
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
 import { getToolMouseTui } from "./mouse/scroll.ts";
+import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import { clearAllAnimations } from "./tool/result.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import {

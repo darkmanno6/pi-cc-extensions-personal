@@ -22,7 +22,13 @@
 		"lineWidth": 100
 	},
 	"linter": {
-		"enabled": false
+		"enabled": true,
+		"rules": {
+			"preset": "none",
+			"correctness": {
+				"noUnusedVariables": "error"
+			}
+		}
 	},
 	"assist": {
 		"enabled": false

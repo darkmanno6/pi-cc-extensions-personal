@@ -19,6 +19,7 @@ import {
 	isFiniteSgrParam,
 	expandSgrReset,
 } from "./ansi-utils.ts";
+import { ansi256ToRgb } from "../../../utils/ansi-color.ts";
 import {
 	buildCollapsedDiffHintText,
 	clampRenderedLineToWidth,
@@ -1076,46 +1077,10 @@ function buildInlineHighlightMap(rows: SplitDiffRow[]): WeakMap<DiffLineEntry, D
 	return highlights;
 }
 
-function ansi256ToRgb(code: number): RgbColor {
-	if (code < 0) {
-		return { r: 0, g: 0, b: 0 };
-	}
-	if (code <= 15) {
-		const base16: RgbColor[] = [
-			{ r: 0, g: 0, b: 0 },
-			{ r: 128, g: 0, b: 0 },
-			{ r: 0, g: 128, b: 0 },
-			{ r: 128, g: 128, b: 0 },
-			{ r: 0, g: 0, b: 128 },
-			{ r: 128, g: 0, b: 128 },
-			{ r: 0, g: 128, b: 128 },
-			{ r: 192, g: 192, b: 192 },
-			{ r: 128, g: 128, b: 128 },
-			{ r: 255, g: 0, b: 0 },
-			{ r: 0, g: 255, b: 0 },
-			{ r: 255, g: 255, b: 0 },
-			{ r: 0, g: 0, b: 255 },
-			{ r: 255, g: 0, b: 255 },
-			{ r: 0, g: 255, b: 255 },
-			{ r: 255, g: 255, b: 255 },
-		];
-		return base16[code] ?? { r: 255, g: 255, b: 255 };
-	}
-	if (code >= 232) {
-		const value = Math.max(0, Math.min(255, 8 + (code - 232) * 10));
-		return { r: value, g: value, b: value };
-	}
-
-	const cube = code - 16;
-	const levels = [0, 95, 135, 175, 215, 255];
-	const blue = cube % 6;
-	const green = Math.floor(cube / 6) % 6;
-	const red = Math.floor(cube / 36) % 6;
-	return {
-		r: levels[red] ?? 0,
-		g: levels[green] ?? 0,
-		b: levels[blue] ?? 0,
-	};
+/** utils 版返回 tuple，此处适配为本文件使用的 RgbColor 形状。 */
+function ansi256ToRgbColor(code: number): RgbColor {
+	const [r, g, b] = ansi256ToRgb(code);
+	return { r, g, b };
 }
 
 function parseAnsiColorCode(ansi: string | undefined): RgbColor | null {
@@ -1140,14 +1105,14 @@ function parseAnsiColorCode(ansi: string | undefined): RgbColor | null {
 	if (bitMatch) {
 		const code = Number.parseInt(bitMatch[1] ?? "0", 10);
 		if (Number.isFinite(code)) {
-			return ansi256ToRgb(code);
+			return ansi256ToRgbColor(code);
 		}
 	}
 
 	const basicMatch = /\x1b\[(?:3|4)([0-7])m/.exec(ansi);
-	if (basicMatch) return ansi256ToRgb(Number(basicMatch[1]));
+	if (basicMatch) return ansi256ToRgbColor(Number(basicMatch[1]));
 	const brightMatch = /\x1b\[(?:9|10)([0-7])m/.exec(ansi);
-	if (brightMatch) return ansi256ToRgb(Number(brightMatch[1]) + 8);
+	if (brightMatch) return ansi256ToRgbColor(Number(brightMatch[1]) + 8);
 	return null;
 }
 

@@ -158,7 +158,6 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	if (region.kind === "show-more") return tryOpenToolIoShowMore(region);
 	const component = region.component;
 	if (!component) return false;
-	const width = Math.max(1, Number(tui?.terminal?.columns) || 80);
 	if (region.kind === "expanded-card") {
 		component.setExpanded(false);
 		setHoveredToolCallId(null);

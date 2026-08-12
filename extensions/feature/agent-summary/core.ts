@@ -9,6 +9,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { formatDuration } from "../../utils/format.ts";
+export { formatDuration };
 
 /** 工具分类。 */
 export type AgentToolCategory = "bash" | "read" | "edit" | "write" | "other";
@@ -96,18 +98,6 @@ export class AgentRunSummary {
 			durationMs: now - this.startedAt,
 		};
 	}
-}
-
-/** 毫秒 → "1h 2m 3s"/"2m 3s"/"3s"；低于 1 秒返回 ""（省略）。 */
-export function formatDuration(ms: number): string {
-	const totalSec = Math.floor(ms / 1000);
-	if (totalSec < 1) return "";
-	const hours = Math.floor(totalSec / 3600);
-	const minutes = Math.floor((totalSec % 3600) / 60);
-	const seconds = totalSec % 60;
-	if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
-	if (minutes > 0) return `${minutes}m ${seconds}s`;
-	return `${seconds}s`;
 }
 
 const plural = (count: number) => (count === 1 ? "" : "s");

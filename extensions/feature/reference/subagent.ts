@@ -184,7 +184,6 @@ export default function agentAutocompleteExtension(pi: ExtensionAPI): void {
 
 		const agentMap = new Map(agents.map((a) => [a.name, a]));
 		const agentList = mentions.map((n) => `"${n}" (${agentMap.get(n)!.displayName})`).join(", ");
-		const agentTypes = mentions.map((n) => `"${n}"`).join(" | ");
 
 		return {
 			systemPrompt:

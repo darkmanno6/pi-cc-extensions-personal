@@ -212,7 +212,7 @@ async function generateDefault() {
 		chunks.push(
 			section(
 				"3. 单工具展开（Input/Output 树）",
-				`${renderBlock(c)}\n\nInput/Output 之间有一个空白 rail 行（\`│\`）。`,
+				`${renderBlock(c)}\n\nInput/Output 之间有一个空白 rail 行（\`│\`）。展开最外层卡片上下左右内间距各 1 格（内容贴左，由 Box padding 提供）。`,
 			),
 		);
 	}

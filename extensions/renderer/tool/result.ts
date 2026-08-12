@@ -226,6 +226,8 @@ const EXPANDED_TOOL_IO_VIEW_GENERATION = Symbol("ccstyle-expanded-tool-io-view")
  *   └ Output  click to show more
  *     result line…
  *
+ * flushLeft=true（仅 mode=on 展开卡）：去掉树线前导空格，由外层 Box(1,1) 提供 1 格 padding。
+ *
  * Reused across re-renders via context.lastComponent when possible.
  */
 export class ExpandedToolIoView {
@@ -244,6 +246,9 @@ export class ExpandedToolIoView {
 	/** 0-based header line indexes that carry show-more after last render. */
 	private showMoreHeaderRows: { input?: number; output?: number } = {};
 
+	/** flushLeft：贴左渲染（mode=on 展开卡）；默认 false 保留前导空格（compact 等共用路径）。 */
+	private flushLeft: boolean;
+
 	constructor(
 		theme: any,
 		inputBody: string,
@@ -251,6 +256,7 @@ export class ExpandedToolIoView {
 		isError: boolean,
 		maxOutputLines = config.expandedPreviewMaxLines,
 		maxInputLines = config.expandedPreviewMaxLines,
+		flushLeft = false,
 	) {
 		this.theme = theme;
 		this.inputBody = inputBody;
@@ -258,6 +264,7 @@ export class ExpandedToolIoView {
 		this.isError = isError;
 		this.maxOutputLines = Math.max(1, maxOutputLines);
 		this.maxInputLines = Math.max(1, maxInputLines);
+		this.flushLeft = flushLeft;
 	}
 
 	setContent(
@@ -266,16 +273,19 @@ export class ExpandedToolIoView {
 		isError: boolean,
 		maxOutputLines?: number,
 		maxInputLines?: number,
+		flushLeft?: boolean,
 	): void {
 		const nextOut =
 			maxOutputLines !== undefined ? Math.max(1, maxOutputLines) : this.maxOutputLines;
 		const nextIn = maxInputLines !== undefined ? Math.max(1, maxInputLines) : this.maxInputLines;
+		const nextFlush = flushLeft !== undefined ? flushLeft : this.flushLeft;
 		if (
 			this.inputBody === inputBody &&
 			this.outputBody === outputBody &&
 			this.isError === isError &&
 			this.maxOutputLines === nextOut &&
-			this.maxInputLines === nextIn
+			this.maxInputLines === nextIn &&
+			this.flushLeft === nextFlush
 		) {
 			return;
 		}
@@ -284,6 +294,7 @@ export class ExpandedToolIoView {
 		this.isError = isError;
 		this.maxOutputLines = nextOut;
 		this.maxInputLines = nextIn;
+		this.flushLeft = nextFlush;
 		this.invalidate();
 	}
 
@@ -341,7 +352,9 @@ export class ExpandedToolIoView {
 
 		const theme = this.theme;
 		const safeWidth = Math.max(1, Math.floor(width));
-		const rail = " │ ";
+		// flushLeft：贴左（外层 Box 负责 1 格 pad）；否则保留 1 格前导空格（compact 共用）
+		const lead = this.flushLeft ? "" : " ";
+		const rail = `${lead}│ `;
 		const railWidth = visibleWidth(rail);
 		const bodyWidth = toolViewportWidth(safeWidth);
 		const contentWidth = Math.max(1, bodyWidth - railWidth);
@@ -356,7 +369,7 @@ export class ExpandedToolIoView {
 			section: ToolIoSection,
 			showMore: boolean,
 		) => {
-			const mark = theme.fg("dim", ` ${corner} `);
+			const mark = theme.fg("dim", `${lead}${corner} `);
 			const title = theme.fg(
 				"accent",
 				typeof theme.bold === "function" ? theme.bold(label) : label,
@@ -371,12 +384,13 @@ export class ExpandedToolIoView {
 		};
 
 		const pushRailLine = (styledContent: string, continued = true) => {
-			const prefix = continued ? rail : "   ";
+			// 续行 rail；Output 正文相对 └ 缩进 2 格（+ 可选 lead）
+			const prefix = continued ? rail : `${lead}  `;
 			lines.push(truncateToWidth(theme.fg("dim", prefix) + styledContent, safeWidth, ""));
 		};
 
 		const pushBlankRail = () => {
-			lines.push(truncateToWidth(theme.fg("dim", " │"), safeWidth, ""));
+			lines.push(truncateToWidth(theme.fg("dim", `${lead}│`), safeWidth, ""));
 		};
 
 		/** Style `key: value` input rows — dim keys, readable values. */
@@ -647,6 +661,8 @@ export function renderExpandedToolResult(
 	lastComponent?: unknown,
 	args?: unknown,
 	context?: any,
+	/** mode=on 展开卡贴左；compact 等保持默认前导空格 */
+	flushLeft = false,
 ): ExpandedToolIoView | ExpandedToolResultText | Text {
 	const inputBody = formatToolInputArgs(args);
 	const outputBody = body;
@@ -656,10 +672,18 @@ export function renderExpandedToolResult(
 	if (inputBody.trim() || outputBody.trim()) {
 		let view: ExpandedToolIoView;
 		if (isExpandedToolIoView(lastComponent)) {
-			lastComponent.setContent(inputBody, outputBody, isError, maxLines, maxLines);
+			lastComponent.setContent(inputBody, outputBody, isError, maxLines, maxLines, flushLeft);
 			view = lastComponent;
 		} else {
-			view = new ExpandedToolIoView(theme, inputBody, outputBody, isError, maxLines, maxLines);
+			view = new ExpandedToolIoView(
+				theme,
+				inputBody,
+				outputBody,
+				isError,
+				maxLines,
+				maxLines,
+				flushLeft,
+			);
 		}
 		if (context) rememberIoView(context, view);
 		return view;

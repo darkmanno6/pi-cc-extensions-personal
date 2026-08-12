@@ -98,11 +98,11 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 		read.render = (width: number) => {
 			assert.equal(width, 98, "native card uses the full padded panel width");
 			return [
-				"\x1b[48;2;20;20;20m  ✓ Read sample.ts\x1b[0m",
-				"\x1b[48;2;20;20;20m \x1b[39m ├ Input\x1b[0m",
-				"\x1b[48;2;20;20;20m \x1b[39m │ path: sample.ts\x1b[0m",
-				"\x1b[48;2;20;20;20m \x1b[39m └ Output\x1b[0m",
-				"\x1b[48;2;20;20;20m \x1b[39m   ok\x1b[0m",
+				"\x1b[48;2;20;20;20m ✓ Read sample.ts\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m├ Input\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m│ path: sample.ts\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m└ Output\x1b[0m",
+				"\x1b[48;2;20;20;20m \x1b[39m  ok\x1b[0m",
 			];
 		};
 		const rendered = group.render(100);

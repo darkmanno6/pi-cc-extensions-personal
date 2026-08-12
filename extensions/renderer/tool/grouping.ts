@@ -388,7 +388,8 @@ export class ToolGroupComponent extends Container {
 			const childLines = rendered.length ? rendered : [toolSummary(tool).main];
 			for (let lineIndex = 0; lineIndex < childLines.length; lineIndex++) {
 				const content =
-					lineIndex === 0 ? childLines[lineIndex] : stripLeadingSpaces(childLines[lineIndex], 2);
+					// 续行只剥外层 Box 的 1 格 left pad，保留 Input/Output 相对缩进
+					lineIndex === 0 ? childLines[lineIndex] : stripLeadingSpaces(childLines[lineIndex], 1);
 				const prefix =
 					lineIndex === 0
 						? `${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `

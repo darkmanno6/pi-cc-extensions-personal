@@ -272,11 +272,16 @@ function renderExpandedTaskResult(
 					: task.status === "in_progress"
 						? "warning"
 						: "muted";
-			return `   ${theme.fg("accent", `#${task.id}`)} ${theme.fg(color, task.status)} ${theme.fg("dim", task.subject)}`;
+			return `${theme.fg("accent", `#${task.id}`)} ${theme.fg(color, task.status)} ${theme.fg("dim", task.subject)}`;
 		});
 		if (tasks.length > rows.length)
-			rows.push(theme.fg("muted", `   … ${tasks.length - rows.length} more tasks`));
-		return new Text(` ↳ ${theme.fg("muted", taskListSummary(tasks))}\n${rows.join("\n")}`, 0, 0);
+			rows.push(theme.fg("muted", `… ${tasks.length - rows.length} more tasks`));
+		// 贴左：外层展开卡片 Box(1,1) 提供 1 格 padding
+		return new Text(
+			`↳ ${theme.fg("muted", taskListSummary(tasks))}\n${rows.map((r) => `  ${r}`).join("\n")}`,
+			0,
+			0,
+		);
 	}
 	const line = text.trim();
 	if (!line || line.includes("\n")) return undefined;
@@ -294,7 +299,7 @@ function renderExpandedTaskResult(
 	} else if (toolName === "TaskStop") {
 		formatted = `${theme.fg("success", "Stopped")} ${theme.fg("muted", line)}`;
 	}
-	return formatted ? new Text(` ↳ ${formatted}`, 0, 0) : undefined;
+	return formatted ? new Text(`↳ ${formatted}`, 0, 0) : undefined;
 }
 
 /** 用 ccstyle call/result 包装任意工具定义。 */
@@ -328,15 +333,21 @@ function createCcstyleTool(
 			const summary = singleToolCallSummary(toolName, label, args);
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
+			const expanded = Boolean(context?.expanded);
 			return {
 				render(width: number) {
 					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
 					const viewportWidth = toolViewportWidth(width);
-					const callWidth = Math.max(0, viewportWidth - visibleWidth(icon) - 2);
+					// 展开态贴左（外层 Box 已 pad 1）；折叠 self-shell 保留 1 格前导空格
+					const lead = expanded ? "" : " ";
+					const callWidth = Math.max(
+						0,
+						viewportWidth - visibleWidth(icon) - 1 - (expanded ? 0 : 1),
+					);
 					const mainWidth = Math.max(0, callWidth - visibleWidth(summary.detail));
 					cachedWidth = width;
 					// 纯文本先截断再着色（省略号不带 ANSI）；从头截断，与多 tool 一致
-					cachedLine = ` ${icon} ${theme.fg("toolTitle", headTruncateToWidth(summary.main, mainWidth))}${theme.fg("dim", summary.detail)}`;
+					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", headTruncateToWidth(summary.main, mainWidth))}${theme.fg("dim", summary.detail)}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {},
@@ -352,13 +363,15 @@ function createCcstyleTool(
 				);
 			}
 
+			const expanded = isToolExpanded(options, context);
 			if (options?.isPartial) {
-				return new Text(theme.fg("muted", "   ↳ Pending…"), 0, 0);
+				// 展开态贴左（Box 提供 1 格 pad）；折叠态保持 3 格对齐标题
+				const pending = expanded ? "↳ Pending…" : "   ↳ Pending…";
+				return new Text(theme.fg("muted", pending), 0, 0);
 			}
 
 			const isError = options?.isError || context?.isError;
 			setToolVisualState(context, isError ? "error" : "success");
-			const expanded = isToolExpanded(options, context);
 			const toolCallId = context?.toolCallId;
 			if (shouldRenderRichDiff(config.mode, toolName, Boolean(isError))) {
 				// getter 保证 Diff indicator / wrap / limits 下次绘制即更新
@@ -376,7 +389,8 @@ function createCcstyleTool(
 					writeExecutionMetadata,
 					getToolDisplayConfig,
 				);
-				if (richResult) return insetComponent(richResult);
+				// 展开态由 Box(1,1) 提供内边距；折叠态 inset 一级缩进
+				if (richResult) return expanded ? richResult : insetComponent(richResult);
 			}
 
 			const text = textFromResult(result, expanded);
@@ -412,6 +426,7 @@ function createCcstyleTool(
 					context?.lastComponent,
 					args,
 					context,
+					true, // mode=on：贴左，由外层 Box(1,1) 提供 1 格 padding
 				);
 			}
 			if (context?.state) context.state.ccstyleIoView = undefined;
@@ -690,7 +705,12 @@ export function installToolExpandedBackground(): () => void {
 			const theme = getMessageDisplayTheme();
 			if (!theme?.bg) return;
 			const box = this.contentBox;
-			if (box?.setBgFn) box.setBgFn((text: string) => theme.bg("userMessageBg", text));
+			// 展开最外层卡片：上下左右内间距 1 格
+			if (box) {
+				box.paddingX = 1;
+				box.paddingY = 1;
+				if (box.setBgFn) box.setBgFn((text: string) => theme.bg("userMessageBg", text));
+			}
 		},
 		original,
 		dispose: () => {

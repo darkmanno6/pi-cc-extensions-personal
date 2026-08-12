@@ -2,13 +2,13 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.53 · mode=`on`。
+> 当前版本：ccstyle 0.8.54 · mode=`on`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 运行态 / 完成态 / 失败态
 
 ```text
- ⠙ Bash rg -n 'renderCall' extensions/ --type ts
+ ⠦ Bash rg -n 'renderCall' extensions/ --type ts
 
  ✓ Bash rg -n 'renderCall' extensions/ --type ts
    ↳ 2 lines returned • click to show more
@@ -31,17 +31,17 @@
 ## 3. 单工具展开（Input/Output 树）
 
 ```text
-  ✓ Bash rg -n 'renderCall' extensions/
-  ├ Input
-  │ command: rg -n 'renderCall' extensions/
-  │
-  └ Output
-    extensions/renderer/default-mode.ts:300:
-    renderCall(args, theme,
-    context) {
+ ✓ Bash rg -n 'renderCall' extensions/
+ ├ Input
+ │ command: rg -n 'renderCall' extensions/
+ │
+ └ Output
+   extensions/renderer/default-mode.ts:300:
+   renderCall(args, theme,
+   context) {
 ```
 
-Input/Output 之间有一个空白 rail 行（`│`）。
+Input/Output 之间有一个空白 rail 行（`│`）。展开最外层卡片上下左右内间距各 1 格（内容贴左，由 Box padding 提供）。
 
 ## 4. edit/write rich diff
 
@@ -88,22 +88,22 @@ write 新建 / 覆盖：
 ```text
  ✓ Task List task list
    ↳ 3 tasks • 1 … 1 completed • click to show more
-  ↳ 3 tasks • 1 in progress • 1 pending • 1 completed
-    #1 in_progress 重构 renderer
-    #2 pending 补充测试
-    #3 completed 发布 0.8.29
+ ↳ 3 tasks • 1 in progress • 1 pending • 1 completed
+   #1 in_progress 重构 renderer
+   #2 pending 补充测试
+   #3 completed 发布 0.8.29
 
-  ✓ Task Create 重构 renderer
-  ↳ Created task #1 重构 renderer
+ ✓ Task Create 重构 renderer
+ ↳ Created task #1 重构 renderer
 
-  ✓ Task Execute 1 (+2 tasks)
-  ↳ Started Tasks #1, #2, #3
+ ✓ Task Execute 1 (+2 tasks)
+ ↳ Started Tasks #1, #2, #3
 
-  ✓ Task Update 3
-  ↳ Updated task #3 发布 0.8.29
+ ✓ Task Update 3
+ ↳ Updated task #3 发布 0.8.29
 
-  ✓ Task Stop 1
-  ↳ Stopped Task #1
+ ✓ Task Stop 1
+ ↳ Stopped Task #1
 
  ✓ Task Get 3
    ↳ 2 lines returned • click to show more
@@ -172,9 +172,9 @@ write 新建 / 覆盖：
 
 ```text
  ● Multiple Tools: 3 running • read, bash, ffgrep • click to show more
- ├ ⠹ Read extensions/index.ts
- ├ ⠹ Bash npm test
- └ ⠹ Ffgrep extensions/
+ ├ ⠧ Read extensions/index.ts
+ ├ ⠧ Bash npm test
+ └ ⠧ Ffgrep extensions/
 ```
 
 ### 收起：完成/失败

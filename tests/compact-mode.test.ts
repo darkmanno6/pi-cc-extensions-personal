@@ -913,19 +913,12 @@ test("isStreaming survives the compact + compact-thinking patch chain (mermaid f
 		await emit("session_start", {}, ctx);
 
 		const seen: boolean[] = [];
-		const component = new AssistantMessageComponent(
-			undefined,
-			false,
-			undefined,
-			undefined,
-			1,
-			[
-				(markdown: string, tctx: any) => {
-					seen.push(tctx.isStreaming);
-					return markdown;
-				},
-			],
-		);
+		const component = new AssistantMessageComponent(undefined, false, undefined, undefined, 1, [
+			(markdown: string, tctx: any) => {
+				seen.push(tctx.isStreaming);
+				return markdown;
+			},
+		]);
 		const message = {
 			role: "assistant",
 			timestamp: Date.now(),

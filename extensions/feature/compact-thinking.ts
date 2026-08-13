@@ -94,7 +94,7 @@ type AssistantInternals = {
 };
 
 type PatchedPrototype = typeof AssistantMessageComponent.prototype & {
-	updateContent: (message: AssistantMessage) => void;
+	updateContent: (message: AssistantMessage, isStreaming?: boolean) => void;
 };
 
 // 配置由 claude-code-style 管控（installCompactThinking 注入初始值，
@@ -334,9 +334,14 @@ function compactThinking(pi: ExtensionAPI) {
 		);
 	}
 
-	prototype.updateContent = function patchedUpdateContent(message: AssistantMessage) {
+	prototype.updateContent = function patchedUpdateContent(
+		message: AssistantMessage,
+		isStreaming?: boolean,
+	) {
 		const component = this as AssistantMessageComponentLike;
 		const self = this as unknown as AssistantInternals;
+		// isStreaming 丢失 → mermaid 流式误渲染来回闪。
+		self.isStreaming = isStreaming ?? self.isStreaming;
 		self.lastMessage = message;
 		latestComponent = component;
 		latestComponentTimestamp = message.timestamp;
@@ -344,7 +349,7 @@ function compactThinking(pi: ExtensionAPI) {
 		// Visible mode is intentionally untouched: Shift+Tab restores Pi's exact
 		// built-in Thinking Markdown renderer, including every OpenAI summary stage.
 		if (!self.hideThinkingBlock) {
-			originalUpdateContent.call(this, message);
+			originalUpdateContent.call(this, message, self.isStreaming);
 			return;
 		}
 

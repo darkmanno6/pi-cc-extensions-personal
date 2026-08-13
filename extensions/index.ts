@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { config } from "./config/config.ts";
 
 // shell
 import piAliases from "./feature/shell/aliases.ts";
@@ -18,17 +19,17 @@ import markdownEnhance from "./renderer/markdown-enhance.ts";
 
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
-	piAliases(pi);
+	if (config.enableAliases) piAliases(pi);
 	piStartupHeader(pi);
-	workingMessage(pi);
+	if (config.enableWorkingMessage) workingMessage(pi);
 
 	// render stack：thinking controller 直接交给 style 作 query
 	markdownEnhance(pi);
 	claudeCodeStyle(pi, undefined, installCompactThinking(pi, getCompactThinkingConfig()));
 
 	// features
-	context(pi);
-	sessionReference(pi);
-	agentAutocomplete(pi);
-	agentSummary(pi);
+	if (config.enableContextCommand) context(pi);
+	if (config.enableSessionReference) sessionReference(pi);
+	if (config.enableSubagentAutocomplete) agentAutocomplete(pi);
+	if (config.enableAgentSummary) agentSummary(pi);
 }

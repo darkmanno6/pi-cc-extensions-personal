@@ -38,15 +38,14 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 功能
 
-
-| 功能                 | 说明                                                                                                     | 入口        |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------- | ------------- |
-| Claude Code UI | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式                          | `/ccstyle`  |
-| Fullscreen mode  | 工具卡/group 点击展开与收起、预览、hover 高亮、回到底部按钮 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
-| 配置面板             | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进                                       | `/ccstyle`  |
-| 上下文检查           | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                                           | `/context`  |
-| Session/Subagent 引用         | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                                                      | `@` |
-| 主题                 | 随包提供内置 CC Dark、CC Light 主题                                                                      | `/theme`    |
+| 功能                  | 说明                                                                            | 入口                                            |
+| --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
+| Fullscreen mode       | 工具卡/group 点击展开与收起、预览、hover 高亮、回到底部按钮                     | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| 配置面板              | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进              | `/ccstyle`                                      |
+| 上下文检查            | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                  | `/context`                                      |
+| Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
+| 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
 
 ## 配置
 
@@ -66,7 +65,13 @@ pi install git:github.com/minuque/pi-cc-extensions
   "previewLines": 3,                       // thinking 预览行数，0 隐藏预览正文
   "animationIntervalMs": 90,               // thinking 标题动画间隔（毫秒）
   "showStartupHeader": true,               // 自定义启动头（logo + tips）开关
-  "scrollStepLines": 3                     // fullscreen 滚轮滚动步进行数
+  "scrollStepLines": 3,                     // fullscreen 滚轮滚动步进行数
+  "enableSessionReference": true,           // @ session 引用（搜历史会话注入上下文）
+  "enableSubagentAutocomplete": true,       // @ subagent 自动补全与委派提示
+  "enableContextCommand": true,             // /context 上下文占用检查
+  "enableAgentSummary": true,               // 每回合工具统计摘要
+  "enableWorkingMessage": true,             // Working... 底部 token/耗时展示
+  "enableAliases": true                     // /clear、/exit 别名
 }
 ```
 
@@ -78,22 +83,19 @@ npm run typecheck
 ./test.bat # or pi -e .
 ```
 
-
 ## 兼容性
 
 - Node.js `>=22.19.0`，Pi `^0.84.0`（通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载）
 
 ## 推荐搭配
 
-
 | 扩展                                     | 用途                                             |
-| ------------------------------------------ | -------------------------------------------------- |
+| ---------------------------------------- | ------------------------------------------------ |
 | `npm:@tintinweb/pi-subagents`            | 并行 SubAgent、后台任务与工作树隔离              |
 | `npm:@tintinweb/pi-tasks`                | Claude Code 风格任务跟踪与协调                   |
 | `npm:pi-mcp-adapter`                     | 按需发现 MCP 工具，减少上下文占用                |
 | `npm:@ff-labs/pi-fff`                    | 模糊文件与内容检索（fffind / ffgrep）            |
 | `npm:pi-web-access`                      | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析    |
-| `npm:pi-theme-picker`                    | 主题搜索和实时预览                               |
 | `npm:@narumitw/pi-usage`                 | 查看当前账号用量（Codex / Copilot / OpenRouter） |
 | `git:github.com/DietrichGebert/ponytail` | 极简编码：强制最懒但有效的方案                   |
 

@@ -38,15 +38,14 @@ Run `/reload` after installation.
 
 ## Features
 
-
-| Feature                      | Description                                                                                                                                       | Entry point |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- |
-| Claude Code Output     | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `compact` / `off` modes                                                         | `/ccstyle`  |
-| Fullscreen mode          | Tool card/group click-to-toggle, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
-| Settings panel               | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step                                                                    | `/ccstyle`  |
-| Context inspection           | Usage breakdown and previews for the system prompt, tools, skills, and messages                                                                   | `/context`  |
-| Session/Subagent references           | Search and inject effective context from previous Sessions or existing SubAgents                                                                  | `@` |
-| Theme                        | Bundled CC Dark and CC Light themes                                                                                                               | `/theme`    |
+| Feature                     | Description                                                                               | Entry point                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| Claude Code Output          | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `compact` / `off` modes | `/ccstyle`                                      |
+| Fullscreen mode             | Tool card/group click-to-toggle, previews, hover highlight, and a back-to-bottom button   | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Settings panel              | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step            | `/ccstyle`                                      |
+| Context inspection          | Usage breakdown and previews for the system prompt, tools, skills, and messages           | `/context`                                      |
+| Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
+| Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
 
 ## Configuration
 
@@ -84,15 +83,13 @@ npm run typecheck
 
 ## Recommended companions
 
-
 | Extension                                | Purpose                                                      |
-| ------------------------------------------ | -------------------------------------------------------------- |
+| ---------------------------------------- | ------------------------------------------------------------ |
 | `npm:@tintinweb/pi-subagents`            | Parallel SubAgents, background tasks, and worktree isolation |
 | `npm:@tintinweb/pi-tasks`                | Claude Code-style task tracking and coordination             |
 | `npm:pi-mcp-adapter`                     | On-demand MCP tool discovery with lower context usage        |
 | `npm:@ff-labs/pi-fff`                    | FFF-powered fuzzy file and content search (fffind / ffgrep)  |
 | `npm:pi-web-access`                      | Web search, URL fetching, GitHub cloning, PDF/video parsing  |
-| `npm:pi-theme-picker`                    | Theme search and live preview                                |
 | `npm:@narumitw/pi-usage`                 | Current-account usage for Codex / Copilot / OpenRouter       |
 | `git:github.com/DietrichGebert/ponytail` | Lazy-mode coding: forces the simplest working solution       |
 

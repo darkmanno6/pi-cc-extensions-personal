@@ -759,13 +759,13 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		dispose: () => {},
 	};
 
-	const passThroughAssistant = (component: any, message: any): any => {
+	const passThroughAssistant = (component: any, message: any, isStreaming?: boolean): any => {
 		const self = component as any;
 		if (self[ASSISTANT_REENTRY_KEY] === patch)
-			return patch.assistantNative.call(component, message);
+			return patch.assistantNative.call(component, message, isStreaming);
 		self[ASSISTANT_REENTRY_KEY] = patch;
 		try {
-			return patch.assistantOriginal.call(component, message);
+			return patch.assistantOriginal.call(component, message, isStreaming);
 		} finally {
 			delete self[ASSISTANT_REENTRY_KEY];
 		}
@@ -834,12 +834,20 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (render) renderRound(round);
 	};
 
-	const renderAssistantWithoutThinking = (component: any, message: any): any => {
+	const renderAssistantWithoutThinking = (
+		component: any,
+		message: any,
+		isStreaming?: boolean,
+	): any => {
 		const content = Array.isArray(message?.content) ? message.content : [];
-		const result = passThroughAssistant(component, {
-			...message,
-			content: content.filter((item: any) => item?.type !== "thinking"),
-		});
+		const result = passThroughAssistant(
+			component,
+			{
+				...message,
+				content: content.filter((item: any) => item?.type !== "thinking"),
+			},
+			isStreaming,
+		);
 		component.lastMessage = message;
 		return result;
 	};
@@ -969,18 +977,20 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		stopRoundTick();
 	};
 
-	patch.assistantInstalled = function (this: any, message: any) {
+	patch.assistantInstalled = function (this: any, message: any, isStreaming?: boolean) {
 		const self = this as any;
+		// 同 compact-thinking：isStreaming 丢失 → mermaid 流式误渲染来回闪。
+		if (isStreaming !== undefined) self.isStreaming = isStreaming;
 		if (self[ASSISTANT_REENTRY_KEY] === patch) {
-			return patch.assistantNative.call(this, message);
+			return patch.assistantNative.call(this, message, isStreaming);
 		}
 		self.lastMessage = message;
 		trackedAssistantComponents.add(this);
 		if (!patch.active || config.mode !== "compact") {
-			return passThroughAssistant(this, message);
+			return passThroughAssistant(this, message, isStreaming);
 		}
 		if (!self.contentContainer || typeof self.contentContainer.clear !== "function") {
-			return passThroughAssistant(this, message);
+			return passThroughAssistant(this, message, isStreaming);
 		}
 
 		const content = Array.isArray(message?.content) ? message.content : [];

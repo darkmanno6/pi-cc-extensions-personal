@@ -25,6 +25,12 @@ export type Config = {
 	animationIntervalMs: number;
 	showStartupHeader: boolean;
 	scrollStepLines: number;
+	enableSessionReference: boolean;
+	enableSubagentAutocomplete: boolean;
+	enableContextCommand: boolean;
+	enableAgentSummary: boolean;
+	enableWorkingMessage: boolean;
+	enableAliases: boolean;
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -67,6 +73,12 @@ export const DEFAULT_CONFIG: Config = {
 	animationIntervalMs: 90,
 	showStartupHeader: true,
 	scrollStepLines: 3,
+	enableSessionReference: true,
+	enableSubagentAutocomplete: true,
+	enableContextCommand: true,
+	enableAgentSummary: true,
+	enableWorkingMessage: true,
+	enableAliases: true,
 };
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -148,6 +160,12 @@ export function normalizeConfig(input: unknown): Config {
 		),
 		showStartupHeader: source.showStartupHeader !== false,
 		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
+		enableSessionReference: source.enableSessionReference !== false,
+		enableSubagentAutocomplete: source.enableSubagentAutocomplete !== false,
+		enableContextCommand: source.enableContextCommand !== false,
+		enableAgentSummary: source.enableAgentSummary !== false,
+		enableWorkingMessage: source.enableWorkingMessage !== false,
+		enableAliases: source.enableAliases !== false,
 	};
 }
 
@@ -189,6 +207,12 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`scrollStep=${source.scrollStepLines}`,
+		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,
+		`subagentAuto=${source.enableSubagentAutocomplete ? "on" : "off"}`,
+		`context=${source.enableContextCommand ? "on" : "off"}`,
+		`agentSummary=${source.enableAgentSummary ? "on" : "off"}`,
+		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
+		`aliases=${source.enableAliases ? "on" : "off"}`,
 	].join(" · ");
 }
 

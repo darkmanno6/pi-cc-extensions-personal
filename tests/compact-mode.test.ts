@@ -50,6 +50,43 @@ const renderText = (component: any, width = 120): string[] =>
 		)
 		.filter((line: string) => line);
 
+/** 扩展运行时样板：pi mock + tui ctx + 事件 emit。 */
+function extensionRuntime() {
+	const events = new Map<string, Function[]>();
+	const pi: any = {
+		registerCommand() {},
+		registerTool() {},
+		appendEntry() {},
+		on(name: string, handler: Function) {
+			const list = events.get(name) ?? [];
+			list.push(handler);
+			events.set(name, list);
+		},
+	};
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: {
+			theme: {
+				fg: (_color: string, text: string) => text,
+				italic: (text: string) => text,
+				bold: (text: string) => text,
+			},
+			setStatus() {},
+			requestRender() {},
+			setWidget() {},
+		},
+	};
+	return {
+		pi,
+		ctx,
+		emit: async (name: string, event: any, context: any = ctx) => {
+			for (const handler of events.get(name) ?? []) await handler(event, context);
+		},
+	};
+}
+
 /** 安装 compact 补丁并把全局 mode 设为 compact；restore 恢复原模式并卸载。 */
 function installHooks() {
 	const previousMode = config.mode;
@@ -776,35 +813,7 @@ test("refreshMountedTranscript asserts compact ownership before redraw (resume w
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const previousMode = config.mode;
 	config.mode = "compact";
-	const events = new Map<string, Function[]>();
-	const pi: any = {
-		registerCommand() {},
-		registerTool() {},
-		appendEntry() {},
-		on(name: string, handler: Function) {
-			const list = events.get(name) ?? [];
-			list.push(handler);
-			events.set(name, list);
-		},
-	};
-	const emit = async (name: string, event: any, context: any) => {
-		for (const handler of events.get(name) ?? []) await handler(event, context);
-	};
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		sessionManager: { getBranch: () => [], getEntries: () => [] },
-		ui: {
-			theme: {
-				fg: (_color: string, text: string) => text,
-				italic: (text: string) => text,
-				bold: (text: string) => text,
-			},
-			setStatus() {},
-			requestRender() {},
-			setWidget() {},
-		},
-	};
+	const { pi, ctx, emit } = extensionRuntime();
 	try {
 		claudeCodeStyleExtension(pi, { mode: "compact" });
 		installCompactThinking(pi, {
@@ -838,35 +847,7 @@ test("session_start and session_tree keep the compact patch outermost over compa
 	process.env.PI_CODING_AGENT_DIR = dir;
 	const previousMode = config.mode;
 	config.mode = "compact";
-	const events = new Map<string, Function[]>();
-	const pi: any = {
-		registerCommand() {},
-		registerTool() {},
-		appendEntry() {},
-		on(name: string, handler: Function) {
-			const list = events.get(name) ?? [];
-			list.push(handler);
-			events.set(name, list);
-		},
-	};
-	const emit = async (name: string, event: any, context: any) => {
-		for (const handler of events.get(name) ?? []) await handler(event, context);
-	};
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		sessionManager: { getBranch: () => [], getEntries: () => [] },
-		ui: {
-			theme: {
-				fg: (_color: string, text: string) => text,
-				italic: (text: string) => text,
-				bold: (text: string) => text,
-			},
-			setStatus() {},
-			requestRender() {},
-			setWidget() {},
-		},
-	};
+	const { pi, ctx, emit } = extensionRuntime();
 	const assistantPrototype = AssistantMessageComponent.prototype as any;
 	const toolPrototype = ToolExecutionComponent.prototype as any;
 	const originalUpdateContent = assistantPrototype.updateContent;
@@ -912,5 +893,58 @@ test("session_start and session_tree keep the compact patch outermost over compa
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 		else process.env.PI_CODING_AGENT_DIR = previousDir;
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("isStreaming survives the compact + compact-thinking patch chain (mermaid flicker regression)", async () => {
+	const previousMode = config.mode;
+	const { pi, ctx, emit } = extensionRuntime();
+	const assistantPrototype = AssistantMessageComponent.prototype as any;
+	const originalUpdateContent = assistantPrototype.updateContent;
+	try {
+		config.mode = "on";
+		claudeCodeStyleExtension(pi, { mode: "on" });
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 0,
+			animationIntervalMs: 30,
+		});
+		// 真实链序：compact-thinking 先装，compact-mode 在其外层再装。
+		await emit("session_start", {}, ctx);
+
+		const seen: boolean[] = [];
+		const component = new AssistantMessageComponent(
+			undefined,
+			false,
+			undefined,
+			undefined,
+			1,
+			[
+				(markdown: string, tctx: any) => {
+					seen.push(tctx.isStreaming);
+					return markdown;
+				},
+			],
+		);
+		const message = {
+			role: "assistant",
+			timestamp: Date.now(),
+			content: [{ type: "text", text: "hello" }],
+		} as unknown as AssistantMessage;
+
+		component.updateContent(message, true);
+		component.render(120);
+		component.updateContent(message, false);
+		component.render(120);
+
+		assert.deepEqual(
+			seen,
+			[true, false],
+			`transformer must see streaming then final: ${JSON.stringify(seen)}`,
+		);
+	} finally {
+		config.mode = previousMode;
+		await emit("session_shutdown", {}, ctx);
+		assistantPrototype.updateContent = originalUpdateContent;
 	}
 });

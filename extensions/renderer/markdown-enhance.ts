@@ -55,9 +55,8 @@ const ADMONITION_STYLE: Record<string, { icon: string; label: string }> = {
 };
 
 /**
- * 把 > [!TYPE] 及其后续 > 行转成两列表格（图标标签列 + 内容列），视觉上成提示框。
- * 表格 cell 内不支持换行（<br> 显示为字面量），多行内容用空格合并。
- * 返回 null 表示该行不是提示框。
+ * 把 > [!TYPE] 及其后续 > 行转成带加粗标签的引用块，视觉上成提示框。
+ * 多行内容用空格合并为一行。返回 null 表示该行不是提示框。
  */
 function renderAdmonition(lines: string[], i: number): { output: string[]; next: number } | null {
 	const m = lines[i].match(ADMONITION);
@@ -70,11 +69,11 @@ function renderAdmonition(lines: string[], i: number): { output: string[]; next:
 		j++;
 	}
 	while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
-	// 内容里的 | 转义，避免拆出额外表格列
-	const content = body.join(" ").trim().replace(/\|/g, "\\|");
-	// 表格后补空行，防止紧接的段落被解析为表格数据行
+	// 内容合并为一行，作为引用块正文
+	const content = body.join(" ").trim();
+	// 保留引用块形态，标签改为加粗图标+类型（pi 渲染为左侧竖线，比表格轻量）
 	return {
-		output: [`| ${style.icon} ${style.label} | ${content} |`, "|---|---|", ""],
+		output: [`> **${style.icon} ${style.label}**${content ? ` ${content}` : ""}`, ""],
 		next: j,
 	};
 }
@@ -222,7 +221,7 @@ function renderDiagrams(
 	return out.join("\n");
 }
 
-/** GitHub 风格提示框 → 两列表格（跳过代码块）。 */
+/** GitHub 风格提示框 → 加粗标签引用块（跳过代码块）。 */
 function renderAdmonitions(markdown: string): string {
 	const lines = markdown.split("\n");
 	const out: string[] = [];

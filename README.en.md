@@ -41,6 +41,7 @@ Run `/reload` after installation.
 | Feature                     | Description                                                                               | Entry point                                     |
 | --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code Output          | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `compact` / `off` modes | `/ccstyle`                                      |
+| Markdown enhancements      | Mermaid art, admonitions, URL linking, and more                                           | Automatic                                        |
 | Fullscreen mode             | Tool card/group click-to-toggle, previews, hover highlight, and a back-to-bottom button   | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step            | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, tools, skills, and messages           | `/context`                                      |
@@ -68,6 +69,8 @@ Run `/reload` after installation.
   "scrollStepLines": 3                     // fullscreen mouse wheel scroll lines
 }
 ```
+
+> **Tip**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
 
 ## Local development
 

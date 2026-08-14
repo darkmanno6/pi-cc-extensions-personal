@@ -57,32 +57,32 @@ test("thinking 块不转换（与官方推荐一致）", () => {
 });
 
 test("admonition 转换", () => {
-	assert.ok(run("> [!WARNING] 磁盘不足\n> 续行\n\n正文").includes("| ⚠️ WARNING | 磁盘不足 续行 |"));
-	assert.ok(run("> [!NOTE] 提示").includes("| 💡 NOTE | 提示 |"));
+	assert.ok(run("> [!WARNING] 磁盘不足\n> 续行\n\n正文").includes("> **⚠️ WARNING** 磁盘不足 续行"));
+	assert.ok(run("> [!NOTE] 提示").includes("> **💡 NOTE** 提示"));
 	assert.ok(run("> [!warning] 小心").includes("WARNING"));
 	assert.strictEqual(run("> 普通引用").trim(), "> 普通引用");
 });
 
-test("admonition 表格后空行", () => {
+test("admonition 引用块后空行", () => {
 	const out = run("> [!WARNING] 磁盘不足\n\n正文");
-	// 表格后至少有一个空行，防止紧接段落被解析为表格数据行
-	assert.ok(out.includes("|---|---|\n\n"), JSON.stringify(out));
+	// 引用块后至少有一个空行，防止紧接段落被合并
+	assert.ok(out.includes("> **⚠️ WARNING** 磁盘不足\n\n"), JSON.stringify(out));
 });
 
 test("代码块内 admonition 不转换", () => {
 	const out = run("```md\n> [!NOTE] 示例\n```\n\n> [!NOTE] 块外");
 	assert.ok(out.includes("> [!NOTE] 示例"));
-	assert.ok(out.includes("| 💡 NOTE | 块外 |"));
+	assert.ok(out.includes("> **💡 NOTE** 块外"));
 });
 
-test("admonition 内容 | 转义", () => {
+test("admonition 内容 | 保留", () => {
 	const out = run("> [!NOTE] 参数 a|b 说明");
-	assert.ok(out.includes("a\\|b"), JSON.stringify(out));
+	assert.ok(out.includes("a|b"), JSON.stringify(out));
 });
 
 test("嵌套提示框不互相吞并", () => {
 	const out = run("> [!NOTE] 甲\n> [!WARNING] 乙");
-	assert.ok(out.includes("| 💡 NOTE | 甲 |") && out.includes("| ⚠️ WARNING | 乙 |"));
+	assert.ok(out.includes("> **💡 NOTE** 甲") && out.includes("> **⚠️ WARNING** 乙"));
 });
 
 test("裸 URL 转换", () => {

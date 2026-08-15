@@ -415,6 +415,10 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_start", (_event, ctx) => {
 		const generation = ++sessionGeneration;
+		// 会话替换/reload 会让 ctx 的 getter 抛 stale 错误，await 之后不能再读；
+		// 这里在同步阶段一次性取出纯值。
+		const currentCwd = ctx.cwd;
+		const ui = ctx.ui;
 		subagentIds.clear();
 		clearLiveSubagentRecords();
 		let loadErrorShown = false;
@@ -434,7 +438,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 					if (!loadErrorShown) {
 						loadErrorShown = true;
 						const reason = error instanceof Error ? error.message : String(error);
-						ctx.ui.notify(`session-reference: failed to load sessions: ${reason}`, "error");
+						ui.notify(`session-reference: failed to load sessions: ${reason}`, "error");
 					}
 					return [];
 				});
@@ -447,6 +451,8 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 			| undefined;
 		const getReferences = async (): Promise<SessionReference[]> => {
 			const sessions = await getSessions();
+			// 会话替换/reload 后丢弃旧 generation 的结果，避免对失效状态继续工作。
+			if (generation !== sessionGeneration) return [];
 			const subagentKey = [...subagentIds].join("\0");
 			if (
 				referencesCache &&
@@ -457,7 +463,7 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 			}
 			const ordered = orderSessionReferences(
 				mergeReferences(sessions, liveSubagentReferences(subagentIds, currentSessionId)),
-				ctx.cwd,
+				currentCwd,
 			);
 			referencesCache = { sessions, subagentKey, ordered };
 			return ordered;
@@ -465,13 +471,15 @@ export default function sessionReferenceExtension(pi: ExtensionAPI): void {
 
 		getAvailableReferences = getReferences;
 		if (ctx.mode === "tui") {
-			void getReferences();
+			// 预取是 detached 的，必须兜住 rejection，否则 stale 错误会变成
+			// unhandled rejection 直接终止 Pi。
+			void getReferences().catch(() => {});
 			// Register after other session_start handlers. pi-fff claims every @
 			// prefix, so a provider installed before it would never see session mentions.
 			setTimeout(() => {
 				if (generation !== sessionGeneration) return;
-				ctx.ui.addAutocompleteProvider((current) =>
-					createAutocompleteProvider(current, getReferences, ctx.cwd),
+				ui.addAutocompleteProvider((current) =>
+					createAutocompleteProvider(current, getReferences, currentCwd),
 				);
 			}, 0);
 		}

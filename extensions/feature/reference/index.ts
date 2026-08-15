@@ -109,7 +109,7 @@ function trackSubagentFromEvent(data: unknown): void {
 	// Started event — create new record
 	const agent = typeof event.agent === "string" ? event.agent : "";
 	const cwd = typeof event.cwd === "string" ? event.cwd : "";
-	const startedAt = typeof event.startedAt === "number" ? (event.startedAt as number) : Date.now();
+	const startedAt = typeof event.startedAt === "number" ? event.startedAt : Date.now();
 	liveSubagentRecords.set(runId, {
 		runId,
 		sessionId,
@@ -122,7 +122,9 @@ function trackSubagentFromEvent(data: unknown): void {
 
 function getSubagentManager(): SubagentManager | undefined {
 	// Try the global manager first (future-proof), fall back to local records.
-	const manager = (globalThis as any)[SUBAGENT_MANAGER_KEY] as SubagentManager | undefined;
+	const manager = (globalThis as Record<PropertyKey, unknown>)[SUBAGENT_MANAGER_KEY] as
+		| SubagentManager
+		| undefined;
 	if (manager && typeof manager.getRecord === "function") return manager;
 	// If no global manager, use our local tracking.
 	if (liveSubagentRecords.size === 0) return undefined;

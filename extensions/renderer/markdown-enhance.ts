@@ -71,7 +71,7 @@ function renderAdmonition(lines: string[], i: number): { output: string[]; next:
 	while (body.length > 0 && body[body.length - 1].trim() === "") body.pop();
 	// 内容合并为一行，作为引用块正文
 	const content = body.join(" ").trim();
-	// 保留引用块形态，标签改为加粗图标+类型（pi 渲染为左侧竖线，比表格轻量）
+	// 保留引用块形态（pi 渲染为左侧竖线），标签加粗
 	return {
 		output: [`> **${style.icon} ${style.label}**${content ? ` ${content}` : ""}`, ""],
 		next: j,

@@ -38,7 +38,7 @@ const stripAnsi = (s: string) => s.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").trim(
 
 function makeCtx(parent: Container, sessionManager: any) {
 	const theme = { fg: (_c: string, t: string) => t };
-	const tui = {
+	const tui: any = {
 		mode: "regular",
 		getMountedRoots: () => [parent],
 		terminal: { columns: 120, rows: 40, write() {} },

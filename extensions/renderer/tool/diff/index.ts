@@ -5,7 +5,7 @@ import {
 	renderWriteDiffResult,
 	type DisplayConfigInput,
 } from "./diff-renderer.ts";
-import { DEFAULT_TOOL_DISPLAY_CONFIG } from "./types.ts";
+import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../../../config/config.ts";
 import { executeWriteWithMetadata, WriteExecutionMetadataStore } from "./write-execution.ts";
 
 function resultText(result: any): string {
@@ -121,6 +121,6 @@ export {
 	type ToolDisplayConfig,
 	type DiffViewMode,
 	type DiffIndicatorMode,
-} from "./types.ts";
+} from "../../../config/config.ts";
 export type { DisplayConfigInput } from "./diff-renderer.ts";
 export { WriteExecutionMetadataStore } from "./write-execution.ts";

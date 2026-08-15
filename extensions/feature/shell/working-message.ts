@@ -9,21 +9,24 @@ function formatCount(value: number): string {
 	return new Intl.NumberFormat("en-US").format(value);
 }
 
-function estimateTextLength(message: any): number {
-	if (!Array.isArray(message?.content)) return 0;
-	return message.content.reduce((sum: number, block: any) => {
-		if (block?.type === "text" && typeof block.text === "string") return sum + block.text.length;
-		if (block?.type === "thinking" && block.thinkingSignature?.body)
-			return sum + (block.thinkingSignature.body as string).length;
-		return sum;
-	}, 0);
-}
+type ContentBlock = {
+	type?: unknown;
+	text?: unknown;
+	thinkingSignature?: { body?: unknown };
+};
 
-function textBlockLengths(message: any): number[] {
-	if (!Array.isArray(message?.content)) return [];
+type StreamMessage = {
+	content?: unknown;
+	usage?: { output?: unknown };
+};
+
+/** 每个 content index 的可见文本/思考长度；无对应块的 index 保持稀疏洞。 */
+function textBlockLengths(message: StreamMessage): number[] {
+	const content = message.content;
+	if (!Array.isArray(content)) return [];
 	const lengths: number[] = [];
-	for (let index = 0; index < message.content.length; index++) {
-		const block = message.content[index];
+	for (let index = 0; index < content.length; index++) {
+		const block = content[index] as ContentBlock;
 		if (block?.type === "text" && typeof block.text === "string") {
 			lengths[index] = block.text.length;
 		} else if (block?.type === "thinking" && block.thinkingSignature?.body) {
@@ -33,10 +36,14 @@ function textBlockLengths(message: any): number[] {
 	return lengths;
 }
 
-function outputUsage(message: any): number {
+function outputUsage(message: StreamMessage): number {
 	const value = Number(message?.usage?.output);
 	return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
 }
+
+type WorkingUi = {
+	setWorkingMessage(message?: string): void;
+};
 
 /**
  * Extend Pi's footer working row while preserving its spinner and "Working...":
@@ -54,7 +61,7 @@ export default function (pi: ExtensionAPI): void {
 	let providerOutputTokens = 0;
 	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastMessage: string | null = null;
-	let activeCtx: { ui: any; hasUI: boolean } | null = null;
+	let activeCtx: { ui: WorkingUi | undefined; hasUI: boolean } | null = null;
 
 	function tokenCount(): number {
 		return providerOutputTokens || Math.max(0, Math.round(responseLength / 4));
@@ -66,13 +73,13 @@ export default function (pi: ExtensionAPI): void {
 		responseLength = Math.max(0, responseLength + responseTextBlockLengths[index] - previous);
 	}
 
-	function resetResponseTracking(message?: any): void {
+	function resetResponseTracking(message?: StreamMessage): void {
 		responseTextBlockLengths = message ? textBlockLengths(message) : [];
-		responseLength = message ? estimateTextLength(message) : 0;
+		responseLength = responseTextBlockLengths.reduce((sum, length) => sum + length, 0);
 		providerOutputTokens = message ? outputUsage(message) : 0;
 	}
 
-	function updateProviderUsage(message: any): void {
+	function updateProviderUsage(message: StreamMessage): void {
 		const output = outputUsage(message);
 		if (output > 0) providerOutputTokens = output;
 	}
@@ -93,7 +100,7 @@ export default function (pi: ExtensionAPI): void {
 		lastMessage = null;
 		if (!activeCtx?.hasUI) return;
 		try {
-			activeCtx.ui.setWorkingMessage();
+			activeCtx.ui?.setWorkingMessage();
 		} catch {
 			// Noop when the TUI is unavailable.
 		}
@@ -109,7 +116,7 @@ export default function (pi: ExtensionAPI): void {
 		if (!force && next === lastMessage) return;
 		lastMessage = next;
 		try {
-			activeCtx.ui.setWorkingMessage(next);
+			activeCtx.ui?.setWorkingMessage(next);
 		} catch {
 			// Noop when the TUI is unavailable.
 		}

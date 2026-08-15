@@ -3,7 +3,9 @@ import assert from "node:assert";
 import { default as enhance } from "../extensions/renderer/markdown-enhance.ts";
 
 const transformers: Array<(md: string, ctx?: object) => string> = [];
-enhance({ registerMarkdownTransformer: (fn) => transformers.push(fn) } as never);
+enhance({
+	registerMarkdownTransformer: (fn: (md: string, ctx?: object) => string) => transformers.push(fn),
+} as never);
 const run = (
 	md: string,
 	ctx = { messageType: "assistant", isStreaming: false, availableWidth: 100 },
@@ -65,7 +67,7 @@ test("admonition 转换", () => {
 
 test("admonition 引用块后空行", () => {
 	const out = run("> [!WARNING] 磁盘不足\n\n正文");
-	// 引用块后至少有一个空行，防止紧接段落被合并
+	// 提示框后至少有一个空行，防止紧接段落被合并
 	assert.ok(out.includes("> **⚠️ WARNING** 磁盘不足\n\n"), JSON.stringify(out));
 });
 

@@ -1,15 +1,39 @@
 import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
-import {
-	DEFAULT_TOOL_DISPLAY_CONFIG,
-	type DiffIndicatorMode,
-	type DiffViewMode,
-	type ToolDisplayConfig,
-} from "../renderer/tool/diff/index.ts";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 export type CompactStyleMode = "on" | "compact" | "off";
+
+// ── diff 显示配置：作为配置 schema 的一部分由 config 层拥有 ──
+// renderer（diff）从 config 导入并 re-export，避免 config → renderer 的反向依赖。
+
+export type DiffViewMode = "auto" | "split" | "unified";
+export type DiffIndicatorMode = "bars" | "classic" | "none";
+
+export interface ToolDisplayConfig {
+	diffViewMode: DiffViewMode;
+	diffIndicatorMode: DiffIndicatorMode;
+	diffSplitMinWidth: number;
+	diffCollapsedLines: number;
+	diffWordWrap: boolean;
+	expandedPreviewMaxLines: number;
+}
+
+export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
+	diffViewMode: "auto",
+	diffIndicatorMode: "bars",
+	diffSplitMinWidth: 120,
+	/** Collapsed tool/diff body: ~half a typical terminal after chrome. */
+	diffCollapsedLines: 24,
+	diffWordWrap: true,
+	/**
+	 * Expanded tool/diff body cap. 40 ≈ one screen of content after title,
+	 * Input section, editor, and status — keeps the TUI compact.
+	 * Raise via /ccstyle → Diff → Expanded max lines when reviewing large dumps.
+	 */
+	expandedPreviewMaxLines: 40,
+};
 
 export type Config = {
 	mode: CompactStyleMode;
@@ -216,7 +240,8 @@ export function formatConfigStatus(source: Config = config): string {
 	].join(" · ");
 }
 
-export let config: Config = loadConfig();
+/** 进程内唯一的活动配置对象。读取直接用 `config.xxx`；写入必须走 `updateConfig`。 */
+export const config: Config = loadConfig();
 
 function loadConfig(): Config {
 	try {
@@ -247,7 +272,13 @@ export function saveConfig() {
 	writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
 }
 
-/** 整体替换配置（default export 的 configOverride 注入路径；导入绑定不可重新赋值）。 */
+/** 运行时配置写入的唯一入口：合并 + 规范化 + 持久化。 */
+export function updateConfig(partial: Partial<Config>): void {
+	Object.assign(config, normalizeConfig({ ...config, ...partial }));
+	saveConfig();
+}
+
+/** 整体替换配置（default export 的 configOverride 注入路径；就地覆盖，不持久化）。 */
 export function setConfig(next: Config): void {
-	config = next;
+	Object.assign(config, next);
 }

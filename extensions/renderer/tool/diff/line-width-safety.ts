@@ -1,6 +1,6 @@
 import { normalizeDiffRenderWidth } from "./diff-presentation.ts";
-import { pluralize } from "./render-utils.ts";
-import { showMoreHintText } from "../../show-more-hint.ts";
+import { pluralize } from "./diff-text.ts";
+import { showMoreHintText } from "../show-more-hint.ts";
 
 export interface WidthMeasurementOps {
 	measure(text: string): number;

@@ -46,7 +46,7 @@ test("mixed tools group across three empty separators while edit/write and conte
 		bash.updateResult({ content: [], isError: false });
 		grep.updateResult({ content: [], isError: true });
 		assert.match(
-			parent.children[0].render(100).find((line: string) => line.trim()),
+			parent.children[0].render(100).find((line: string) => line.trim())!,
 			/1 running.*1 done.*1 failed/,
 		);
 		const group = parent.children[0] as ToolGroupComponent;
@@ -217,10 +217,7 @@ test("outer removeChild removes grouped tools, dissolves singletons, and clear f
 		parent.addChild(grep);
 		const group = parent.children[0] as ToolGroupComponent;
 		assert.ok(group instanceof ToolGroupComponent);
-		assert.match(
-			group.render(100).find((line: string) => line.trim()),
-			/click to show more/,
-		);
+		assert.match(group.render(100).find((line: string) => line.trim())!, /click to show more/);
 
 		parent.removeChild(bash);
 		assert.deepEqual(group.children, [read, grep]);

@@ -7,12 +7,17 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
-import { oneLine } from "../../utils/format.ts";
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
+import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
+import { walkComponentTree } from "../../utils/component-tree.ts";
+import { humanizeToolLabel, toolCallSummary } from "./names.ts";
+import {
+	patchRegistry,
+	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
+	TOOL_GROUPING_PARENT_KEY as PARENT_KEY,
+	TOOL_GROUPING_PATCH_KEY as PATCH_KEY,
+} from "../../utils/patch-keys.ts";
 
-const PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");
-const PARENT_KEY = Symbol.for("pi.ccstyle.tool-grouping-parent");
-const GENERATION_KEY = Symbol.for("pi.ccstyle.tool-grouping-generation");
 const NON_GROUPABLE = new Set(["edit", "write", "apply_patch"]);
 
 type Patch = {
@@ -33,7 +38,7 @@ function toolName(tool: any): string {
 	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
 }
 
-function isGroupable(value: unknown): value is any {
+function isGroupable(value: unknown): boolean {
 	return value instanceof ToolExecutionComponent && !NON_GROUPABLE.has(toolName(value));
 }
 
@@ -86,23 +91,8 @@ function scheduleGroupAnimation(patch: Patch): void {
 	patch.animationTimer.unref?.();
 }
 
-function stripAnsi(line: string): string {
-	return line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
-}
-
 function visibleLines(lines: string[]): string[] {
 	return lines.filter((line) => stripAnsi(line).trim());
-}
-
-function stripLeadingStatusIcon(line: string): string {
-	return line.replace(
-		/^((?:\x1b\[[0-9;]*m|[ \t]|[├└│─])*)(?:\x1b\[[0-9;]*m)*(?:[✓✗●○■⬤•·])(?:\x1b\[[0-9;]*m)*\s+/,
-		"$1",
-	);
-}
-
-export function stripBackgroundAnsi(line: string): string {
-	return line.replace(/\x1b\[(?:4[0-9]|10[0-7]|48(?:(?:;|:)[0-9]+)+|49)m/g, "");
 }
 
 function stripLeadingSpaces(line: string, count: number): string {
@@ -147,106 +137,8 @@ export function paddedBackgroundRow(
 	return `${bgAnsi}${stable}\x1b[49m`;
 }
 
-function humanizeToolName(name: string): string {
-	return name
-		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-		.replace(/[_-]+/g, " ")
-		.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 function toolSummary(tool: any): { main: string; detail: string } {
-	const name = toolName(tool);
-	const lowerName = name.toLowerCase();
-	const args = tool?.args ?? {};
-	const titled = humanizeToolName(name);
-	const value = (fallback: string, ...keys: string[]) => {
-		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
-		return `${titled} ${oneLine(found || fallback)}`;
-	};
-	if (lowerName === "agent" || lowerName === "agents") {
-		const displayName = args.subagent_type ?? args.agent_type ?? args.agent;
-		if (typeof displayName === "string" && displayName) {
-			return { main: `${titled} ${displayName}`, detail: "" };
-		}
-		return {
-			main: value(
-				lowerName === "agent" ? "launch agent" : "launch agents",
-				"description",
-				"prompt",
-			),
-			detail: "",
-		};
-	}
-	if (lowerName === "get_subagent_result" || lowerName === "steer_subagent") {
-		return {
-			main: value(lowerName === "get_subagent_result" ? "agent result" : "steer agent", "agent_id"),
-			detail: "",
-		};
-	}
-	if (lowerName === "skill") return { main: value("run skill", "name"), detail: "" };
-	if (lowerName === "enterplanmode" || lowerName === "enter_plan_mode") {
-		return { main: `${titled} enable read-only planning`, detail: "" };
-	}
-	if (lowerName === "exitplanmode" || lowerName === "exit_plan_mode") {
-		return { main: `${titled} present plan`, detail: "" };
-	}
-	if (lowerName === "taskcreate") return { main: value("create task", "subject"), detail: "" };
-	if (lowerName === "tasklist") return { main: `${titled} task list`, detail: "" };
-	if (lowerName === "taskget" || lowerName === "taskupdate") {
-		return { main: value("task", "taskId", "task_id"), detail: "" };
-	}
-	if (lowerName === "taskoutput" || lowerName === "taskstop") {
-		return { main: value("background task", "task_id", "taskId"), detail: "" };
-	}
-	if (lowerName === "taskexecute") {
-		const ids = Array.isArray(args.task_ids)
-			? args.task_ids
-			: Array.isArray(args.taskIds)
-				? args.taskIds
-				: [];
-		return {
-			main: `${titled} ${ids.length ? `${ids[0]}${ids.length > 1 ? ` (+${ids.length - 1} tasks)` : ""}` : "start tasks"}`,
-			detail: "",
-		};
-	}
-	if (name === "read") {
-		const details = [
-			args.offset !== undefined ? `offset=${args.offset}` : "",
-			args.limit !== undefined ? `limit=${args.limit}` : "",
-		].filter(Boolean);
-		return {
-			main: `Read ${oneLine(args.path || "...")}`,
-			detail: details.length ? ` (${details.join(", ")})` : "",
-		};
-	}
-	if (name === "bash") return { main: `Bash ${oneLine(args.command || "...")}`, detail: "" };
-	if (name === "grep") {
-		const pattern = oneLine(args.pattern || "...");
-		return {
-			main: `Grep ${JSON.stringify(pattern)}${args.path ? ` in ${oneLine(args.path)}` : ""}`,
-			detail: "",
-		};
-	}
-	if (name === "find") {
-		const pattern = oneLine(args.pattern || "...");
-		return {
-			main: `Find ${JSON.stringify(pattern)}${args.path ? ` in ${oneLine(args.path)}` : ""}`,
-			detail: "",
-		};
-	}
-	const preferred =
-		args.agent_id ??
-		args.path ??
-		args.file_path ??
-		args.url ??
-		args.description ??
-		args.query ??
-		args.name ??
-		args.prompt;
-	return {
-		main: `${humanizeToolName(name)}${preferred === undefined ? "" : ` ${oneLine(preferred)}`}`,
-		detail: "",
-	};
+	return toolCallSummary(toolName(tool), tool?.args ?? {}, { variant: "grouping" });
 }
 
 function toolNameList(tools: any[]): string {
@@ -345,7 +237,7 @@ export class ToolGroupComponent extends Container {
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
 		const label =
-			names.size === 1 ? humanizeToolName(toolName(this.children[0])) : "Multiple Tools";
+			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if (overall === "pending") scheduleGroupAnimation(this.patch);
 		const overallColor = overall === "pending" ? "accent" : overall;
@@ -477,32 +369,17 @@ function maybeGroup(patch: Patch, parent: any, component: any): void {
 /** /reload 不会重新 addChild；扫描当前 mounted roots，把已有工具重新送入同一分组规则。 */
 function regroup(patch: Patch, root: any): void {
 	if (!patch.active || !patch.enabled() || !root) return;
-	const seen = new Set<any>();
-	const visit = (value: any): void => {
-		if (!value || typeof value !== "object" || seen.has(value)) return;
-		seen.add(value);
-		if (Array.isArray(value)) {
-			for (const child of value) visit(child);
-			return;
-		}
+	walkComponentTree(root, (value: any) => {
+		// 分组卡与可分组工具是分组边界：不继续下钻（与原有遍历过滤一致）。
+		if (value instanceof ToolGroupComponent || isGroupable(value)) return false;
 		const children = value.children;
 		if (Array.isArray(children)) {
 			for (const child of [...children]) {
 				if (child && typeof child === "object") child[PARENT_KEY] = value;
 				maybeGroup(patch, value, child);
 			}
-			for (const child of [...children]) {
-				if (!(child instanceof ToolGroupComponent) && !isGroupable(child)) visit(child);
-			}
 		}
-		try {
-			const mounted = value.getMountedRoots?.();
-			if (Array.isArray(mounted)) visit(mounted);
-		} catch {
-			// renderer 切换中的惰性 Proxy 可能暂时没有 mounted roots。
-		}
-	};
-	visit(root);
+	});
 }
 
 export type ToolGroupingHooks = {
@@ -513,8 +390,7 @@ export type ToolGroupingHooks = {
 
 export function installToolGrouping(getEnabled: () => boolean): ToolGroupingHooks {
 	const prototype = Container.prototype as any;
-	const host = globalThis as any;
-	const previous = host[PATCH_KEY] as Patch | undefined;
+	const previous = patchRegistry.get<Patch>(PATCH_KEY);
 	if (previous) {
 		previous.active = false;
 		previous.enabled = () => false;
@@ -584,7 +460,7 @@ export function installToolGrouping(getEnabled: () => boolean): ToolGroupingHook
 	prototype.addChild = patch.installed.addChild;
 	prototype.removeChild = patch.installed.removeChild;
 	prototype.clear = patch.installed.clear;
-	host[PATCH_KEY] = patch;
+	patchRegistry.install(PATCH_KEY, patch);
 	return {
 		setTheme(theme: any) {
 			patch.theme = theme;

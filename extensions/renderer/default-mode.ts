@@ -7,6 +7,12 @@
 import { ToolExecutionComponent } from "@earendil-works/pi-coding-agent";
 import { Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig, type CompactStyleMode } from "../config/config.ts";
+import {
+	COMPONENT_TOOL_RENDER_MODE,
+	GLOBAL_TOOL_RENDER_PATCH,
+	patchRegistry,
+	TOOL_EXPANDED_BACKGROUND_PATCH,
+} from "../utils/patch-keys.ts";
 import { isToolCallHovered } from "./mouse/hover.ts";
 import {
 	countLines,
@@ -27,25 +33,15 @@ import {
 	toolViewportWidth,
 } from "./tool/result.ts";
 import { oneLine } from "../utils/format.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { showMoreHintText } from "./tool/show-more-hint.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
-import { getMessageDisplayTheme } from "./message-display.ts";
+import { getMessageDisplayTheme } from "./tool/message-display.ts";
+import { humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
 
 // 成功勾：亮绿 truecolor（与 message-display 一致）
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
 const ANSI_FG_RESET = "\x1b[39m";
 
-const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
-const COMPONENT_TOOL_RENDER_MODE = Symbol.for("pi.ccstyle.component-tool-render-mode");
-const COMPONENT_TOOL_SELF_SHELL_MODE = Symbol.for("pi.ccstyle.component-tool-self-shell-mode");
-const TOOL_EXPANDED_BACKGROUND_PATCH = Symbol.for("pi.ccstyle.tool-expanded-background-patch");
-
-const AGENT_FAMILY_TOOL_NAMES = new Set([
-	"Agent",
-	"Agents",
-	"get_subagent_result",
-	"steer_subagent",
-]);
 // pi-subagents 等扩展为 Agent 提供专用渲染器，ccstyle 必须保留。
 const DEDICATED_RENDERER_TOOLS = new Set(["Agent"]);
 
@@ -139,94 +135,6 @@ function renderDefault(tool: any, slot: "renderCall" | "renderResult", args: any
 		// Fall through to raw fallback.
 	}
 	return new Text(fallback, 0, 0);
-}
-
-function humanizeToolLabel(label: string): string {
-	return label
-		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-		.replace(/[_-]+/g, " ")
-		.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function singleToolCallSummary(
-	toolName: string,
-	label: string,
-	args: any,
-): { main: string; detail: string } {
-	const title = label === toolName ? humanizeToolLabel(label) : label;
-	if (!args || typeof args !== "object") return { main: title, detail: "" };
-	const name = toolName.toLowerCase();
-	const value = (fallback: string, ...keys: string[]) => {
-		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
-		// 与多 tool 摘要对齐：从头截断，上限 96 字符（tool-grouping oneLine 默认值）。
-		return `${title} ${oneLine(found || fallback, 96)}`;
-	};
-	if (AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
-		return { main: `${title} ${oneLine(args.agent_id, 96)}`, detail: "" };
-	}
-	// Agents 走 ccstyle wrapper；Agent 保留专用渲染器。
-	if (name === "agents") {
-		return {
-			main: value("launch agents", "description", "prompt"),
-			detail: "",
-		};
-	}
-	if (name === "skill") return { main: value("run skill", "name"), detail: "" };
-	if (name === "enterplanmode" || name === "enter_plan_mode") {
-		return { main: `${title} enable read-only planning`, detail: "" };
-	}
-	if (name === "exitplanmode" || name === "exit_plan_mode") {
-		return { main: `${title} present plan`, detail: "" };
-	}
-	if (name === "taskcreate") return { main: value("create task", "subject"), detail: "" };
-	if (name === "tasklist") return { main: `${title} task list`, detail: "" };
-	if (name === "taskget" || name === "taskupdate") {
-		return { main: value("task", "taskId", "task_id"), detail: "" };
-	}
-	if (name === "taskoutput" || name === "taskstop") {
-		return { main: value("background task", "task_id", "taskId"), detail: "" };
-	}
-	if (name === "taskexecute") {
-		const ids = Array.isArray(args.task_ids)
-			? args.task_ids
-			: Array.isArray(args.taskIds)
-				? args.taskIds
-				: [];
-		const summary = ids.length
-			? `${ids[0]}${ids.length > 1 ? ` (+${ids.length - 1} tasks)` : ""}`
-			: "start tasks";
-		return { main: `${title} ${summary}`, detail: "" };
-	}
-	if (toolName === "read") {
-		const details = [
-			args.offset !== undefined ? `offset=${args.offset}` : "",
-			args.limit !== undefined ? `limit=${args.limit}` : "",
-		].filter(Boolean);
-		return {
-			main: `${title}${args.path ? ` ${oneLine(args.path, 96)}` : ""}`,
-			detail: details.length ? ` (${details.join(", ")})` : "",
-		};
-	}
-	const preferred =
-		args.path ??
-		args.file_path ??
-		args.command ??
-		args.query ??
-		args.question ??
-		args.pattern ??
-		args.url ??
-		args.name ??
-		args.tool_use_id ??
-		args.toolCallId ??
-		args.id ??
-		args.message;
-	return {
-		main:
-			preferred !== undefined && preferred !== null && typeof preferred !== "object"
-				? `${title} ${oneLine(preferred, 96)}`
-				: title,
-		detail: "",
-	};
 }
 
 type ParsedTask = { id: string; status: string; subject: string };
@@ -330,7 +238,10 @@ function createCcstyleTool(
 				visualState === "success"
 					? `${BRIGHT_GREEN}${rawIcon}${ANSI_FG_RESET}`
 					: theme.fg(toolIconColor(context), rawIcon);
-			const summary = singleToolCallSummary(toolName, label, args);
+			const summary = toolCallSummary(toolName, args, {
+				title: label === toolName ? humanizeToolLabel(label) : label,
+				variant: "default",
+			});
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
 			const expanded = Boolean(context?.expanded);
@@ -485,11 +396,6 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 	return useCcstyle;
 }
 
-function shouldUseSelfShell(component: any, _patch: GlobalToolRenderPatch): boolean {
-	component[COMPONENT_TOOL_SELF_SHELL_MODE] = false;
-	return false;
-}
-
 function getGloballyStyledTool(component: any, patch: GlobalToolRenderPatch): any {
 	const definition = component.toolDefinition ?? component.builtInToolDefinition;
 	if (definition && typeof definition === "object") {
@@ -527,21 +433,6 @@ function isOwnershipAwarePatch(value: any): value is GlobalToolRenderPatch {
 	);
 }
 
-function isLegacyInstalledWrapper(method: unknown, downstreamField: string): boolean {
-	if (typeof method !== "function") return false;
-	try {
-		const source = Function.prototype.toString.call(method);
-		return (
-			source.includes(downstreamField) &&
-			(source.includes("shouldGloballyStyleTool") ||
-				source.includes("shouldUseSelfShell") ||
-				source.includes("getGloballyStyledTool"))
-		);
-	} catch {
-		return false;
-	}
-}
-
 function downstreamForGlobalToolInstall(prototype: any, previous: any): ToolRenderMethods {
 	const current = prototypeToolRenderMethods(prototype);
 	if (!previous || previous.prototype !== prototype) return current;
@@ -566,27 +457,26 @@ function downstreamForGlobalToolInstall(prototype: any, previous: any): ToolRend
 		};
 	}
 
-	// pre-v2 Symbol 无 wrapper 引用；能识别则回退，否则保留当前方法为 external。
-	const legacyDownstream = (method: Function, field: string): Function => {
-		const saved = previous[field];
-		return typeof saved === "function" && isLegacyInstalledWrapper(method, field) ? saved : method;
-	};
+	// pre-v2 Symbol：originalX 显式记录真实下游（native 原型方法），无需源码嗅探。
+	// 缺失字段回退到当前原型方法（视作 external）。
+	const originalOrCurrent = (field: string, method: Function): Function =>
+		typeof previous[field] === "function" ? previous[field] : method;
 	return {
-		hasRendererDefinition: legacyDownstream(
-			current.hasRendererDefinition,
+		hasRendererDefinition: originalOrCurrent(
 			"originalHasRendererDefinition",
+			current.hasRendererDefinition,
 		) as ToolRenderMethods["hasRendererDefinition"],
-		getRenderShell: legacyDownstream(
-			current.getRenderShell,
+		getRenderShell: originalOrCurrent(
 			"originalGetRenderShell",
+			current.getRenderShell,
 		) as ToolRenderMethods["getRenderShell"],
-		getCallRenderer: legacyDownstream(
-			current.getCallRenderer,
+		getCallRenderer: originalOrCurrent(
 			"originalGetCallRenderer",
+			current.getCallRenderer,
 		) as ToolRenderMethods["getCallRenderer"],
-		getResultRenderer: legacyDownstream(
-			current.getResultRenderer,
+		getResultRenderer: originalOrCurrent(
 			"originalGetResultRenderer",
+			current.getResultRenderer,
 		) as ToolRenderMethods["getResultRenderer"],
 	};
 }
@@ -606,8 +496,7 @@ function installGlobalToolRendering(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
 ): GlobalToolRenderPatch {
 	const prototype = (ToolExecutionComponent as any).prototype;
-	const host = globalThis as any;
-	const previous = host[GLOBAL_TOOL_RENDER_PATCH];
+	const previous = patchRegistry.get<GlobalToolRenderPatch>(GLOBAL_TOOL_RENDER_PATCH);
 	const downstream = downstreamForGlobalToolInstall(prototype, previous);
 	// 外部仍持有的旧 wrapper 先变为无回调 pass-through，再挂新安装。
 	disconnectGlobalToolRenderPatch(previous);
@@ -637,14 +526,12 @@ function installGlobalToolRendering(
 		},
 		getRenderShell: function (this: any, ...args: any[]) {
 			if (!patch.active) return patch.downstream.getRenderShell.apply(this, args);
-			const useSelfShell = shouldUseSelfShell(this, patch);
 			const useCcstyle = shouldGloballyStyleTool(this, patch);
-			const shell =
-				useSelfShell || (useCcstyle && !this.expanded)
-					? "self"
-					: useCcstyle
-						? "default"
-						: patch.downstream.getRenderShell.apply(this, args);
+			const shell = useCcstyle
+				? this.expanded
+					? "default"
+					: "self"
+				: patch.downstream.getRenderShell.apply(this, args);
 			syncToolShell(this, shell);
 			return shell;
 		},
@@ -666,7 +553,7 @@ function installGlobalToolRendering(
 	prototype.getRenderShell = patch.installed.getRenderShell;
 	prototype.getCallRenderer = patch.installed.getCallRenderer;
 	prototype.getResultRenderer = patch.installed.getResultRenderer;
-	host[GLOBAL_TOOL_RENDER_PATCH] = patch;
+	patchRegistry.install(GLOBAL_TOOL_RENDER_PATCH, patch);
 	return patch;
 }
 
@@ -691,8 +578,7 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 /** 展开面板背景统一为 user message 背景色；折叠行保持原生状态色。
  *  必须在 compact-mode 之后安装，shutdown 时先于 compact-mode 释放。 */
 export function installToolExpandedBackground(): () => void {
-	const host = globalThis as any;
-	const previous = host[TOOL_EXPANDED_BACKGROUND_PATCH] as ToolExpandedBackgroundPatch | undefined;
+	const previous = patchRegistry.get<ToolExpandedBackgroundPatch>(TOOL_EXPANDED_BACKGROUND_PATCH);
 	if (previous) previous.dispose();
 	const prototype = ToolExecutionComponent.prototype as unknown as { updateDisplay: () => void };
 	const original = prototype.updateDisplay;
@@ -718,13 +604,11 @@ export function installToolExpandedBackground(): () => void {
 			if (prototype.updateDisplay === patch.installed) {
 				prototype.updateDisplay = original;
 			}
-			if (host[TOOL_EXPANDED_BACKGROUND_PATCH] === patch) {
-				delete host[TOOL_EXPANDED_BACKGROUND_PATCH];
-			}
+			patchRegistry.dispose(TOOL_EXPANDED_BACKGROUND_PATCH, patch);
 		},
 	};
 	prototype.updateDisplay = patch.installed;
-	host[TOOL_EXPANDED_BACKGROUND_PATCH] = patch;
+	patchRegistry.install(TOOL_EXPANDED_BACKGROUND_PATCH, patch);
 	return patch.dispose;
 }
 
@@ -736,7 +620,7 @@ export function installDefaultMode(
 	return {
 		isOwner() {
 			return (
-				(globalThis as any)[GLOBAL_TOOL_RENDER_PATCH] === globalToolRendering &&
+				patchRegistry.owns(GLOBAL_TOOL_RENDER_PATCH, globalToolRendering) &&
 				globalToolRendering.active
 			);
 		},

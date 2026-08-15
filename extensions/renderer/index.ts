@@ -14,12 +14,13 @@ import {
 } from "./default-mode.ts";
 import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { showCcstylePanel } from "../config/panel.ts";
+import { GLOBAL_COMPACTION_RENDER_PATCH, patchRegistry } from "../utils/patch-keys.ts";
 import {
 	config,
 	formatConfigStatus,
 	normalizeConfig,
-	saveConfig,
 	setConfig,
+	updateConfig,
 	type CompactStyleMode,
 	type Config,
 } from "../config/config.ts";
@@ -38,7 +39,7 @@ import {
 	installMessageDisplayRendering,
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
-} from "./message-display.ts";
+} from "./tool/message-display.ts";
 
 /**
  * Claude Code Style for pi — 装配入口。
@@ -47,8 +48,6 @@ import {
  * mode=compact → compact-mode（消息折叠摘要）
  * 共用        → tool-grouping / message-display / mouse / write override
  */
-
-const GLOBAL_COMPACTION_RENDER_PATCH = Symbol.for("pi.ccstyle.compaction-render-patch");
 
 let compactModeHooks: CompactModeHooks | undefined;
 
@@ -68,8 +67,7 @@ function syncCompactMode(ctx: any): void {
 }
 
 function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGroupingHooks): void {
-	config.mode = mode;
-	saveConfig();
+	updateConfig({ mode });
 	if (mode === "off") {
 		// Native rendering：清 hover/click，关闭鼠标上报以恢复终端默认滚轮。
 		resetToolHoverState();
@@ -101,9 +99,7 @@ type LegacyCompactionRenderPatch = {
 
 /** Disable the pre-native compaction monkey patch left alive by /reload. */
 function deactivateLegacyCompactionRendering() {
-	const patch = (globalThis as any)[GLOBAL_COMPACTION_RENDER_PATCH] as
-		| LegacyCompactionRenderPatch
-		| undefined;
+	const patch = patchRegistry.get<LegacyCompactionRenderPatch>(GLOBAL_COMPACTION_RENDER_PATCH);
 	if (patch) patch.enabled = () => false;
 }
 

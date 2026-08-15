@@ -14,7 +14,7 @@ import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
-} from "../extensions/renderer/message-display.ts";
+} from "../extensions/renderer/tool/message-display.ts";
 import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 
@@ -432,7 +432,7 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	};
 	const scrolledLayout = fullscreenLayout([filler, tool], null);
 	const scrollBox = scrolledLayout.root.children[0];
-	scrollBox.scrollView.scrollTop = 50;
+	scrollBox.scrollView!.scrollTop = 50;
 	scrollBox.children[0].rect.y = -50;
 	renderer.currentLayout = scrolledLayout;
 	const scrolledHoverRenders = renderer.renderCalls;
@@ -484,7 +484,7 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 			{ ...createTool(toolId), render: () => ["✓ url", linkLine] },
 			null,
 		);
-		const officialBefore = renderer.officialInputs.length;
+		const officialBefore: number = renderer.officialInputs.length;
 		tui.handleViewportInput(`\x1b[<0;10;2M`);
 		assert.equal(
 			renderer.officialInputs.length,

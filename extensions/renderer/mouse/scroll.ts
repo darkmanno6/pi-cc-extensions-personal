@@ -8,6 +8,11 @@ import {
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import { parseSgrMousePackets } from "./packets.ts";
+import {
+	patchRegistry,
+	SCROLL_BUTTON_STATE_SLOT,
+	TOOL_MOUSE_TUI_SLOT,
+} from "../../utils/patch-keys.ts";
 
 const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|^\x1b\[1;6A$/;
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
@@ -21,24 +26,25 @@ const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
  * 模块级 let 绑定是初始值快照（死绑定，实测恒 null），函数调用才是活引用。
  * 跨模块读取一律用 getToolMouseTui()，避免拿到加载时的快照。
  */
-const TOOL_MOUSE_TUI_SLOT = Symbol.for("pi.ccstyle.tool-mouse-tui");
-(globalThis as any)[TOOL_MOUSE_TUI_SLOT] ??= null;
+patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
 export let toolMouseTui: any = null;
 export function getToolMouseTui(): any {
-	return (globalThis as any)[TOOL_MOUSE_TUI_SLOT];
+	return patchRegistry.get(TOOL_MOUSE_TUI_SLOT);
 }
 export function setToolMouseTui(tui: any): void {
 	toolMouseTui = tui;
-	(globalThis as any)[TOOL_MOUSE_TUI_SLOT] = tui;
+	patchRegistry.install(TOOL_MOUSE_TUI_SLOT, tui);
 }
 
 // 滚动按钮状态同 toolMouseTui：镜像到 globalThis（Symbol 槽），跨模块读取
 // 一律用 getter（jiti 转译下模块级 let 绑定是初始值快照）。
-const SCROLL_BUTTON_STATE_SLOT = Symbol.for("pi.ccstyle.scroll-button-state");
 type ScrollButtonState = { visible: boolean; hovered: boolean; widget: any };
 function scrollButtonState(): ScrollButtonState {
-	const host = globalThis as any;
-	return (host[SCROLL_BUTTON_STATE_SLOT] ??= { visible: false, hovered: false, widget: null });
+	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({
+		visible: false,
+		hovered: false,
+		widget: null,
+	}));
 }
 export function getScrollButtonVisible(): boolean {
 	return scrollButtonState().visible;

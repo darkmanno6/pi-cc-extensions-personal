@@ -295,7 +295,7 @@ export function applyStartupHeader(ctx: any): void {
 		ctx.ui.setHeader(undefined);
 		return;
 	}
-	ctx.ui.setHeader((_tui, theme) => ({
+	ctx.ui.setHeader((_tui: unknown, theme: any) => ({
 		render(width: number): string[] {
 			return renderHeaderLines(width, theme);
 		},

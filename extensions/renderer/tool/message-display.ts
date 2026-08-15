@@ -4,8 +4,10 @@ import {
 	SkillInvocationMessageComponent,
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { config } from "../config/config.ts";
+import { MESSAGE_DISPLAY_PATCH, patchRegistry } from "../../utils/patch-keys.ts";
+import { config } from "../../config/config.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
+import { walkComponentTree } from "../../utils/component-tree.ts";
 
 /**
  * 接管三个消息组件（`<skill>` 块、压缩摘要、分支摘要），ccstyle on 时渲染为
@@ -15,8 +17,6 @@ import { showMoreHintText } from "./show-more-hint.ts";
  * 三条路径都经过 updateDisplay，patch 一处即可全覆盖。它们不走
  * ToolExecutionComponent，无法复用其原型 patch，这里单独统一管理。
  */
-
-const MESSAGE_DISPLAY_PATCH = Symbol.for("pi.ccstyle.message-display-patch");
 
 // 与 renderer/index.ts renderCall 的成功勾一致：亮绿 ✓（truecolor ANSI）。
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
@@ -88,8 +88,7 @@ type PatchEntry = {
 
 /** patch 三个消息组件的 updateDisplay，返回统一 dispose（/reload 链安全）。 */
 export function installMessageDisplayRendering(): () => void {
-	const host = globalThis as any;
-	const previous = host[MESSAGE_DISPLAY_PATCH];
+	const previous = patchRegistry.get<{ dispose: () => void }>(MESSAGE_DISPLAY_PATCH);
 	if (previous) previous.dispose();
 	const patch: { active: boolean; entries: PatchEntry[]; dispose: () => void } = {
 		active: true,
@@ -128,9 +127,9 @@ export function installMessageDisplayRendering(): () => void {
 				entry.prototype.updateDisplay = entry.original;
 			}
 		}
-		if (host[MESSAGE_DISPLAY_PATCH] === patch) delete host[MESSAGE_DISPLAY_PATCH];
+		patchRegistry.dispose(MESSAGE_DISPLAY_PATCH, patch);
 	};
-	host[MESSAGE_DISPLAY_PATCH] = patch;
+	patchRegistry.install(MESSAGE_DISPLAY_PATCH, patch);
 	return patch.dispose;
 }
 
@@ -148,30 +147,10 @@ function isMessageDisplayComponent(value: any): boolean {
 
 /** 遍历当前 transcript，让已挂载的消息组件按当前 mode 重渲染（/ccstyle on|off 切换）。 */
 export function refreshMessageDisplays(root: any): void {
-	const seen = new Set<any>();
-	const visit = (value: any): void => {
-		if (!value || typeof value !== "object" || seen.has(value)) return;
-		seen.add(value);
-		if (Array.isArray(value)) {
-			for (const child of value) visit(child);
-			return;
-		}
+	walkComponentTree(root, (value: any) => {
 		if (isMessageDisplayComponent(value)) {
 			value.invalidate?.();
-			return;
+			return false;
 		}
-		const children = value.children;
-		if (Array.isArray(children)) {
-			for (const child of children) visit(child);
-		}
-		try {
-			const mounted = value.getMountedRoots?.();
-			if (Array.isArray(mounted)) {
-				for (const root of mounted) visit(root);
-			}
-		} catch {
-			// 惰性 Proxy 可能暂时没有 mounted roots
-		}
-	};
-	visit(root);
+	});
 }

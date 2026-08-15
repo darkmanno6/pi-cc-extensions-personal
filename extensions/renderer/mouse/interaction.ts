@@ -1,9 +1,10 @@
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
+import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
-import { setToolTuiFullscreen } from "../show-more-hint.ts";
+import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
 import {
 	type ExpandedToolIoView,
 	getActiveIoViewFrame,
@@ -81,7 +82,6 @@ const TOOL_MOUSE_WIDGET_KEY = "ccstyle-tool-mouse";
 const TOOL_MOUSE_MOTION_ENABLE = "\x1b[?1003h\x1b[?1006h";
 const TOOL_MOUSE_MOTION_DISABLE = "\x1b[?1003l";
 const FULLSCREEN_MOTION_ENABLED = Symbol("ccstyle.fullscreen-motion-enabled");
-const TOOL_MOUSE_OWNER_KEY = Symbol.for("pi.ccstyle.tool-mouse-owner");
 const DEFAULT_TOOL_MOUSE_OWNER = {};
 export const TOOL_MOUSE_DISABLE = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
 
@@ -768,8 +768,8 @@ function handleToolMouseInput(data: string): { consume: true } | undefined {
 export function teardownToolMouseInteraction(
 	owner: object = toolMouseInstallationOwner ?? DEFAULT_TOOL_MOUSE_OWNER,
 ): void {
-	const host = globalThis as any;
-	if (host[TOOL_MOUSE_OWNER_KEY] && host[TOOL_MOUSE_OWNER_KEY] !== owner) return;
+	const current = patchRegistry.get<object>(TOOL_MOUSE_OWNER_KEY);
+	if (current && current !== owner) return;
 	if (sessionRenderTimer) {
 		clearTimeout(sessionRenderTimer);
 		sessionRenderTimer = null;
@@ -796,7 +796,7 @@ export function teardownToolMouseInteraction(
 	resetScrollButtonState();
 	setToolMouseTui(null);
 	toolMouseUi = null;
-	if (host[TOOL_MOUSE_OWNER_KEY] === owner) delete host[TOOL_MOUSE_OWNER_KEY];
+	patchRegistry.dispose(TOOL_MOUSE_OWNER_KEY, owner);
 	if (toolMouseInstallationOwner === owner) toolMouseInstallationOwner = null;
 }
 
@@ -819,7 +819,7 @@ export function installToolMouseInteraction(
 		return;
 
 	toolMouseInstallationOwner = owner;
-	(globalThis as any)[TOOL_MOUSE_OWNER_KEY] = owner;
+	patchRegistry.install(TOOL_MOUSE_OWNER_KEY, owner);
 	setHoveredToolCallId(null);
 	toolMouseUi = ctx.ui;
 	// 0.84+ 的 tui 是惰性 Proxy：regular 保留原生 scrollback；fullscreen

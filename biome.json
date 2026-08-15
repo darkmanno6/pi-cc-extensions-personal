@@ -9,7 +9,6 @@
 		"includes": [
 			"extensions/**/*.ts",
 			"tests/**/*.ts",
-			"types/**/*.d.ts",
 			"scripts/**/*.mjs",
 			"package.json",
 			"themes/**/*.json"

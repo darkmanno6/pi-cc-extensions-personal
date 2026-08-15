@@ -9,7 +9,6 @@ import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-work
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
-import type { DiffIndicatorMode, DiffViewMode } from "../renderer/tool/diff/index.ts";
 import {
 	config,
 	DEFAULT_CONFIG,
@@ -23,11 +22,14 @@ import {
 	getCompactThinkingConfig,
 	pickPositiveInt,
 	pickPositiveNumber,
-	saveConfig,
 	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
+	updateConfig,
 	type CompactStyleMode,
+	type Config,
+	type DiffIndicatorMode,
+	type DiffViewMode,
 } from "./config.ts";
 
 /** renderer 注入的渲染副作用，面板自身不触碰渲染状态。 */
@@ -117,8 +119,7 @@ function buildExcludeRenderersSubmenu(
 			const excluded = new Set(config.excludeRenderers);
 			if (value === "exclude") excluded.add(id);
 			else excluded.delete(id);
-			config.excludeRenderers = [...excluded].sort((a, b) => a.localeCompare(b));
-			saveConfig();
+			updateConfig({ excludeRenderers: [...excluded].sort((a, b) => a.localeCompare(b)) });
 			onLiveChange();
 		},
 		() => onClose(),
@@ -414,9 +415,8 @@ export async function showCcstylePanel(
 			// 额外功能开关：字段名与配置布尔字段一一对应，切换后重启生效。
 			const featureToggle = featureToggles[id];
 			if (featureToggle) {
-				(config as unknown as Record<string, boolean>)[id] = value === "on";
+				updateConfig({ [id]: value === "on" } as Partial<Config>);
 				featureToggle.apply(value === "on");
-				saveConfig();
 				ctx.ui.notify(`Updated ${id}: ${value} (next restart)`, "info");
 				return;
 			}
@@ -434,62 +434,57 @@ export async function showCcstylePanel(
 					excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
 					return;
 				case "diffViewMode":
-					config.diffViewMode = value as DiffViewMode;
+					updateConfig({ diffViewMode: value as DiffViewMode });
 					diffViewSetting.description = diffViewModeDescription(config.diffViewMode);
 					break;
 				case "diffIndicatorMode":
-					config.diffIndicatorMode = value as DiffIndicatorMode;
+					updateConfig({ diffIndicatorMode: value as DiffIndicatorMode });
 					diffIndicatorSetting.description = diffIndicatorDescription(config.diffIndicatorMode);
 					break;
 				case "diffSplitMinWidth":
-					config.diffSplitMinWidth = pickPositiveInt(
-						value,
-						DEFAULT_CONFIG.diffSplitMinWidth,
-						40,
-						300,
-					);
+					updateConfig({
+						diffSplitMinWidth: pickPositiveInt(value, DEFAULT_CONFIG.diffSplitMinWidth, 40, 300),
+					});
 					diffSplitSetting.currentValue = String(config.diffSplitMinWidth);
 					break;
 				case "diffCollapsedLines":
-					config.diffCollapsedLines = pickPositiveInt(
-						value,
-						DEFAULT_CONFIG.diffCollapsedLines,
-						1,
-						500,
-					);
+					updateConfig({
+						diffCollapsedLines: pickPositiveInt(value, DEFAULT_CONFIG.diffCollapsedLines, 1, 500),
+					});
 					diffCollapsedSetting.currentValue = String(config.diffCollapsedLines);
 					break;
 				case "diffWordWrap":
-					config.diffWordWrap = value === "on";
+					updateConfig({ diffWordWrap: value === "on" });
 					diffWordWrapSetting.description = config.diffWordWrap
 						? "Long diff lines wrap within the panel width."
 						: "Long diff lines are truncated to the panel width.";
 					break;
 				case "expandedPreviewMaxLines":
-					config.expandedPreviewMaxLines = pickPositiveInt(
-						value,
-						DEFAULT_CONFIG.expandedPreviewMaxLines,
-						10,
-						50_000,
-					);
+					updateConfig({
+						expandedPreviewMaxLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.expandedPreviewMaxLines,
+							10,
+							50_000,
+						),
+					});
 					expandedMaxSetting.currentValue = String(config.expandedPreviewMaxLines);
 					break;
 				case "useSummaryTitlesAsThinkingTitle":
-					config.useSummaryTitlesAsThinkingTitle = value === "on";
+					updateConfig({ useSummaryTitlesAsThinkingTitle: value === "on" });
 					break;
 				case "previewLines":
-					config.previewLines = pickPositiveInt(value, DEFAULT_CONFIG.previewLines, 0);
+					updateConfig({ previewLines: pickPositiveInt(value, DEFAULT_CONFIG.previewLines, 0) });
 					thinkingPreviewSetting.currentValue = String(config.previewLines);
 					break;
 				case "animationIntervalMs":
-					config.animationIntervalMs = pickPositiveNumber(
-						value,
-						DEFAULT_CONFIG.animationIntervalMs,
-					);
+					updateConfig({
+						animationIntervalMs: pickPositiveNumber(value, DEFAULT_CONFIG.animationIntervalMs),
+					});
 					thinkingAnimationSetting.currentValue = String(config.animationIntervalMs);
 					break;
 				case "showStartupHeader":
-					config.showStartupHeader = value === "on";
+					updateConfig({ showStartupHeader: value === "on" });
 					startupHeaderSetting.description = config.showStartupHeader
 						? "Show the custom startup header (logo + tips) on new sessions."
 						: "Use Pi's native startup header instead.";
@@ -497,13 +492,14 @@ export async function showCcstylePanel(
 					applyStartupHeader(ctx);
 					break;
 				case "scrollStepLines":
-					config.scrollStepLines = pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50);
+					updateConfig({
+						scrollStepLines: pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50),
+					});
 					scrollStepSetting.currentValue = String(config.scrollStepLines);
 					break;
 				default:
 					return;
 			}
-			saveConfig();
 			compactThinking?.updateConfig(getCompactThinkingConfig());
 			hooks.refreshCurrentTranscript(ctx);
 			ctx.ui.notify(`Updated ${id}: ${value}`, "info");

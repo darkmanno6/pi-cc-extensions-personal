@@ -12,7 +12,7 @@ import {
 	installMessageDisplayRendering,
 	refreshMessageDisplays,
 	setMessageDisplayTheme,
-} from "../extensions/renderer/message-display.ts";
+} from "../extensions/renderer/tool/message-display.ts";
 import { config, DEFAULT_CONFIG, setConfig, normalizeConfig } from "../extensions/config/config.ts";
 
 function stripAnsi(text: string): string {

@@ -24,8 +24,8 @@ import { config, getToolDisplayConfig } from "../config/config.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
 import { refreshTranscriptComponent } from "./transcript-refresh.ts";
-import { getMessageDisplayTheme } from "./message-display.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { getMessageDisplayTheme } from "./tool/message-display.ts";
+import { showMoreHintText } from "./tool/show-more-hint.ts";
 import {
 	countEditDiffStats,
 	countWriteDiffStats,
@@ -35,7 +35,21 @@ import { renderRichToolResult } from "./tool/diff/index.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
 import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
 import { oneLine } from "../utils/format.ts";
-import { paddedBackgroundRow, stripBackgroundAnsi } from "./tool/grouping.ts";
+import { paddedBackgroundRow } from "./tool/grouping.ts";
+import { hasVisibleText, stripBackgroundAnsi } from "../utils/ansi-text.ts";
+import { walkComponentTree } from "../utils/component-tree.ts";
+import {
+	ASSISTANT_REENTRY_DESCRIPTION,
+	ASSISTANT_REENTRY_KEY,
+	ASSISTANT_SET_EXPANDED_DESCRIPTION,
+	ASSISTANT_SET_EXPANDED_KEY,
+	ASSISTANT_TOGGLE_ROUND_DESCRIPTION,
+	ASSISTANT_TOGGLE_ROUND_KEY,
+	COMPACT_MODE_PATCH_KEY,
+	COMPACT_THINKING_PATCH_KEY,
+	patchRegistry,
+	PROTOTYPE_ORIGINAL_KEY,
+} from "../utils/patch-keys.ts";
 
 /** compact 渲染层对 compact-thinking 的只读查询面（不建第二套计时器）。 */
 export type CompactThinkingQuery = {
@@ -44,16 +58,6 @@ export type CompactThinkingQuery = {
 	getThinkingAnimationFrame?(): number;
 	setCompactSummaryActive?(active: boolean): void;
 };
-
-const COMPACT_MODE_PATCH_KEY = Symbol.for("pi.ccstyle.compact-mode-patch");
-const COMPACT_THINKING_PATCH_KEY = Symbol.for("pi.ccstyle.compact-thinking-update");
-const PROTOTYPE_ORIGINAL_KEY = Symbol.for("pi.ccstyle.prototype-original");
-const ASSISTANT_SET_EXPANDED_DESCRIPTION = "pi.ccstyle.compact-assistant-set-expanded";
-const ASSISTANT_TOGGLE_ROUND_DESCRIPTION = "pi.ccstyle.compact-assistant-toggle-round";
-const ASSISTANT_REENTRY_DESCRIPTION = "pi.ccstyle.compact-assistant-reentry";
-const ASSISTANT_SET_EXPANDED_KEY = Symbol.for(ASSISTANT_SET_EXPANDED_DESCRIPTION);
-const ASSISTANT_TOGGLE_ROUND_KEY = Symbol.for(ASSISTANT_TOGGLE_ROUND_DESCRIPTION);
-const ASSISTANT_REENTRY_KEY = Symbol.for(ASSISTANT_REENTRY_DESCRIPTION);
 
 const EDIT_WRITE_TOOLS = new Set(["edit", "write"]);
 
@@ -284,16 +288,6 @@ function darkenBgAnsi(theme: any, slot: string): string {
 	return `\x1b[48;2;${r};${g};${b}m`;
 }
 
-/** 去掉行内所有 CSI/OSC 序列后是否有可见文本（判断工具卡首尾内容行）。 */
-function hasVisibleText(line: string): boolean {
-	return (
-		line
-			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
-			.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
-			.trim().length > 0
-	);
-}
-
 /** 工具卡深色行：左右内缩（左 2 右 3 格，含工具卡自身 padding），背景只到内容区，
  *  修复行尾 reset 截断。 */
 function toolCardBgRow(
@@ -314,7 +308,7 @@ function toolCardBgRow(
 	const body = ` ${clipped}${" ".repeat(pad)} `;
 	const stable = body.replace(/\x1b\[(?:0)?m/g, (reset) => reset + bgAnsi);
 	const outerBg = typeof theme?.getBgAnsi === "function" ? String(theme.getBgAnsi(slot)) : "";
-	const inset = (n) => (outerBg ? `${outerBg}${" ".repeat(n)}\x1b[49m` : " ".repeat(n));
+	const inset = (n: number) => (outerBg ? `${outerBg}${" ".repeat(n)}\x1b[49m` : " ".repeat(n));
 	return `${inset(leftInset)}${bgAnsi}${stable}\x1b[49m${inset(rightInset)}`;
 }
 /** edit/write 展开卡：保持原样式（userMessageBg Box），不应用工具卡深色/间距改动。 */
@@ -694,16 +688,9 @@ function ensureAssistantSetExpanded(component: any): void {
 
 function collectMountedComponents(root: any): void {
 	if (!root || typeof root !== "object") return;
-	const seen = new Set<any>();
 	const assistants = new Set<any>();
 	const tools = new Set<any>();
-	const visit = (value: any): void => {
-		if (!value || typeof value !== "object" || seen.has(value)) return;
-		seen.add(value);
-		if (Array.isArray(value)) {
-			for (const child of value) visit(child);
-			return;
-		}
+	walkComponentTree(root, (value: any) => {
 		if (isAssistantComponent(value)) {
 			assistants.add(value);
 			// 仅在 compact 模式给实例装 setExpanded，避免 on/off 下 Ctrl+O/mouse 回归。
@@ -711,20 +698,7 @@ function collectMountedComponents(root: any): void {
 		} else if (isToolComponent(value)) {
 			tools.add(value);
 		}
-		const children = value.children;
-		if (Array.isArray(children)) {
-			for (const child of children) visit(child);
-		}
-		try {
-			const mounted = value.getMountedRoots?.();
-			if (Array.isArray(mounted)) {
-				for (const root2 of mounted) visit(root2);
-			}
-		} catch {
-			// renderer 切换中的惰性 Proxy 可能暂时没有 mounted roots
-		}
-	};
-	visit(root);
+	});
 	// 扫到组件才替换跟踪表。面板/custom UI 打开时 root 往往扫不到 transcript，
 	// 若此时清空会丢掉 live updateContent/updateDisplay 已登记的实例，
 	// /ccstyle 切换就只能靠 /reload 重建。
@@ -739,8 +713,7 @@ function collectMountedComponents(root: any): void {
 }
 
 export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHooks {
-	const host = globalThis as any;
-	const previous = host[COMPACT_MODE_PATCH_KEY] as CompactModePatch | undefined;
+	const previous = patchRegistry.get<CompactModePatch>(COMPACT_MODE_PATCH_KEY);
 	if (previous) previous.dispose();
 
 	const assistantPrototype = AssistantMessageComponent.prototype as any;
@@ -1149,7 +1122,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		if (toolPrototype.updateDisplay === patch.toolInstalledUpdateDisplay) {
 			toolPrototype.updateDisplay = patch.toolOriginalUpdateDisplay;
 		}
-		if (host[COMPACT_MODE_PATCH_KEY] === patch) delete host[COMPACT_MODE_PATCH_KEY];
+		patchRegistry.dispose(COMPACT_MODE_PATCH_KEY, patch);
 		for (const component of trackedAssistantComponents) detachAssistantExpansion(component);
 		trackedAssistantComponents.clear();
 		trackedToolComponents.clear();
@@ -1160,7 +1133,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 	assistantPrototype.updateContent = patch.assistantInstalled;
 	toolPrototype.render = patch.toolInstalledRender;
 	toolPrototype.updateDisplay = patch.toolInstalledUpdateDisplay;
-	host[COMPACT_MODE_PATCH_KEY] = patch;
+	patchRegistry.install(COMPACT_MODE_PATCH_KEY, patch);
 
 	const syncGlobalExpanded = (ctx: any): void => {
 		let globalExpanded = false;

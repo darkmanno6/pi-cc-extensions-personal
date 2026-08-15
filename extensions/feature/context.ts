@@ -1,10 +1,14 @@
 import {
+	type BuildSystemPromptOptions,
 	type ExtensionAPI,
 	type ExtensionCommandContext,
+	type ToolInfo,
 	estimateTokens,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
-import { Key, Markdown, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Key, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
+import { mouseBaseButton, parseSgrMousePacket } from "../utils/sgr-mouse.ts";
+import { padLine } from "../utils/format.ts";
 
 export type ContextPart = {
 	label: string;
@@ -189,10 +193,6 @@ export async function showTextPreview(
 						escHitbox = escCloseHitbox({ left: overlayLeft, top: overlayTop, width });
 						const visible = wrapped.slice(scrollOffset, scrollOffset + pageSize);
 						const border = (text: string) => theme.fg("border", text);
-						const padLine = (text: string, lineWidth = inner): string => {
-							const truncated = truncateToWidth(text, lineWidth, "…");
-							return truncated + " ".repeat(Math.max(0, lineWidth - visibleWidth(truncated)));
-						};
 						const scrollable = totalLines > pageSize;
 						const thumbSize = scrollable
 							? Math.max(1, Math.floor((pageSize * pageSize) / totalLines))
@@ -231,7 +231,7 @@ export async function showTextPreview(
 							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 							...bodyRows,
 							`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
-							`${border("│")}${padLine(theme.fg("dim", ` ${status}`))}${border("│")}`,
+							`${border("│")}${padLine(theme.fg("dim", ` ${status}`), inner)}${border("│")}`,
 							border(`╰${"─".repeat(inner)}╯`),
 						];
 					},
@@ -253,38 +253,10 @@ export async function showTextPreview(
 	}
 }
 
-type SgrMousePacket = {
-	code: number;
-	col: number;
-	row: number;
-	final: "M" | "m";
-};
-
-function parseSgrMousePacket(data: string): SgrMousePacket | null {
-	const match = data.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
-	if (!match) return null;
-	return {
-		code: Number(match[1]),
-		col: Number(match[2]),
-		row: Number(match[3]),
-		final: match[4] as "M" | "m",
-	};
-}
-
-function mouseBaseButton(code: number): number {
-	return code & ~(4 | 8 | 16 | 32);
-}
-
 const tokenEstimate = (value: unknown): number => {
 	if (!value) return 0;
 	const text = typeof value === "string" ? value : JSON.stringify(value);
 	return Math.max(0, Math.ceil(text.length / 4));
-};
-
-type ToolPreviewInfo = {
-	name: string;
-	description?: string;
-	promptGuidelines?: string[];
 };
 
 export function scaleParts(parts: ContextPart[], target: number): ContextPart[] {
@@ -309,22 +281,9 @@ export function formatTokens(tokens: number): string {
 	return `${Math.round(tokens / 1_000)}k`;
 }
 
-type SystemPromptOptions = {
-	contextFiles?: Array<{ path: string; content: string }>;
-	skills?: Array<{
-		name: string;
-		description?: string;
-		filePath?: string;
-		disableModelInvocation?: boolean;
-	}>;
-	selectedTools?: string[];
-	toolSnippets?: Record<string, string>;
-	promptGuidelines?: string[];
-};
-
 type ContextBreakdown = {
 	parts: ContextPart[];
-	options: SystemPromptOptions;
+	options: BuildSystemPromptOptions;
 	systemPrompt: string;
 };
 
@@ -333,7 +292,7 @@ type ContextBreakdown = {
  * so the /context UI does not re-fetch or re-stringify the same sources.
  */
 function collectContextBreakdown(ctx: ExtensionCommandContext): ContextBreakdown {
-	const options = (ctx.getSystemPromptOptions?.() ?? {}) as SystemPromptOptions;
+	const options = (ctx.getSystemPromptOptions?.() ?? {}) as BuildSystemPromptOptions;
 	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : "";
 
 	const contextFileTokens = (options.contextFiles ?? []).reduce(
@@ -410,8 +369,8 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 			}
 
 			const options = breakdown.options;
-			const toolByName = new Map<string, ToolPreviewInfo>(
-				(pi.getAllTools() as ToolPreviewInfo[]).map((tool) => [tool.name, tool] as const),
+			const toolByName = new Map<string, ToolInfo>(
+				pi.getAllTools().map((tool) => [tool.name, tool] as const),
 			);
 			const toolContent = (options.selectedTools ?? []).map((name) => {
 				const tool = toolByName.get(name);
@@ -489,11 +448,6 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							endCol: number;
 						}> = [];
 						let escHitbox: { row: number; startCol: number; endCol: number } | undefined;
-
-						const padLine = (text: string, width: number): string => {
-							const truncated = truncateToWidth(text, width, "…");
-							return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
-						};
 
 						return {
 							invalidate() {},

@@ -1,3 +1,4 @@
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "./tool-result-sanitize.ts";
 
 /** 毫秒 → "1h 2m 3s"/"2m 3s"/"3s"；低于 1 秒返回 ""（省略）。 */
@@ -18,4 +19,10 @@ export function oneLine(value: unknown, max = 96): string {
 		.replace(/\s+/g, " ")
 		.trim();
 	return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/** 把一行文本补齐到固定可见宽度，超宽时截断并追加省略号。 */
+export function padLine(text: string, width: number): string {
+	const truncated = truncateToWidth(text, width, "…");
+	return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
 }

@@ -41,7 +41,7 @@ test("agent-summary feature 注册 entry renderer，agent_end 渲染 markdown �
 	const data = (appended[0] as any).data;
 
 	// 渲染：markdown 引用语法 `> [!TIP]`，内容斜体，灰色由主题 mdQuote 提供
-	const renderer = renderers.get(AGENT_SUMMARY_ENTRY_TYPE);
+	const renderer = renderers.get(AGENT_SUMMARY_ENTRY_TYPE)!;
 	const component = renderer({ data }, { expanded: false }, fakeTheme);
 	assert.ok(component);
 	const lines = (component as any).render(120).map(String);

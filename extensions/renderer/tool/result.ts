@@ -1,7 +1,7 @@
 import { Text, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { inspect } from "node:util";
 import { config } from "../../config/config.ts";
-import { showMoreHintText } from "../show-more-hint.ts";
+import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
@@ -66,10 +66,6 @@ function hasExpandableResult(text: string): boolean {
 	return countLines(text) > 1;
 }
 
-function toolIcon(_name: string): string {
-	return "●";
-}
-
 const activeAnimationContexts = new Set<any>();
 let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -121,7 +117,8 @@ type ToolVisualState = "pending" | "success" | "error";
 export function settledIcon(name: string, state: ToolVisualState | undefined): string {
 	if (state === "success") return "✓";
 	if (state === "error") return "✗";
-	return toolIcon(name);
+	// toolIcon(name) 曾恒返回 "●"，已内联；name 保留以稳定导出签名。
+	return "●";
 }
 
 export function setToolVisualState(context: any, visualState: ToolVisualState) {

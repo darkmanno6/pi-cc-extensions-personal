@@ -82,14 +82,24 @@ function renderAdmonition(lines: string[], i: number): { output: string[]; next:
 // 裸 URL 转可点击超链接
 // ============================================================================
 
-const URL_RE = /(?<!<)(?<!\]\()https?:\/\/[^\s<>'"|，。；：！？、」』】]+/g;
-const TRIM_URL_RE = /[.,;:!?】」』"'》]+$/;
+const URL_RE =
+	/(?<!<)(?<!\]\()https?:\/\/[^\s<>'"|，。；：！？、」』】（）【】《》『』「」]+/g;
+const TRIM_URL_RE = /[.,;:!?】」』"'》）}]+$/;
 
-/** 去掉 URL 尾部标点；括号按平衡保留（如 Wikipedia 链接含括号）。 */
+/**
+ * 去掉 URL 尾部标点；括号按平衡保留（如 Wikipedia 链接含括号、
+ * IPv6 地址含 [::1]），尾部不成对的 ] 与 ) 会截掉。
+ */
 function trimUrl(url: string): string {
 	let t = url.replace(TRIM_URL_RE, "");
-	while (t.endsWith(")") && (t.match(/\(/g)?.length ?? 0) < (t.match(/\)/g)?.length ?? 0)) {
-		t = t.slice(0, -1);
+	for (;;) {
+		if (t.endsWith(")") && (t.match(/\(/g)?.length ?? 0) < (t.match(/\)/g)?.length ?? 0)) {
+			t = t.slice(0, -1);
+		} else if (t.endsWith("]") && (t.match(/\[/g)?.length ?? 0) < (t.match(/\]/g)?.length ?? 0)) {
+			t = t.slice(0, -1);
+		} else {
+			break;
+		}
 	}
 	return t;
 }

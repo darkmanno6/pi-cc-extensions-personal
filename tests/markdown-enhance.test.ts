@@ -120,6 +120,28 @@ test("含括号 URL 保留（括号平衡）", () => {
 	);
 });
 
+test("尾部 ] 与不成对 ) 截掉（避免无效链接）", () => {
+	// 列表项 [url] 的闭合方括号不能吞进链接
+	const out = run("列表 [https://example.com/a] 项");
+	assert.ok(
+		out.includes("[[https://example.com/a](https://example.com/a) 项"),
+		JSON.stringify(out),
+	);
+	// 尾部不成对 ) 截掉
+	const out2 = run("尾括号 https://example.com/x)");
+	assert.ok(out2.includes("[https://example.com/x](https://example.com/x)"), JSON.stringify(out2));
+});
+
+test("全角括号不吞进 URL", () => {
+	const out = run("全角（https://example.com/a）");
+	assert.ok(out.includes("（[https://example.com/a](https://example.com/a)）"), JSON.stringify(out));
+});
+
+test("IPv6 URL 保留方括号", () => {
+	const out = run("IPv6 https://[::1]:8080/x 保留");
+	assert.ok(out.includes("[https://[::1]:8080/x](https://[::1]:8080/x)"), JSON.stringify(out));
+});
+
 test("代码块内 URL 不动", () => {
 	const out = run('```js\nconst u = "https://code.com/x";\n```\n外链 https://outside.com');
 	assert.ok(!out.includes("[https://code.com/x]"));

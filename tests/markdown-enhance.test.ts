@@ -134,7 +134,10 @@ test("尾部 ] 与不成对 ) 截掉（避免无效链接）", () => {
 
 test("全角括号不吞进 URL", () => {
 	const out = run("全角（https://example.com/a）");
-	assert.ok(out.includes("（[https://example.com/a](https://example.com/a)）"), JSON.stringify(out));
+	assert.ok(
+		out.includes("（[https://example.com/a](https://example.com/a)）"),
+		JSON.stringify(out),
+	);
 });
 
 test("IPv6 URL 保留方括号", () => {

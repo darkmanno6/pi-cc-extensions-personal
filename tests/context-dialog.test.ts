@@ -5,12 +5,134 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import {
+	capParts,
+	collectContextBreakdown,
 	escCloseHitbox,
 	hasActiveTextPreview,
+	resolveUsedTokens,
 	showTextPreview,
 } from "../extensions/feature/context.ts";
 
 initTheme("dark");
+
+test("context breakdown separates tools, results, and conversation without inflating estimates", () => {
+	const ctx = {
+		getSystemPromptOptions: () => ({
+			cwd: "/repo",
+			selectedTools: ["read"],
+			toolSnippets: { read: "Read files" },
+			contextFiles: [{ path: "AGENTS.md", content: "cccc" }],
+			skills: [
+				{ name: "ok", description: "desc", filePath: "/v" },
+				{
+					name: "hidden",
+					description: "x".repeat(100),
+					filePath: "/hidden",
+					disableModelInvocation: true,
+				},
+			],
+		}),
+		getSystemPrompt: () => "s".repeat(200),
+		sessionManager: {
+			buildContextEntries: () => [
+				{ type: "message", message: { role: "user", content: "uuuuuuuu", timestamp: 0 } },
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						content: [
+							{ type: "text", text: "aaaa" },
+							{ type: "toolCall", id: "1", name: "read", arguments: { path: "a" } },
+						],
+					},
+				},
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						toolCallId: "1",
+						toolName: "read",
+						content: "rrrrrrrr",
+						timestamp: 0,
+					},
+				},
+				{ type: "compaction", summary: "ssss" },
+			],
+		},
+	} as any;
+	const tools = [
+		{
+			name: "read",
+			description: "Read a file",
+			parameters: { type: "object" },
+			promptGuidelines: [],
+			sourceInfo: {},
+		},
+	] as any;
+
+	const breakdown = collectContextBreakdown(ctx, tools);
+	const parts = breakdown.parts;
+	assert.deepEqual(
+		parts.map(({ label, color }) => [label, color]),
+		[
+			["System prompt", "accent"],
+			["Tools", "success"],
+			["Tool results", "customMessageLabel"],
+			["Context", "warning"],
+		],
+	);
+	assert.equal(parts.find((part) => part.label === "System prompt")?.tokens, 50);
+	assert.equal(parts.find((part) => part.label === "Tool results")?.tokens, 2);
+	assert.equal(parts.find((part) => part.label === "Context")?.tokens, 8);
+	assert.equal(breakdown.previews.systemPrompt, "s".repeat(200));
+	assert.match(breakdown.previews.tools, /Definition: read/);
+	assert.match(breakdown.previews.tools, /"parameters"/);
+	assert.doesNotMatch(breakdown.previews.tools, /Call: read/);
+	assert.match(breakdown.previews.toolResults, /Result: read/);
+	assert.match(breakdown.previews.toolResults, /rrrrrrrr/);
+	assert.match(breakdown.previews.contextFiles, /uuuuuuuu/);
+	assert.match(breakdown.previews.contextFiles, /aaaa/);
+	assert.match(breakdown.previews.contextFiles, /Assistant tool call: read/);
+	assert.match(breakdown.previews.contextFiles, /"path": "a"/);
+	assert.match(breakdown.previews.contextFiles, /Compaction/);
+
+	const fitted = capParts(parts, parts.reduce((sum, part) => sum + part.tokens, 0) + 10);
+	assert.deepEqual(fitted, parts, "estimates are not inflated to fill provider usage");
+	const fixedTokens = parts.slice(0, 2).reduce((sum, part) => sum + part.tokens, 0);
+	const capped = capParts(parts, fixedTokens + 5, 2);
+	assert.deepEqual(capped.slice(0, 2), parts.slice(0, 2), "system prompt and tools stay stable");
+	assert.equal(
+		capped.reduce((sum, part) => sum + part.tokens, 0),
+		fixedTokens + 5,
+	);
+	const finalParts = [
+		...fitted,
+		{ label: "Other", tokens: 10, color: "muted" },
+		{ label: "Free space", tokens: 100, color: "dim" },
+	];
+	assert.equal(new Set(finalParts.map((part) => part.color)).size, 6);
+});
+
+test("resolveUsedTokens rejects inconsistent or implausibly small provider usage", () => {
+	assert.equal(resolveUsedTokens({ tokens: 1, percent: 7 }, 20_000, 272_000), 19_040);
+	assert.equal(resolveUsedTokens({ tokens: 19_000, percent: 7 }, 20_000, 272_000), 19_000);
+	assert.equal(resolveUsedTokens({ tokens: 1, percent: 1 / 2_720 }, 20_000, 272_000), 20_000);
+	assert.equal(resolveUsedTokens({ tokens: null, percent: null }, 20_000, 272_000), 20_000);
+});
+
+test("capParts never produces negative tokens when estimates exceed usage", () => {
+	const parts = Array.from({ length: 8 }, (_, index) => ({
+		label: String(index),
+		tokens: 1,
+		color: "dim" as const,
+	}));
+	const fitted = capParts(parts, 5);
+	assert.equal(
+		fitted.reduce((sum, part) => sum + part.tokens, 0),
+		5,
+	);
+	assert.ok(fitted.every((part) => part.tokens >= 0));
+});
 
 test("escCloseHitbox places the [esc] hitbox at the right end of the title row", () => {
 	assert.deepEqual(escCloseHitbox({ left: 8, top: 1, width: 64 }), {

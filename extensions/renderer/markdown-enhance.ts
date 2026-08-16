@@ -150,6 +150,42 @@ function deCircled(markdown: string): string {
 }
 
 // ============================================================================
+// 跨行链接规整
+// ============================================================================
+
+const MULTILINE_LINK_RE = /\[([^\]\n]*(?:\n[^\]\n]*)+)\](?=\()/g;
+
+/** 防止 Markdown 跨行链接把行尾填充空格纳入 OSC 8 点击区。 */
+function normalizeMultilineLinks(markdown: string): string {
+	const out: string[] = [];
+	let prose: string[] = [];
+	let inFence = false;
+	const flush = () => {
+		if (prose.length === 0) return;
+		out.push(
+			prose.join("\n").replace(MULTILINE_LINK_RE, (_match, label: string) => {
+				const normalized = label.replace(/[ \t]*\n[ \t]*/g, " ").trim();
+				return `[${normalized}]`;
+			}),
+		);
+		prose = [];
+	};
+	for (const line of markdown.split("\n")) {
+		if (/^```/.test(line)) {
+			flush();
+			inFence = !inFence;
+			out.push(line);
+		} else if (inFence) {
+			out.push(line);
+		} else {
+			prose.push(line);
+		}
+	}
+	flush();
+	return out.join("\n");
+}
+
+// ============================================================================
 // 注册
 // ============================================================================
 
@@ -158,8 +194,10 @@ export default function (pi: ExtensionAPI): void {
 	// 所以三个转换合并为一次注册，内部按序链式执行。
 	pi.registerMarkdownTransformer((markdown, context) => {
 		const { messageType, isStreaming = false } = context ?? {};
-		// 与官方推荐一致：thinking 块与流式中间态不转换
-		if (messageType === "assistant-thinking" || isStreaming) return markdown;
+		// thinking 保持原文；普通回复即使流式中也先关闭跨行链接的空白点击区。
+		if (messageType === "assistant-thinking") return markdown;
+		markdown = normalizeMultilineLinks(markdown);
+		if (isStreaming) return markdown;
 		// 0. 圈数字转半角括号（Nerd Font 补丁字形缺陷规避）
 		markdown = deCircled(markdown);
 		// 1. Mermaid 方言渲染

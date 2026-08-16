@@ -13,10 +13,10 @@ import { padLine } from "../utils/format.ts";
 export type ContextPart = {
 	label: string;
 	tokens: number;
-	color: "accent" | "success" | "warning" | "muted" | "dim";
+	color: "accent" | "success" | "warning" | "customMessageLabel" | "muted" | "dim";
 };
 
-type PreviewKey = "systemPrompt" | "tools" | "contextFiles" | "skills";
+type PreviewKey = "systemPrompt" | "tools" | "toolResults" | "contextFiles";
 
 type ContextPreview = {
 	key: PreviewKey;
@@ -259,20 +259,30 @@ const tokenEstimate = (value: unknown): number => {
 	return Math.max(0, Math.ceil(text.length / 4));
 };
 
-export function scaleParts(parts: ContextPart[], target: number): ContextPart[] {
-	const estimated = parts.reduce((sum, part) => sum + part.tokens, 0);
-	if (estimated === 0 || target <= 0) return parts;
-	const scaled = parts.map((part) => ({
-		...part,
-		tokens: Math.round((part.tokens / estimated) * target),
-	}));
-	const delta = target - scaled.reduce((sum, part) => sum + part.tokens, 0);
-	const largest = scaled.reduce(
-		(best, part, index) => (part.tokens > scaled[best]!.tokens ? index : best),
-		0,
-	);
-	scaled[largest]!.tokens += delta;
-	return scaled;
+export function capParts(parts: ContextPart[], target: number, fixedPrefix = 0): ContextPart[] {
+	const fixed = parts.slice(0, fixedPrefix);
+	const variable = parts.slice(fixedPrefix);
+	const fixedTokens = fixed.reduce((sum, part) => sum + part.tokens, 0);
+	const variableTarget = Math.max(0, target - fixedTokens);
+	const estimated = variable.reduce((sum, part) => sum + part.tokens, 0);
+	if (estimated <= variableTarget || estimated === 0) return parts;
+	if (variableTarget === 0) {
+		return [...fixed, ...variable.map((part) => ({ ...part, tokens: 0 }))];
+	}
+
+	let previous = 0;
+	let cumulative = 0;
+	const capped = variable.map((part, index) => {
+		cumulative += part.tokens;
+		const next =
+			index === variable.length - 1
+				? variableTarget
+				: Math.round((cumulative / estimated) * variableTarget);
+		const tokens = next - previous;
+		previous = next;
+		return { ...part, tokens };
+	});
+	return [...fixed, ...capped];
 }
 
 export function formatTokens(tokens: number): string {
@@ -281,72 +291,122 @@ export function formatTokens(tokens: number): string {
 	return `${Math.round(tokens / 1_000)}k`;
 }
 
+export function resolveUsedTokens(
+	usage: { tokens: number | null; percent: number | null } | undefined,
+	estimated: number,
+	contextWindow: number,
+): number {
+	const reported = usage?.tokens;
+	const fromPercent =
+		usage?.percent !== null && usage?.percent !== undefined && contextWindow > 0
+			? Math.round((usage.percent / 100) * contextWindow)
+			: undefined;
+	let resolved = reported ?? fromPercent ?? estimated;
+	if (reported !== null && reported !== undefined && fromPercent !== undefined) {
+		// 某些 Provider 会返回异常 totalTokens；百分比与底部状态栏不一致时优先采用百分比。
+		const tolerance = Math.max(32, Math.round(contextWindow * 0.001));
+		if (Math.abs(reported - fromPercent) > tolerance) resolved = fromPercent;
+	}
+	// tokens 与 percent 可能同时源自异常 usage；数量级明显偏小时回退到实际内容估算。
+	if (estimated > 0 && resolved < estimated * 0.25) return estimated;
+	return resolved;
+}
+
 type ContextBreakdown = {
 	parts: ContextPart[];
-	options: BuildSystemPromptOptions;
-	systemPrompt: string;
+	previews: Record<PreviewKey, string>;
 };
 
-/**
- * Single pass over prompt options + session entries. Returns options/systemPrompt
- * so the /context UI does not re-fetch or re-stringify the same sources.
- */
-function collectContextBreakdown(ctx: ExtensionCommandContext): ContextBreakdown {
+function previewValue(value: unknown): string {
+	if (typeof value === "string") return value;
+	return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
+}
+
+/** 按真实请求的 systemPrompt、tools、messages 三部分同步组装计数与预览。 */
+export function collectContextBreakdown(
+	ctx: ExtensionCommandContext,
+	allTools: ToolInfo[],
+): ContextBreakdown {
 	const options = (ctx.getSystemPromptOptions?.() ?? {}) as BuildSystemPromptOptions;
 	const systemPrompt = typeof ctx.getSystemPrompt === "function" ? ctx.getSystemPrompt() : "";
+	const selectedTools = new Set(options.selectedTools ?? ["read", "bash", "edit", "write"]);
+	const toolDefinitionPreview: string[] = [];
+	const toolResultPreview: string[] = [];
+	const contextPreview: string[] = [];
+	let toolDefinitionTokens = 0;
+	let toolResultTokens = 0;
+	let contextTokens = 0;
 
-	const contextFileTokens = (options.contextFiles ?? []).reduce(
-		(sum, file) => sum + tokenEstimate(file.content),
-		0,
-	);
-	// Prefer field-level estimates over JSON.stringify(whole skill).
-	const skillTokens = (options.skills ?? []).reduce((sum, skill) => {
-		if (!skill || typeof skill !== "object") return sum + tokenEstimate(skill);
-		return (
-			sum +
-			tokenEstimate(skill.name) +
-			tokenEstimate(skill.description) +
-			tokenEstimate(skill.filePath)
-		);
-	}, 0);
-	const tools = options.selectedTools ?? [];
-	const snippets = options.toolSnippets;
-	let toolTokens = tokenEstimate(options.promptGuidelines);
-	for (const name of tools) {
-		toolTokens += tokenEstimate(name) + tokenEstimate(snippets?.[name]);
+	for (const tool of allTools) {
+		if (!selectedTools.has(tool.name)) continue;
+		const definition = {
+			name: tool.name,
+			description: tool.description,
+			parameters: tool.parameters,
+		};
+		toolDefinitionTokens += tokenEstimate(definition);
+		toolDefinitionPreview.push(`## Definition: ${tool.name}\n\n${previewValue(definition)}`);
 	}
 
-	let user = 0;
-	let assistant = 0;
-	let toolResults = 0;
-	let summaries = 0;
 	for (const entry of ctx.sessionManager.buildContextEntries()) {
 		if (entry.type === "message") {
-			const tokens = estimateTokens(entry.message);
-			if (entry.message.role === "user") user += tokens;
-			else if (entry.message.role === "assistant") assistant += tokens;
-			else toolResults += tokens;
+			const message = entry.message;
+			if (message.role === "assistant") {
+				for (const block of message.content) {
+					if (block.type === "toolCall") {
+						contextTokens += tokenEstimate(block.name) + tokenEstimate(block.arguments);
+						contextPreview.push(
+							`## Assistant tool call: ${block.name}\n\n${previewValue(block.arguments)}`,
+						);
+					} else if (block.type === "text") {
+						contextTokens += tokenEstimate(block.text);
+						contextPreview.push(`## Assistant\n\n${block.text}`);
+					} else if (block.type === "thinking") {
+						contextTokens += tokenEstimate(block.thinking);
+						contextPreview.push(`## Assistant thinking\n\n${block.thinking}`);
+					}
+				}
+			} else if (message.role === "toolResult") {
+				toolResultTokens += estimateTokens(message);
+				toolResultPreview.push(
+					`## Result: ${message.toolName}\n\n${previewValue(message.content)}`,
+				);
+			} else if (message.role === "bashExecution") {
+				toolResultTokens += estimateTokens(message);
+				toolResultPreview.push(
+					`## Bash\n\nCommand:\n\n${previewValue(message.command)}\n\nOutput:\n\n${previewValue(message.output)}`,
+				);
+			} else if (message.role === "branchSummary" || message.role === "compactionSummary") {
+				contextTokens += estimateTokens(message);
+				contextPreview.push(`## ${message.role}\n\n${message.summary}`);
+			} else {
+				contextTokens += estimateTokens(message);
+				contextPreview.push(`## ${message.role}\n\n${previewValue(message.content)}`);
+			}
 		} else if (entry.type === "compaction" || entry.type === "branch_summary") {
-			summaries += tokenEstimate(entry);
+			contextTokens += tokenEstimate(entry.summary);
+			contextPreview.push(
+				`## ${entry.type === "compaction" ? "Compaction" : "Branch summary"}\n\n${entry.summary}`,
+			);
+		} else if (entry.type === "custom_message") {
+			contextTokens += tokenEstimate(entry.content);
+			contextPreview.push(`## Custom: ${entry.customType}\n\n${previewValue(entry.content)}`);
 		}
 	}
 
-	const systemTotal = tokenEstimate(systemPrompt);
-	const baseSystem = Math.max(0, systemTotal - contextFileTokens - skillTokens - toolTokens);
-	const parts: ContextPart[] = [
-		{ label: "System prompt", tokens: baseSystem, color: "accent" },
-		{ label: "Tools", tokens: toolTokens, color: "success" },
-		{ label: "Context files", tokens: contextFileTokens, color: "warning" },
-		{ label: "Skills", tokens: skillTokens, color: "warning" },
-		{ label: "User messages", tokens: user, color: "muted" },
-		{ label: "Assistant messages", tokens: assistant, color: "accent" },
-		{ label: "Tool results", tokens: toolResults, color: "dim" },
-		{ label: "Compaction summaries", tokens: summaries, color: "success" },
-	];
 	return {
-		parts: parts.filter((part) => part.tokens > 0),
-		options,
-		systemPrompt,
+		parts: [
+			{ label: "System prompt", tokens: tokenEstimate(systemPrompt), color: "accent" },
+			{ label: "Tools", tokens: toolDefinitionTokens, color: "success" },
+			{ label: "Tool results", tokens: toolResultTokens, color: "customMessageLabel" },
+			{ label: "Context", tokens: contextTokens, color: "warning" },
+		] satisfies ContextPart[],
+		previews: {
+			systemPrompt: systemPrompt || "No system prompt.",
+			tools: toolDefinitionPreview.join("\n\n") || "No active tool definitions.",
+			toolResults: toolResultPreview.join("\n\n") || "No tool results in the current context.",
+			contextFiles: contextPreview.join("\n\n") || "No conversation context.",
+		},
 	};
 }
 
@@ -356,11 +416,20 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const usage = ctx.getContextUsage();
 			const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-			const breakdown = collectContextBreakdown(ctx);
-			const used = usage?.tokens ?? breakdown.parts.reduce((sum, part) => sum + part.tokens, 0);
-			const parts = scaleParts(breakdown.parts, used);
+			const tools = pi.getAllTools();
+			const breakdown = collectContextBreakdown(ctx, tools);
+			const estimated = breakdown.parts.reduce((sum, part) => sum + part.tokens, 0);
+			const fixedTokens = breakdown.parts.slice(0, 2).reduce((sum, part) => sum + part.tokens, 0);
+			const used = Math.max(resolveUsedTokens(usage, estimated, contextWindow), fixedTokens);
+			const parts = capParts(breakdown.parts, used, 2);
+			const attributed = parts.reduce((sum, part) => sum + part.tokens, 0);
+			const other = Math.max(0, used - attributed);
 			const free = Math.max(0, contextWindow - used);
-			const allParts = [...parts, { label: "Free space", tokens: free, color: "dim" as const }];
+			const allParts = [
+				...parts,
+				{ label: "Other", tokens: other, color: "muted" as const },
+				{ label: "Free space", tokens: free, color: "dim" as const },
+			];
 
 			if (ctx.mode !== "tui") {
 				const lines = allParts.map((part) => `${part.label}: ${formatTokens(part.tokens)} tokens`);
@@ -368,64 +437,30 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			const options = breakdown.options;
-			const toolByName = new Map<string, ToolInfo>(
-				pi.getAllTools().map((tool) => [tool.name, tool] as const),
-			);
-			const toolContent = (options.selectedTools ?? []).map((name) => {
-				const tool = toolByName.get(name);
-				const lines = [`## ${name}`];
-				if (tool?.description) lines.push(tool.description);
-				if (options.toolSnippets?.[name]) lines.push(`Prompt: ${options.toolSnippets[name]}`);
-				if (tool?.promptGuidelines?.length) {
-					lines.push("Guidelines:", ...tool.promptGuidelines.map((guideline) => `- ${guideline}`));
-				}
-				return lines.join("\n");
-			});
-			if (options.promptGuidelines?.length) {
-				toolContent.push(
-					`## Shared prompt guidelines\n${options.promptGuidelines.map((guideline) => `- ${guideline}`).join("\n")}`,
-				);
-			}
-			const contextFilesContent = (options.contextFiles ?? [])
-				.map((file) => `===== ${file.path} =====\n${file.content}`)
-				.join("\n\n");
-			const skillsContent = (options.skills ?? [])
-				.map((skill) =>
-					[
-						`## ${skill.name}`,
-						skill.description,
-						`Path: ${skill.filePath}`,
-						`Model invocation: ${skill.disableModelInvocation ? "disabled" : "enabled"}`,
-					]
-						.filter(Boolean)
-						.join("\n"),
-				)
-				.join("\n\n");
 			const rawPreviews: ContextPreview[] = [
 				{
 					key: "systemPrompt",
 					label: "System prompt",
 					title: "System Prompt",
-					content: breakdown.systemPrompt,
+					content: breakdown.previews.systemPrompt,
 				},
 				{
 					key: "tools",
 					label: "Tools",
 					title: "Tools",
-					content: toolContent.join("\n\n") || "No active tools.",
+					content: breakdown.previews.tools,
+				},
+				{
+					key: "toolResults",
+					label: "Tool results",
+					title: "Tool Results",
+					content: breakdown.previews.toolResults,
 				},
 				{
 					key: "contextFiles",
-					label: "Context files",
-					title: "Context Files",
-					content: contextFilesContent || "No context files loaded.",
-				},
-				{
-					key: "skills",
-					label: "Skills",
-					title: "Skills",
-					content: skillsContent || "No skills loaded.",
+					label: "Context",
+					title: "Context",
+					content: breakdown.previews.contextFiles,
 				},
 			];
 			const previews = rawPreviews.map((preview) => ({

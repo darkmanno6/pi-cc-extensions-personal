@@ -58,6 +58,17 @@ test("thinking 块不转换（与官方推荐一致）", () => {
 	);
 });
 
+test("流式跨行链接不产生空白 OSC 8 点击区", () => {
+	const md = "前缀 [\n](https://example.com)\n```md\n[代码\n链接](https://code.example)\n```";
+	const out = run(md, {
+		messageType: "assistant",
+		isStreaming: true,
+		availableWidth: 100,
+	});
+	assert.ok(out.includes("前缀 [](https://example.com)"), JSON.stringify(out));
+	assert.ok(out.includes("[代码\n链接](https://code.example)"), JSON.stringify(out));
+});
+
 test("admonition 转换", () => {
 	assert.ok(run("> [!WARNING] 磁盘不足\n> 续行\n\n正文").includes("> **⚠️ WARNING** 磁盘不足 续行"));
 	assert.ok(run("> [!NOTE] 提示").includes("> **💡 NOTE** 提示"));

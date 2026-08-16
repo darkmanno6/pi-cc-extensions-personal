@@ -20,10 +20,7 @@
 
 ## 界面预览
 
-https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/video/show-case-compressed.mp4
-<video width="100%" controls muted loop>
-  <source src="https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/video/show-case-compressed.mp4" type="video/mp4" />
-</video>
+https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498
 
 ## 快速开始
 

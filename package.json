@@ -35,7 +35,7 @@
 			"./themes/cc-light.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp",
-		"video": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/video/show-case-compressed.mp4"
+		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.ts",

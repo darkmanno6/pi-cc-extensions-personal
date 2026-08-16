@@ -163,6 +163,13 @@ function getThinkingToggleHint() {
 	return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
 }
 
+// The preview re-renders with the same text between streamed updates; cache
+// wrapped results by (width, text). Cap 500 entries; clear when full.
+const previewCache = new Map<string, string[]>();
+const PREVIEW_CACHE_MAX = 500;
+const PREVIEW_BUDGET_MIN_CHARS = 2_000;
+const PREVIEW_BUDGET_SLACK_LINES = 2;
+
 class StrictThinkingPreview implements Component {
 	private text: string;
 	private padding: number;
@@ -175,10 +182,35 @@ class StrictThinkingPreview implements Component {
 	}
 
 	render(width: number) {
-		const lines = new Text(this.style(this.text), this.padding, 0).render(width);
-		if (lines.length <= config.previewLines) return lines;
+		// Only the last `config.previewLines` wrapped lines are shown; wrap a
+		// tail window of the text instead of the full block.
+		const budget = Math.max(
+			width * (config.previewLines + PREVIEW_BUDGET_SLACK_LINES),
+			PREVIEW_BUDGET_MIN_CHARS,
+		);
+		let source = this.text;
+		let hiddenLines = 0;
+		if (source.length > budget) {
+			const start = source.length - budget;
+			const newline = source.indexOf("\n", start);
+			const cut = newline === -1 ? start : newline + 1;
+			if (cut < source.length) {
+				for (let i = 0; i < cut; i++) {
+					if (source[i] === "\n") hiddenLines++;
+				}
+				source = source.slice(cut);
+			}
+		}
+		const cacheKey = `${width}:${this.padding}:${source}`;
+		let lines = previewCache.get(cacheKey);
+		if (!lines) {
+			lines = new Text(this.style(source), this.padding, 0).render(width);
+			if (previewCache.size >= PREVIEW_CACHE_MAX) previewCache.clear();
+			previewCache.set(cacheKey, lines);
+		}
+		if (hiddenLines + lines.length <= config.previewLines) return lines;
 
-		const hiddenLines = lines.length - config.previewLines;
+		hiddenLines += lines.length - config.previewLines;
 		const noun = hiddenLines === 1 ? "line" : "lines";
 		const toggleHint = getThinkingToggleHint();
 		const hint = `... (${hiddenLines} more ${noun}${toggleHint ? `, ${toggleHint}` : ""})`;

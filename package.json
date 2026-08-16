@@ -21,6 +21,7 @@
 	"files": [
 		"extensions",
 		"assets/readme",
+		"assets/video",
 		"themes",
 		"README.md",
 		"README.en.md"
@@ -34,7 +35,7 @@
 			"./themes/cc-light.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/welcome.webp",
-		"video": "https://github.com/user-attachments/assets/debf76ea-a9dc-4f34-977f-aae344a9a7f8"
+		"video": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/video/show-case-compressed.mp4"
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.ts",

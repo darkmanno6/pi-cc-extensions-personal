@@ -20,9 +20,10 @@
 
 ## Preview
 
-<table>
-  <img width="100%" alt="demo_new" src="https://github.com/user-attachments/assets/d4f9bb51-a49a-4a34-aa60-006514d37b09" />
-</table>
+https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/video/show-case-compressed.mp4
+<video width="100%" controls muted loop>
+  <source src="https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/video/show-case-compressed.mp4" type="video/mp4" />
+</video>
 
 ## Quick start
 

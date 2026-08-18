@@ -16,6 +16,10 @@ import {
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	installCompactThinking,
+	ThinkingPreviewBlock,
+} from "../extensions/feature/compact-thinking.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 
 // 0.84+ 的稳定 TUI 引用会在 renderer 切换时重绑方法。插件不得捕获后回写
@@ -709,6 +713,66 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => 
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
 	assert.equal((group as any).expanded, false, "second group click collapses all children");
 	installToolMouseInteraction({});
+});
+
+test("lazy-proxy tui: fullscreen thinking preview hint toggles and hovers", () => {
+	const dirHandlers = new Map<string, Function[]>();
+	const pi = {
+		on(name: string, handler: Function) {
+			const list = dirHandlers.get(name) ?? [];
+			list.push(handler);
+			dirHandlers.set(name, list);
+		},
+		appendEntry() {},
+	} as any;
+	const emit = (name: string, event: any = {}, ctx: any = {}) => {
+		for (const handler of dirHandlers.get(name) ?? []) handler(event, ctx);
+	};
+	const thinkingCtx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: { theme: {}, setWidget() {}, requestRender() {} },
+	};
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+	});
+	emit("session_start", {}, thinkingCtx);
+	const block = new ThinkingPreviewBlock(
+		"Thought for 1s",
+		Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n"),
+		1,
+		Date.now(),
+		(text) => text,
+		{
+			fg: (_color: string, text: string) => text,
+			bg: (_slot: string, text: string) => text,
+		} as any,
+	);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(block, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const heading = block.render(80)[0] ?? "";
+		const hintCol = heading.indexOf("click to show more") + 1;
+		assert.ok(hintCol > 0, `expected click hint, got: ${heading}`);
+
+		tui.handleViewportInput(`\x1b[<32;${hintCol};1M`);
+		assert.equal((block as any).hintHovered, true, "thinking hint hover is enabled");
+		tui.handleViewportInput(`\x1b[<32;1;1M`);
+		assert.equal((block as any).hintHovered, false, "moving outside hint clears hover");
+		tui.handleViewportInput(`\x1b[<0;${hintCol};1M`);
+		assert.equal(block.expanded, true, "thinking hint click expands the preview");
+		renderer.currentLayout = fullscreenLayout(block, null);
+		tui.handleViewportInput(`\x1b[<0;2;1M`);
+		assert.equal(block.expanded, false, "expanded thinking click collapses it");
+	} finally {
+		installToolMouseInteraction({});
+		emit("session_shutdown", {}, thinkingCtx);
+	}
 });
 
 test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights the header", () => {

@@ -7,7 +7,7 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
-import { showMoreHintText } from "./show-more-hint.ts";
+import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import { humanizeToolLabel, toolCallSummary } from "./names.ts";
@@ -149,6 +149,17 @@ function toolNameList(tools: any[]): string {
 
 let nextGroupId = 1;
 
+type SettledGroupCache = {
+	width: number;
+	hover: boolean;
+	theme: unknown;
+	fullscreen: boolean;
+	children: readonly unknown[];
+	args: unknown[];
+	results: unknown[];
+	lines: string[];
+};
+
 export class ToolGroupComponent extends Container {
 	readonly toolCallId = `ccstyle-tool-group-${nextGroupId++}`;
 	readonly toolName = "Tool group";
@@ -159,6 +170,8 @@ export class ToolGroupComponent extends Container {
 	}
 	private hintHovered = false;
 	private readonly patch: Patch;
+	/** 仅缓存已完成且折叠的分组；pending / expanded 每帧现算。 */
+	private settledCache: SettledGroupCache | undefined;
 
 	constructor(patch: Patch) {
 		super();
@@ -222,7 +235,49 @@ export class ToolGroupComponent extends Container {
 		for (const tool of this.children) tool.invalidate?.();
 	}
 
+	private settledCacheHit(width: number): string[] | undefined {
+		const cache = this.settledCache;
+		if (!cache || this._expanded) return;
+		if (
+			cache.width !== width ||
+			cache.hover !== this.hintHovered ||
+			cache.theme !== this.patch.theme ||
+			cache.fullscreen !== isToolTuiFullscreen()
+		) {
+			return;
+		}
+		const tools = this.children as any[];
+		if (cache.children.length !== tools.length) return;
+		for (let i = 0; i < tools.length; i++) {
+			const tool = tools[i];
+			if (
+				cache.children[i] !== tool ||
+				cache.args[i] !== tool?.args ||
+				cache.results[i] !== tool?.result ||
+				status(tool) === "pending"
+			) {
+				return;
+			}
+		}
+		return cache.lines;
+	}
+
+	private storeSettledCache(width: number, lines: string[]): void {
+		this.settledCache = {
+			width,
+			hover: this.hintHovered,
+			theme: this.patch.theme,
+			fullscreen: isToolTuiFullscreen(),
+			children: [...this.children],
+			args: (this.children as any[]).map((tool) => tool?.args),
+			results: (this.children as any[]).map((tool) => tool?.result),
+			lines,
+		};
+	}
+
 	render(width: number): string[] {
+		const cached = this.settledCacheHit(width);
+		if (cached) return cached;
 		const theme = this.patch.theme;
 		const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
 		const counts = { pending: 0, success: 0, error: 0 };
@@ -296,6 +351,8 @@ export class ToolGroupComponent extends Container {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}
 			lines.push(paddedBackgroundRow(theme, backgroundSlot, "", width));
+		} else if (counts.pending === 0) {
+			this.storeSettledCache(width, lines);
 		}
 		return lines;
 	}

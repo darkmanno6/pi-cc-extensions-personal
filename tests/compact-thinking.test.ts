@@ -9,6 +9,7 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
 	animateCompactThinkingText,
 	installCompactThinking,
+	ThinkingPreviewBlock,
 } from "../extensions/feature/compact-thinking.ts";
 
 const config = {
@@ -626,6 +627,117 @@ test("short thinking preview has no hidden-line hint", () => {
 		const lines = renderText(component);
 		assert.ok(!lines.some((line) => line.includes("more line")), `got: ${JSON.stringify(lines)}`);
 		assert.ok(lines.some((line) => line.includes("one") || line.includes("two")));
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("previewLines 0 still offers click to show more and expands the body", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-zero-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	const body = Array.from({ length: 8 }, (_, i) => `line-${i}`).join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 0,
+			animationIntervalMs: 30,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const collapsed = renderText(component);
+		assert.ok(
+			collapsed.some((line) => /Thought.*click to show more/.test(line)),
+			`expected click hint with no preview body, got: ${JSON.stringify(collapsed)}`,
+		);
+		assert.ok(
+			!collapsed.some((line) => /^line-\d+$/.test(line)),
+			"previewLines 0 hides the thinking body",
+		);
+
+		thinkingBlockOf(component).setExpanded(true);
+		const expanded = renderText(component);
+		assert.ok(!expanded.some((line) => line.includes("click to show more")));
+		assert.ok(expanded.some((line) => line.includes("line-0")));
+		assert.ok(expanded.some((line) => line.includes("line-7")));
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+function thinkingBlockOf(component: any): ThinkingPreviewBlock {
+	const block = component.contentContainer?.children?.find(
+		(child: unknown) => child instanceof ThinkingPreviewBlock,
+	);
+	assert.ok(block instanceof ThinkingPreviewBlock, "assistant mounts a thinking preview block");
+	return block;
+}
+
+test("thinking preview expands the full body and keeps that state across updateContent", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-expand-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	(ctx.ui.theme as any).bg = (_slot: string, text: string) => `<bg>${text}</bg>`;
+	const previewLines = 3;
+	const body = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines,
+			animationIntervalMs: 30,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage(body);
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const collapsed = renderText(component);
+		assert.ok(collapsed.some((line) => /more lines.*click to show more/.test(line)));
+		assert.ok(
+			collapsed.every((line) => !line.includes("<bg>")),
+			"collapsed preview is not wrapped in a card",
+		);
+		assert.equal(
+			collapsed.filter((line) => /^line-\d+$/.test(line)).length,
+			previewLines,
+			"collapsed body stays capped",
+		);
+
+		const block = thinkingBlockOf(component);
+		block.setExpanded(true);
+		const rawExpanded = component.render(120) as string[];
+		assert.ok(
+			rawExpanded.some((line) => line.includes("<bg>")),
+			"expanded thinking is wrapped in the userMessageBg card",
+		);
+		const expanded = renderText(component);
+		assert.ok(!expanded.some((line) => line.includes("more line")));
+		assert.ok(expanded.some((line) => line.includes("line-0")));
+		assert.ok(expanded.some((line) => line.includes("line-19")));
+		assert.ok(
+			expanded.filter((line) => /line-\d+/.test(line)).length > previewLines,
+			"expanded body shows more than the preview window",
+		);
+
+		component.updateContent(msg);
+		assert.equal(thinkingBlockOf(component).expanded, true);
+		assert.ok(renderText(component).some((line) => line.includes("line-0")));
+
+		thinkingBlockOf(component).setExpanded(false);
+		const recollapsed = renderText(component);
+		assert.ok(recollapsed.some((line) => /more lines.*click to show more/.test(line)));
+		assert.equal(recollapsed.filter((line) => /^line-\d+$/.test(line)).length, previewLines);
 	} finally {
 		emit("session_shutdown", {}, ctx);
 		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;

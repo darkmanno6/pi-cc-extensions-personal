@@ -17,7 +17,8 @@ import {
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
-import { Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
+import { Box, Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
+import { isToolTuiFullscreen } from "../renderer/tool/show-more-hint.ts";
 import {
 	animateCompactThinkingText,
 	formatThoughtDuration,
@@ -168,6 +169,10 @@ function getThinkingToggleHint() {
 	return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
 }
 
+function thinkingExpandAction(): string | undefined {
+	return isToolTuiFullscreen() ? "click to show more" : getThinkingToggleHint();
+}
+
 // 只 wrap 尾部窗口；缓存未着色折行，着色放到取出时做，避免主题切换命中旧 ANSI。
 const previewCache = new Map<string, { lines: string[]; hiddenBefore: number }>();
 const PREVIEW_CACHE_MAX = 500;
@@ -228,63 +233,142 @@ function layoutThinkingPreview(
 	return { visible, hiddenLines };
 }
 
-function hiddenPreviewHint(hiddenLines: number): string | undefined {
-	if (hiddenLines <= 0) return undefined;
-	const noun = hiddenLines === 1 ? "line" : "lines";
-	const toggleHint = getThinkingToggleHint();
-	return ` • (${hiddenLines} more ${noun}${toggleHint ? `, ${toggleHint}` : ""})`;
+function hiddenPreviewHint(
+	hiddenLines: number,
+	forceExpandHint = false,
+): { prefix: string; action: string; suffix: string } | undefined {
+	const action = thinkingExpandAction() ?? "";
+	if (hiddenLines > 0) {
+		const noun = hiddenLines === 1 ? "line" : "lines";
+		return {
+			prefix: ` • (${hiddenLines} more ${noun}${action ? ", " : ""}`,
+			action,
+			suffix: ")",
+		};
+	}
+	if (forceExpandHint && isToolTuiFullscreen()) {
+		return { prefix: " • ", action: "click to show more", suffix: "" };
+	}
+	return undefined;
 }
 
-/** 标题行：Thought for / Thinking... 后追加 dim 的 more-line hint，着色对齐 show-more。 */
-class ThinkingHeading implements Component {
+const expandedThinking = new Set<number>();
+
+/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、再点整块收起，对齐工具卡。 */
+export class ThinkingPreviewBlock implements Component {
 	private heading: string;
-	private previewText: string;
+	private text: string;
 	private padding: number;
-	private dim: (text: string) => string;
+	private messageTimestamp: number;
+	private style: (text: string) => string;
+	private theme: Theme | undefined;
+	private _expanded: boolean;
+	private hintHovered = false;
+	private expandedBody: { width: number; lines: string[] } | undefined;
 
 	constructor(
 		heading: string,
-		previewText: string,
+		text: string,
 		padding: number,
-		dim: (text: string) => string,
+		messageTimestamp: number,
+		style: (text: string) => string,
+		theme?: Theme,
 	) {
 		this.heading = heading;
-		this.previewText = previewText;
+		this.text = text;
 		this.padding = padding;
-		this.dim = dim;
+		this.messageTimestamp = messageTimestamp;
+		this.style = style;
+		this.theme = theme;
+		this._expanded = expandedThinking.has(messageTimestamp);
 	}
 
-	render(width: number) {
-		const hint = hiddenPreviewHint(
-			layoutThinkingPreview(this.previewText, width, this.padding).hiddenLines,
-		);
-		if (!hint) return new Text(this.heading, this.padding, 0).render(width);
-		const contentWidth = Math.max(1, width - this.padding * 2);
-		const headingBudget = Math.max(0, contentWidth - visibleWidth(hint));
+	private paint(color: string, text: string): string {
+		return this.theme && typeof this.theme.fg === "function"
+			? this.theme.fg(color as never, text)
+			: text;
+	}
+
+	get expanded(): boolean {
+		return this._expanded;
+	}
+
+	setExpanded(expanded: boolean): void {
+		this._expanded = expanded;
+		if (expanded) expandedThinking.add(this.messageTimestamp);
+		else {
+			expandedThinking.delete(this.messageTimestamp);
+			this.expandedBody = undefined;
+		}
+	}
+
+	setHintHovered(hovered: boolean): void {
+		this.hintHovered = hovered;
+	}
+
+	private headingLines(width: number, hiddenLines: number, padding: number): string[] {
+		const hint = this._expanded
+			? undefined
+			: hiddenPreviewHint(hiddenLines, Boolean(this.text) && config.previewLines <= 0);
+		if (!hint) return new Text(this.heading, padding, 0).render(width);
+		const rawHint = hint.prefix + hint.action + hint.suffix;
+		const contentWidth = Math.max(1, width - padding * 2);
+		const headingBudget = Math.max(0, contentWidth - visibleWidth(rawHint));
 		const clipped =
 			visibleWidth(this.heading) > headingBudget
 				? truncateToWidth(this.heading, headingBudget, "")
 				: this.heading;
-		return new Text(clipped + this.dim(hint), this.padding, 0).render(width);
+		const action = this.paint(this.hintHovered ? "text" : "dim", hint.action);
+		return new Text(
+			clipped + this.paint("dim", hint.prefix) + action + this.paint("dim", hint.suffix),
+			padding,
+			0,
+		).render(width);
 	}
 
-	invalidate() {}
-}
-
-class StrictThinkingPreview implements Component {
-	private text: string;
-	private padding: number;
-	private style: (text: string) => string;
-
-	constructor(text: string, padding: number, style: (text: string) => string) {
-		this.text = text;
-		this.padding = padding;
-		this.style = style;
+	private bodyLines(width: number, padding: number): { lines: string[]; hiddenLines: number } {
+		if (!this.text || (config.previewLines <= 0 && !this._expanded)) {
+			return { lines: [], hiddenLines: 0 };
+		}
+		if (this._expanded) {
+			if (this.expandedBody?.width !== width) {
+				this.expandedBody = {
+					width,
+					lines: wrapTextWithAnsi(this.text.replace(/\t/g, "   "), Math.max(1, width)),
+				};
+			}
+			return { lines: this.expandedBody.lines, hiddenLines: 0 };
+		}
+		const preview = layoutThinkingPreview(this.text, width, padding);
+		return { lines: preview.visible, hiddenLines: preview.hiddenLines };
 	}
 
 	render(width: number) {
-		const { visible } = layoutThinkingPreview(this.text, width, this.padding);
-		return visible.map((line) => padPreviewLine(this.style(line), width, this.padding));
+		if (this._expanded) {
+			const innerWidth = Math.max(1, width - 2);
+			const body = this.bodyLines(innerWidth, 0);
+			const heading = this.headingLines(innerWidth, 0, 0);
+			const inner = body.lines.length
+				? [...heading, ...body.lines.map((line) => this.style(line))]
+				: heading;
+			const bgFn =
+				this.theme && typeof this.theme.bg === "function"
+					? (text: string) => this.theme!.bg("userMessageBg" as never, text)
+					: undefined;
+			const box = new Box(1, 1, bgFn);
+			box.addChild({
+				render: () => inner,
+				invalidate() {},
+			});
+			return box.render(width);
+		}
+		const body = this.bodyLines(width, this.padding);
+		const heading = this.headingLines(width, body.hiddenLines, this.padding);
+		if (!body.lines.length) return heading;
+		return [
+			...heading,
+			...body.lines.map((line) => padPreviewLine(this.style(line), width, this.padding)),
+		];
 	}
 
 	invalidate() {}
@@ -564,21 +648,15 @@ function compactThinking(pi: ExtensionAPI) {
 			}
 			const previewSource = (latestSummary?.body ?? thinkingBlocks.join("\n\n")).trim();
 			self.contentContainer.addChild(
-				new ThinkingHeading(
+				new ThinkingPreviewBlock(
 					heading,
-					config.previewLines > 0 ? previewSource : "",
+					previewSource,
 					self.outputPad,
-					(text) =>
-						activeTheme && typeof activeTheme.fg === "function"
-							? activeTheme.fg("dim", text)
-							: text,
+					message.timestamp,
+					thinkingStyle,
+					activeTheme,
 				),
 			);
-			if (config.previewLines > 0 && previewSource) {
-				self.contentContainer.addChild(
-					new StrictThinkingPreview(previewSource, self.outputPad, thinkingStyle),
-				);
-			}
 
 			const hasVisibleContentAfter = message.content
 				.slice(i + 1)
@@ -843,6 +921,7 @@ function compactThinking(pi: ExtensionAPI) {
 		latestComponentTimestamp = undefined;
 		completedDurations.clear();
 		streamingComponents.clear();
+		expandedThinking.clear();
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);
 
 		if (patchInstalled) {

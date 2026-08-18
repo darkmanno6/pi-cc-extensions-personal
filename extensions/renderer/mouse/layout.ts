@@ -1,4 +1,5 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
+import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { isCompactAssistantComponent } from "../compact-mode.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isToolExecutionComponent, stripTerminalSequencesPreservingLayout } from "./packets.ts";
@@ -97,6 +98,9 @@ export function componentAtLocalRow(
 		// compact 摘要行整体作为可展开卡片（折叠摘要 / 展开内容）。
 		return { component, row: localRow };
 	}
+	if (component instanceof ThinkingPreviewBlock) {
+		return { component, row: localRow };
+	}
 	if (component === getScrollButtonWidget()) {
 		return { component, row: localRow };
 	}
@@ -134,7 +138,8 @@ export function collectFullscreenToolCards(
 	if (
 		isToolExecutionComponent(component) ||
 		component instanceof ToolGroupComponent ||
-		isCompactAssistantComponent(component)
+		isCompactAssistantComponent(component) ||
+		component instanceof ThinkingPreviewBlock
 	) {
 		out.push(component);
 		return;

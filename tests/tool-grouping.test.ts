@@ -280,3 +280,56 @@ test("off refresh ungroups, reload rescans existing tools, and stale shutdown pr
 	second.shutdown();
 	assert.equal(prototype.addChild, originalAdd);
 });
+
+test("settled collapsed groups reuse the last render until inputs change", () => {
+	const hooks = installToolGrouping(() => true);
+	hooks.setTheme({ fg: (_color: string, text: string) => text });
+	try {
+		const parent = new Container() as any;
+		const read = tool("read", "cached-read", { path: "a.ts" });
+		const bash = tool("bash", "cached-bash", { command: "ls" });
+		read.updateResult({ content: [], isError: false });
+		bash.updateResult({ content: [], isError: false });
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+
+		const first = group.render(120);
+		assert.strictEqual(group.render(120), first, "identical settled frame reuses the cached lines");
+
+		const wider = group.render(160);
+		assert.notStrictEqual(wider, first);
+		assert.match(wider.find((line: string) => line.trim())!, /2 done/);
+
+		group.setHintHovered(true);
+		const hovered = group.render(160);
+		assert.notStrictEqual(hovered, wider);
+		assert.strictEqual(group.render(160), hovered);
+
+		hooks.setTheme({ fg: (color: string, text: string) => `<${color}>${text}</${color}>` });
+		const themed = group.render(160);
+		assert.notStrictEqual(themed, hovered);
+		assert.match(themed.join("\n"), /<success>2<\/success> done/);
+
+		bash.updateResult({ content: [], isError: true });
+		const failed = group.render(160);
+		assert.notStrictEqual(failed, themed);
+		assert.match(failed.join("\n"), /<success>1<\/success> done/);
+		assert.match(failed.join("\n"), /<error>1<\/error> failed/);
+
+		group.setExpanded(true);
+		const expanded = group.render(160);
+		assert.notStrictEqual(expanded, failed);
+		group.setExpanded(false);
+		assert.strictEqual(group.render(160), failed, "collapse reuses the last settled frame");
+
+		parent.addChild(tool("grep", "cached-grep", { pattern: "todo" }));
+		const grown = group.render(160);
+		assert.notStrictEqual(grown, failed);
+		assert.match(grown.join("\n"), /running/);
+		assert.match(grown.join("\n"), /<success>1<\/success> done/);
+		assert.match(grown.join("\n"), /<error>1<\/error> failed/);
+	} finally {
+		hooks.shutdown();
+	}
+});

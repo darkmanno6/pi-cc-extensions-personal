@@ -1,3 +1,4 @@
+import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { setHoveredCompactAssistant } from "../compact-mode.ts";
 import { patchRegistry, TOOL_HOVER_STATE_KEY } from "../../utils/patch-keys.ts";
 import {
@@ -40,6 +41,16 @@ export function setHoveredToolGroup(group: ToolGroupComponent | null): boolean {
 	hoveredToolGroup?.setHintHovered(false);
 	hoveredToolGroup = group;
 	group?.setHintHovered(true);
+	return true;
+}
+
+let hoveredThinking: ThinkingPreviewBlock | null = null;
+
+export function setHoveredThinking(block: ThinkingPreviewBlock | null): boolean {
+	if (block === hoveredThinking) return false;
+	hoveredThinking?.setHintHovered(false);
+	hoveredThinking = block;
+	block?.setHintHovered(true);
 	return true;
 }
 
@@ -98,6 +109,7 @@ export function cachedFullscreenComponentAtRow(
 export type FullscreenHoverTarget =
 	| { kind: "button" }
 	| { kind: "group"; component: ToolGroupComponent }
+	| { kind: "thinking"; component: ThinkingPreviewBlock }
 	| { kind: "assistant"; component: any }
 	| {
 			kind: "tool";
@@ -119,6 +131,8 @@ export function applyFullscreenHover(tui: any, target: FullscreenHoverTarget | n
 	}
 	const nextGroup = target?.kind === "group" ? target.component : null;
 	if (setHoveredToolGroup(nextGroup)) changed = true;
+	const nextThinking = target?.kind === "thinking" ? target.component : null;
+	if (setHoveredThinking(nextThinking)) changed = true;
 	const nextAssistant = target?.kind === "assistant" ? target.component : null;
 	if (setHoveredCompactAssistant(nextAssistant)) changed = true;
 	const nextView = target?.kind === "tool" ? target.view : null;

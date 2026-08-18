@@ -1,4 +1,5 @@
 import { hasActiveTextPreview, showTextPreview } from "../../feature/context.ts";
+import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
@@ -56,6 +57,7 @@ import {
 	sharedToolHoverState,
 	setHoveredToolCallId,
 	setHoveredToolGroup,
+	setHoveredThinking,
 	setHoveredToolIo,
 	type FullscreenHoverTarget,
 } from "./hover.ts";
@@ -273,7 +275,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	const isTool = isToolExecutionComponent(component);
 	const isGroup = component instanceof ToolGroupComponent;
 	const isAssistant = isCompactAssistantComponent(component);
-	if (!isTool && !isGroup && !isAssistant) return false;
+	const isThinking = component instanceof ThinkingPreviewBlock;
+	if (!isTool && !isGroup && !isAssistant && !isThinking) return false;
 	if (!component.expanded) {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
 		const hint = collapsedHintHitbox(line);
@@ -315,6 +318,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	// 点击后清 hover 高亮。
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
+	setHoveredThinking(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	card.invalidate?.();
@@ -360,6 +364,8 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 			);
 			if (component instanceof ToolGroupComponent) {
 				if (overHint) target = { kind: "group", component };
+			} else if (component instanceof ThinkingPreviewBlock) {
+				if (component.expanded || overHint) target = { kind: "thinking", component };
 			} else if (isToolExecutionComponent(component)) {
 				let view: ExpandedToolIoView | null = null;
 				let section: ToolIoSection | null = null;
@@ -778,6 +784,7 @@ export function teardownToolMouseInteraction(
 	toolMouseInputUnsubscribe = null;
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
+	setHoveredThinking(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	try {
@@ -803,6 +810,7 @@ export function teardownToolMouseInteraction(
 /** off 模式清理：清空 hover 与回到底部按钮状态（跨模块 rebind 统一经由此函数）。 */
 export function resetToolHoverState(): void {
 	setHoveredToolCallId(null);
+	setHoveredThinking(null);
 	setHoveredCompactAssistant(null);
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);

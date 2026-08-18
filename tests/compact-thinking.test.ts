@@ -513,3 +513,123 @@ test("completed run without duration never falls back to the loading label", () 
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+function previewMessage(thinking: string) {
+	return {
+		role: "assistant",
+		timestamp: Date.now(),
+		content: [{ type: "thinking", thinking }],
+	} as unknown as AssistantMessage;
+}
+
+test("thinking preview counts wrapped hidden lines and does not restyle from cache", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const theme = {
+		fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+		italic: (text: string) => text,
+		bold: (text: string) => text,
+	};
+	const ctx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: {
+			theme,
+			setWidget() {},
+			requestRender() {},
+		},
+	} as any;
+	const width = 80;
+	const previewLines = 3;
+	const body = "x".repeat(4000);
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines,
+			animationIntervalMs: 30,
+		});
+		emit("session_start", {}, ctx);
+
+		const msg = previewMessage(body);
+		const first = new AssistantMessageComponent(msg, true) as any;
+		first.updateContent(msg);
+		const firstLines = first.render(width) as string[];
+		const firstPlain = firstLines.map((line: string) => line.trim()).filter(Boolean);
+		const hint = firstPlain.find((line: string) => /Thought/.test(line) && /more lines/.test(line));
+		assert.ok(hint, `expected hidden-line hint after Thought, got: ${JSON.stringify(firstPlain)}`);
+		assert.match(hint, /<dim> • \(\d+ more lines/);
+		assert.ok(
+			!firstPlain.some((line: string) => /^<thinkingText>x+/.test(line) && /more line/.test(line)),
+			"preview body must not carry the more-line hint",
+		);
+		const hidden = Number(/\((\d+) more lines/.exec(hint)?.[1]);
+		// Raw newline count of the discarded prefix is 0; wrapped count is ~width-based.
+		assert.ok(
+			hidden > 20,
+			`hidden lines should follow wrap width, not raw newlines, got ${hidden}`,
+		);
+		assert.ok(
+			firstPlain.filter((line: string) => /^<thinkingText>x+/.test(line)).length <= previewLines,
+			"preview body stays capped at previewLines",
+		);
+		assert.ok(
+			firstPlain.every((line: string) => !/^x{80,}/.test(line)),
+			"full unwrapped paragraph must not leak into the preview",
+		);
+
+		theme.fg = (color: string, text: string) => `[${color}]${text}[/${color}]`;
+		const second = new AssistantMessageComponent(msg, true) as any;
+		second.updateContent(msg);
+		const secondPlain = (second.render(width) as string[])
+			.map((line: string) => line.trim())
+			.filter(Boolean);
+		assert.ok(
+			secondPlain.some((line: string) => line.includes("[thinkingText]")),
+			"theme change must restyle preview body, not reuse cached ANSI",
+		);
+		assert.ok(
+			secondPlain.some((line: string) => /\[dim\] • \(\d+ more lines/.test(line)),
+			"more-line hint uses the dim token after theme change",
+		);
+		assert.ok(
+			secondPlain.every(
+				(line: string) => !line.includes("<thinkingText>") && !line.includes("<dim>"),
+			),
+			"cached wrap must not keep the previous theme's markup",
+		);
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("short thinking preview has no hidden-line hint", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-thinking-preview-short-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const { emit, pi } = runtime();
+	const ctx = themeCtx();
+	try {
+		installCompactThinking(pi, {
+			useSummaryTitlesAsThinkingTitle: false,
+			previewLines: 3,
+			animationIntervalMs: 30,
+		});
+		emit("session_start", {}, ctx);
+		const msg = previewMessage("one\ntwo");
+		const component = new AssistantMessageComponent(msg, true) as any;
+		component.updateContent(msg);
+		const lines = renderText(component);
+		assert.ok(!lines.some((line) => line.includes("more line")), `got: ${JSON.stringify(lines)}`);
+		assert.ok(lines.some((line) => line.includes("one") || line.includes("two")));
+	} finally {
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

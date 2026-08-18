@@ -11,7 +11,12 @@ import {
 	type ExtensionAPI,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { getKeybindings } from "@earendil-works/pi-tui";
+import {
+	getKeybindings,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "@earendil-works/pi-tui";
 import { Markdown, Spacer, Text, type Component } from "@earendil-works/pi-tui";
 import {
 	animateCompactThinkingText,
@@ -163,12 +168,108 @@ function getThinkingToggleHint() {
 	return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
 }
 
-// The preview re-renders with the same text between streamed updates; cache
-// wrapped results by (width, text). Cap 500 entries; clear when full.
-const previewCache = new Map<string, string[]>();
+// 只 wrap 尾部窗口；缓存未着色折行，着色放到取出时做，避免主题切换命中旧 ANSI。
+const previewCache = new Map<string, { lines: string[]; hiddenBefore: number }>();
 const PREVIEW_CACHE_MAX = 500;
 const PREVIEW_BUDGET_MIN_CHARS = 2_000;
 const PREVIEW_BUDGET_SLACK_LINES = 2;
+
+/** 按可见宽度估算折行数，不走 Text 全量 wrap。无换行长段也能计到隐藏行。 */
+function countWrappedLines(text: string, contentWidth: number): number {
+	if (!text) return 0;
+	const width = Math.max(1, contentWidth);
+	let lines = 0;
+	for (const raw of text.replace(/\t/g, "   ").split(/\r\n|\r|\n/)) {
+		const w = visibleWidth(raw);
+		lines += w === 0 ? 1 : Math.ceil(w / width);
+	}
+	return lines;
+}
+
+function padPreviewLine(line: string, width: number, padding: number): string {
+	const left = padding > 0 ? " ".repeat(padding) : "";
+	const right = padding > 0 ? " ".repeat(padding) : "";
+	const withMargins = left + line + right;
+	return withMargins + " ".repeat(Math.max(0, width - visibleWidth(withMargins)));
+}
+
+function layoutThinkingPreview(
+	text: string,
+	width: number,
+	padding: number,
+): { visible: string[]; hiddenLines: number } {
+	if (!text || config.previewLines <= 0) return { visible: [], hiddenLines: 0 };
+	const contentWidth = Math.max(1, width - padding * 2);
+	const budget = Math.max(
+		width * (config.previewLines + PREVIEW_BUDGET_SLACK_LINES),
+		PREVIEW_BUDGET_MIN_CHARS,
+	);
+	let source = text;
+	let cut = 0;
+	if (source.length > budget) {
+		const start = source.length - budget;
+		const newline = source.indexOf("\n", start);
+		cut = newline === -1 ? start : newline + 1;
+		if (cut < source.length) source = source.slice(cut);
+		else cut = 0;
+	}
+	const cacheKey = `${width}:${padding}:${cut}:${source}`;
+	let entry = previewCache.get(cacheKey);
+	if (!entry) {
+		entry = {
+			lines: wrapTextWithAnsi(source.replace(/\t/g, "   "), contentWidth),
+			hiddenBefore: cut > 0 ? countWrappedLines(text.slice(0, cut), contentWidth) : 0,
+		};
+		if (previewCache.size >= PREVIEW_CACHE_MAX) previewCache.clear();
+		previewCache.set(cacheKey, entry);
+	}
+	const hiddenLines = entry.hiddenBefore + Math.max(0, entry.lines.length - config.previewLines);
+	const visible = hiddenLines > 0 ? entry.lines.slice(-config.previewLines) : entry.lines;
+	return { visible, hiddenLines };
+}
+
+function hiddenPreviewHint(hiddenLines: number): string | undefined {
+	if (hiddenLines <= 0) return undefined;
+	const noun = hiddenLines === 1 ? "line" : "lines";
+	const toggleHint = getThinkingToggleHint();
+	return ` • (${hiddenLines} more ${noun}${toggleHint ? `, ${toggleHint}` : ""})`;
+}
+
+/** 标题行：Thought for / Thinking... 后追加 dim 的 more-line hint，着色对齐 show-more。 */
+class ThinkingHeading implements Component {
+	private heading: string;
+	private previewText: string;
+	private padding: number;
+	private dim: (text: string) => string;
+
+	constructor(
+		heading: string,
+		previewText: string,
+		padding: number,
+		dim: (text: string) => string,
+	) {
+		this.heading = heading;
+		this.previewText = previewText;
+		this.padding = padding;
+		this.dim = dim;
+	}
+
+	render(width: number) {
+		const hint = hiddenPreviewHint(
+			layoutThinkingPreview(this.previewText, width, this.padding).hiddenLines,
+		);
+		if (!hint) return new Text(this.heading, this.padding, 0).render(width);
+		const contentWidth = Math.max(1, width - this.padding * 2);
+		const headingBudget = Math.max(0, contentWidth - visibleWidth(hint));
+		const clipped =
+			visibleWidth(this.heading) > headingBudget
+				? truncateToWidth(this.heading, headingBudget, "")
+				: this.heading;
+		return new Text(clipped + this.dim(hint), this.padding, 0).render(width);
+	}
+
+	invalidate() {}
+}
 
 class StrictThinkingPreview implements Component {
 	private text: string;
@@ -182,40 +283,8 @@ class StrictThinkingPreview implements Component {
 	}
 
 	render(width: number) {
-		// Only the last `config.previewLines` wrapped lines are shown; wrap a
-		// tail window of the text instead of the full block.
-		const budget = Math.max(
-			width * (config.previewLines + PREVIEW_BUDGET_SLACK_LINES),
-			PREVIEW_BUDGET_MIN_CHARS,
-		);
-		let source = this.text;
-		let hiddenLines = 0;
-		if (source.length > budget) {
-			const start = source.length - budget;
-			const newline = source.indexOf("\n", start);
-			const cut = newline === -1 ? start : newline + 1;
-			if (cut < source.length) {
-				for (let i = 0; i < cut; i++) {
-					if (source[i] === "\n") hiddenLines++;
-				}
-				source = source.slice(cut);
-			}
-		}
-		const cacheKey = `${width}:${this.padding}:${source}`;
-		let lines = previewCache.get(cacheKey);
-		if (!lines) {
-			lines = new Text(this.style(source), this.padding, 0).render(width);
-			if (previewCache.size >= PREVIEW_CACHE_MAX) previewCache.clear();
-			previewCache.set(cacheKey, lines);
-		}
-		if (hiddenLines + lines.length <= config.previewLines) return lines;
-
-		hiddenLines += lines.length - config.previewLines;
-		const noun = hiddenLines === 1 ? "line" : "lines";
-		const toggleHint = getThinkingToggleHint();
-		const hint = `... (${hiddenLines} more ${noun}${toggleHint ? `, ${toggleHint}` : ""})`;
-		const hintLines = new Text(this.style(hint), this.padding, 0).render(width);
-		return [...hintLines, ...lines.slice(-config.previewLines)];
+		const { visible } = layoutThinkingPreview(this.text, width, this.padding);
+		return visible.map((line) => padPreviewLine(this.style(line), width, this.padding));
 	}
 
 	invalidate() {}
@@ -493,12 +562,21 @@ function compactThinking(pi: ExtensionAPI) {
 					durationText ? `Thought for ${durationText}` : (latestSummary?.title ?? "Thought"),
 				);
 			}
-			self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
-
-			const previewSource = latestSummary?.body ?? thinkingBlocks.join("\n\n");
-			if (config.previewLines > 0 && previewSource.trim()) {
+			const previewSource = (latestSummary?.body ?? thinkingBlocks.join("\n\n")).trim();
+			self.contentContainer.addChild(
+				new ThinkingHeading(
+					heading,
+					config.previewLines > 0 ? previewSource : "",
+					self.outputPad,
+					(text) =>
+						activeTheme && typeof activeTheme.fg === "function"
+							? activeTheme.fg("dim", text)
+							: text,
+				),
+			);
+			if (config.previewLines > 0 && previewSource) {
 				self.contentContainer.addChild(
-					new StrictThinkingPreview(previewSource.trim(), self.outputPad, thinkingStyle),
+					new StrictThinkingPreview(previewSource, self.outputPad, thinkingStyle),
 				);
 			}
 

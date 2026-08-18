@@ -5,11 +5,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
 
+import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { shouldRenderRichDiff } from "../extensions/renderer/index.ts";
+import { config } from "../extensions/config/config.ts";
+import { installDefaultMode } from "../extensions/renderer/default-mode.ts";
 import {
 	renderEditDiffResult,
 	renderWriteDiffResult,
 } from "../extensions/renderer/tool/diff/diff-renderer.ts";
+import { normalizeConfig } from "../extensions/config/config.ts";
+
+initTheme("dark");
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
 	installWriteOverride,
@@ -114,7 +120,7 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 			fileExistedBeforeWrite: false,
 			isHovered: () => hovered,
 		},
-		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2 },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2, writeDiffCollapsedLines: 2 },
 		hoverTheme,
 		"",
 	);
@@ -267,7 +273,26 @@ test("write create and overwrite render distinct rich diffs", () => {
 		store,
 	);
 	assert.match(output(create).join("\n"), /created/);
-	const overwriteText = output(overwrite).join("\n");
+	assert.match(output(create).join("\n"), /more/);
+	assert.doesNotMatch(
+		output(create).join("\n"),
+		/\n[^\n]*new[^\n]*$/,
+		"collapsed create has no body",
+	);
+	const overwriteCollapsed = output(overwrite).join("\n");
+	assert.match(overwriteCollapsed, /overwritten/);
+	assert.match(overwriteCollapsed, /more/);
+	assert.doesNotMatch(overwriteCollapsed, /\bold\b/, "collapsed overwrite has no body");
+
+	const overwriteExpanded = renderRichToolResult(
+		"write",
+		{ content: [{ type: "text", text: "ok" }] },
+		{ expanded: true },
+		theme,
+		{ toolCallId: "overwrite", args: { path: "old.ts", content: "new\n" } },
+		store,
+	);
+	const overwriteText = output(overwriteExpanded).join("\n");
 	assert.match(overwriteText, /overwritten/);
 	assert.match(overwriteText, /old/);
 	assert.match(overwriteText, /new/);
@@ -348,6 +373,158 @@ test("write metadata is bounded, clearable, and failures do not retain entries",
 		/aborted/,
 	);
 	assert.equal(store.get("failed"), undefined);
+});
+
+test("write collapsed preview uses writeDiffCollapsedLines independently of edit", () => {
+	const lines = Array.from({ length: 40 }, (_, index) => `const value${index} = ${index}`).join(
+		"\n",
+	);
+	const store = new WriteExecutionMetadataStore();
+	store.set("write", { fileExistedBeforeWrite: false });
+	const write = renderRichToolResult(
+		"write",
+		{ content: [{ type: "text", text: "ok" }] },
+		{ expanded: false },
+		theme,
+		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
+		store,
+		{
+			...DEFAULT_TOOL_DISPLAY_CONFIG,
+			diffCollapsedLines: 24,
+			writeDiffCollapsedLines: 4,
+		},
+	);
+	const writeText = output(write).join("\n");
+	assert.match(writeText, /created/);
+	assert.match(writeText, /more/);
+	assert.match(writeText, /const value0 = 0/);
+	assert.doesNotMatch(writeText, /const value10 = 10/);
+
+	const editDiff = ["@@ -1,40 +1,40 @@"];
+	for (let index = 1; index <= 40; index++) {
+		editDiff.push(`-${index}|old value ${index}`, `+${index}|new value ${index}`);
+	}
+	const edit = renderRichToolResult(
+		"edit",
+		{ details: { diff: editDiff.join("\n") }, content: [] },
+		{ expanded: false },
+		theme,
+		{ args: { path: "sample.ts" } },
+		store,
+		{
+			...DEFAULT_TOOL_DISPLAY_CONFIG,
+			diffCollapsedLines: 24,
+			writeDiffCollapsedLines: 0,
+		},
+	);
+	const editText = output(edit).join("\n");
+	assert.match(editText, /value 1/);
+	assert.match(editText, /more/);
+	assert.doesNotMatch(editText, /\+40 -0/, "edit must not use write stats-only collapse");
+});
+
+test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
+	const lines = Array.from({ length: 40 }, (_, index) => `const value${index} = ${index}`).join(
+		"\n",
+	);
+	const store = new WriteExecutionMetadataStore();
+	store.set("write", { fileExistedBeforeWrite: false });
+	const display: ToolDisplayConfig = {
+		...DEFAULT_TOOL_DISPLAY_CONFIG,
+		writeDiffCollapsedLines: 0,
+	};
+	const collapsed = renderRichToolResult(
+		"write",
+		{ content: [{ type: "text", text: "ok" }] },
+		{ expanded: false },
+		theme,
+		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
+		store,
+		() => display,
+	);
+	const collapsedText = output(collapsed).join("\n");
+	assert.match(collapsedText, /created/);
+	assert.match(collapsedText, /more/);
+	assert.doesNotMatch(collapsedText, /const value/);
+	assert.doesNotMatch(collapsedText, /\+40 -0/, "stats stay on the title, not the result line");
+
+	const expanded = renderRichToolResult(
+		"write",
+		{ content: [{ type: "text", text: "ok" }] },
+		{ expanded: true },
+		theme,
+		{ toolCallId: "write", args: { path: "new.ts", content: lines } },
+		store,
+		() => display,
+	);
+	const expandedText = output(expanded).join("\n");
+	assert.match(expandedText, /const value0 = 0/);
+	assert.match(expandedText, /const value1 = 1/);
+});
+
+test("write collapsed stats-only hint switches to white text on hover", () => {
+	let hovered = false;
+	const hoverTheme = {
+		...theme,
+		fg(color: string, text: string) {
+			const code = color === "muted" ? "\x1b[90m" : color === "text" ? "\x1b[97m" : "\x1b[37m";
+			return `${code}${text}\x1b[39m`;
+		},
+	};
+	const component = renderWriteDiffResult(
+		Array.from({ length: 12 }, (_, index) => `line ${index}`).join("\n"),
+		{
+			expanded: false,
+			filePath: "sample.ts",
+			fileExistedBeforeWrite: false,
+			isHovered: () => hovered,
+		},
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, writeDiffCollapsedLines: 0 },
+		hoverTheme,
+		"",
+	);
+	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
+	assert.match(hint(), /created/);
+	assert.match(hint(), /\x1b\[90m/, "resting write hint uses muted color");
+	hovered = true;
+	assert.match(hint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
+});
+
+test("default-mode write collapsed uses title stats and created hint", () => {
+	const previousMode = config.mode;
+	const store = new WriteExecutionMetadataStore();
+	config.mode = "on";
+	const hooks = installDefaultMode(store);
+	try {
+		const write = new ToolExecutionComponent(
+			"write",
+			"w-default",
+			{ path: "out.ts", content: "hi\n" },
+			{},
+			undefined,
+			{ theme, requestRender() {}, setStatus() {} } as any,
+			process.cwd(),
+		) as any;
+		store.set("w-default", { fileExistedBeforeWrite: false });
+		write.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		const text = output(write, 120)
+			.join("\n")
+			.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		assert.match(text, /Write out\.ts \(\+1 -0\)/);
+		assert.match(text, /created • click to show more/);
+		assert.doesNotMatch(text, /▌/);
+	} finally {
+		config.mode = previousMode;
+		hooks.shutdown();
+	}
+});
+
+test("normalizeConfig defaults writeDiffCollapsedLines to 0 and allows explicit values", () => {
+	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
+	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
+	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 12 }).writeDiffCollapsedLines, 12);
+	assert.equal(normalizeConfig({ diffCollapsedLines: 48 }).writeDiffCollapsedLines, 0);
+	assert.equal(normalizeConfig({ writeDiffCollapsedLines: -3 }).writeDiffCollapsedLines, 0);
 });
 
 test("third-party write ownership prevents registration", () => {

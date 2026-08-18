@@ -651,9 +651,9 @@ async function generateCompact() {
 
 			chunks.push(
 				section(
-					"3. edit / write 独立单行",
+					"3. edit / write 独立行",
 					[
-						"edit/write 折叠时显示统计单行，展开时走 rich diff：",
+						"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
 						fence([...renderLines(edit), ...renderLines(write)]),
 						"展开 edit：",
 					].join("\n\n"),
@@ -661,9 +661,9 @@ async function generateCompact() {
 			);
 			edit.setExpanded(true);
 			chunks[chunks.length - 1] = section(
-				"3. edit / write 独立单行",
+				"3. edit / write 独立行",
 				[
-					"edit/write 折叠时显示统计单行，展开时走 rich diff：",
+					"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
 					fence([
 						...renderLines(succeed(tool("edit", "ce2", { path: "sample.ts" }), undefined, {
 							diff: editDiff,

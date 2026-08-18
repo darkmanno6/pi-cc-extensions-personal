@@ -34,6 +34,7 @@ import {
 } from "./tool/result.ts";
 import { oneLine } from "../utils/format.ts";
 import { showMoreHintText } from "./tool/show-more-hint.ts";
+import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
 import { humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
@@ -242,6 +243,22 @@ function createCcstyleTool(
 				title: label === toolName ? humanizeToolLabel(label) : label,
 				variant: "default",
 			});
+			let writeStatsText = "";
+			let writeStatsStyled = "";
+			if (toolName === "write" && visualState === "success") {
+				const meta = writeExecutionMetadata.get(context?.toolCallId);
+				const stats = countWriteDiffStats(
+					typeof args?.content === "string" ? args.content : undefined,
+					meta?.previousContent,
+					meta?.fileExistedBeforeWrite,
+				);
+				if (stats) {
+					writeStatsText = ` (+${stats.added} -${stats.removed})`;
+					writeStatsStyled = ` ${theme.fg("dim", "(")}${theme.fg("success", `+${stats.added}`)} ${theme.fg("error", `-${stats.removed}`)}${theme.fg("dim", ")")}`;
+				}
+			}
+			const extraText = writeStatsText || summary.detail;
+			const extraStyled = writeStatsStyled || theme.fg("dim", summary.detail);
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
 			const expanded = Boolean(context?.expanded);
@@ -255,10 +272,10 @@ function createCcstyleTool(
 						0,
 						viewportWidth - visibleWidth(icon) - 1 - (expanded ? 0 : 1),
 					);
-					const mainWidth = Math.max(0, callWidth - visibleWidth(summary.detail));
+					const mainWidth = Math.max(0, callWidth - visibleWidth(extraText));
 					cachedWidth = width;
 					// 纯文本先截断再着色（省略号不带 ANSI）；从头截断，与多 tool 一致
-					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", headTruncateToWidth(summary.main, mainWidth))}${theme.fg("dim", summary.detail)}`;
+					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", headTruncateToWidth(summary.main, mainWidth))}${extraStyled}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
 				invalidate() {},

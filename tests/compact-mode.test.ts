@@ -174,6 +174,8 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({ enabled: false }).mode, "off");
 	assert.equal(normalizeConfig({ enabled: true }).mode, "on");
 	assert.equal(normalizeConfig({ mode: "legacy" }).mode, "on");
+	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
+	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
 
 	let completions: Array<{ value: string }> = [];
 	const pi: any = {
@@ -399,6 +401,65 @@ test("consecutive tool-call messages accumulate into one round until the next vi
 	}
 });
 
+test("expanded running round keeps thinking and tools in transcript order", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-compact-order-"));
+	const previousDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const { pi, ctx, emit } = extensionRuntime();
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+	});
+	emit("session_start", {}, ctx);
+	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	try {
+		const message1 = {
+			role: "assistant",
+			timestamp: 1,
+			content: [
+				{ type: "thinking", thinking: "plan-one" },
+				{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo-one" } },
+			],
+		};
+		const message2 = {
+			role: "assistant",
+			timestamp: 2,
+			content: [
+				{ type: "thinking", thinking: "plan-two" },
+				{ type: "toolCall", id: "g1", name: "grep", arguments: { pattern: "needle" } },
+			],
+		};
+		const assistant1 = new AssistantMessageComponent(message1 as any, true) as any;
+		assistant1.updateContent(message1);
+		const assistant2 = new AssistantMessageComponent(message2 as any, true) as any;
+		assistant2.updateContent(message2);
+		const bash = tool("bash", "b1", { command: "echo-one" });
+		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
+		const grep = tool("grep", "g1", { pattern: "needle" });
+		grep.updateResult({ content: [{ type: "text", text: "hit" }], isError: false });
+		assistant1.setExpanded(true);
+		const text = renderText(assistant1).join("\n");
+		const planOne = text.indexOf("plan-one");
+		const echoOne = text.indexOf("echo-one");
+		const planTwo = text.indexOf("plan-two");
+		const needle = text.indexOf("needle");
+		assert.ok(planOne >= 0 && echoOne >= 0 && planTwo >= 0 && needle >= 0, text);
+		assert.ok(planOne < echoOne, `thinking 1 must precede its tool, got: ${text}`);
+		assert.ok(echoOne < planTwo, `tool 1 must precede thinking 2, got: ${text}`);
+		assert.ok(planTwo < needle, `thinking 2 must precede its tool, got: ${text}`);
+	} finally {
+		hooks.shutdown();
+		config.mode = previousMode;
+		emit("session_shutdown", {}, ctx);
+		if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousDir;
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("Running duration recomputes on each render via round wall clock", async () => {
 	const previousMode = config.mode;
 	config.mode = "compact";
@@ -552,10 +613,11 @@ test("compact surfaces abort outside folded tools", () => {
 	}
 });
 
-test("compact edit/write stays single-line when collapsed and reuses rich diff when expanded", () => {
+test("compact edit/write keeps the stats header and inherits on-mode diff limits", () => {
 	const metadata = new WriteExecutionMetadataStore();
 	const previousMode = config.mode;
 	const previousTheme = getMessageDisplayTheme();
+	const previousWriteCollapsed = config.writeDiffCollapsedLines;
 	config.mode = "compact";
 	const hooks = installCompactMode({ writeMetadata: metadata });
 	try {
@@ -570,7 +632,9 @@ test("compact edit/write stays single-line when collapsed and reuses rich diff w
 		assert.equal(edit.render(120)[0], "", "compact file rows keep one leading blank row");
 		const collapsed = renderText(edit).join("\n");
 		assert.match(collapsed, /edit a\.ts \(\+1 -1\)/);
-		assert.doesNotMatch(collapsed, /diff --git|^---|^\+\+\+|^@@/);
+		assert.match(collapsed, /old/, "collapsed compact edit inherits the on-mode preview");
+		assert.match(collapsed, /new/);
+		assert.doesNotMatch(collapsed, /Input|Output|Details:/);
 
 		setMessageDisplayTheme({
 			fg: (color: string, text: string) =>
@@ -618,11 +682,31 @@ test("compact edit/write stays single-line when collapsed and reuses rich diff w
 			"fallback IO hover keeps ToolExecutionComponent.invalidate bound",
 		);
 
-		// write 无变更成功：仍显示 (+0 -0)。
+		// write 无变更成功：标题仍显示 (+0 -0)。
 		const write = tool("write", "w1", { path: "b.ts", content: "" });
 		metadata.set("w1", { fileExistedBeforeWrite: true, previousContent: "" });
 		write.updateResult({ content: [], isError: false });
 		assert.match(renderText(write).join("\n"), /write b\.ts \(\+0 -0\)/);
+
+		// write 折叠预览跟 mode=on 共用 writeDiffCollapsedLines。
+		const longWriteContent = Array.from(
+			{ length: 40 },
+			(_, index) => `const value${index} = ${index}`,
+		).join("\n");
+		const longWrite = tool("write", "w-limit", { path: "long.ts", content: longWriteContent });
+		metadata.set("w-limit", { fileExistedBeforeWrite: false });
+		longWrite.updateResult({ content: [], isError: false });
+		config.writeDiffCollapsedLines = 0;
+		const statsOnly = renderText(longWrite).join("\n");
+		assert.match(statsOnly, /write long\.ts \(\+40 -0\)/);
+		assert.match(statsOnly, /created/);
+		assert.match(statsOnly, /more/);
+		assert.doesNotMatch(statsOnly, /const value10 = 10/);
+		config.writeDiffCollapsedLines = 4;
+		const preview = renderText(longWrite).join("\n");
+		assert.match(preview, /const value0 = 0/);
+		assert.doesNotMatch(preview, /const value10 = 10/);
+		config.writeDiffCollapsedLines = previousWriteCollapsed;
 
 		// 元数据缺失时不能把覆盖写入伪装成新文件。
 		const unknownWrite = tool("write", "w2", { path: "unknown.ts", content: "line" });
@@ -666,6 +750,7 @@ test("compact edit/write stays single-line when collapsed and reuses rich diff w
 	} finally {
 		setMessageDisplayTheme(previousTheme);
 		config.mode = previousMode;
+		config.writeDiffCollapsedLines = previousWriteCollapsed;
 		hooks.shutdown();
 	}
 });

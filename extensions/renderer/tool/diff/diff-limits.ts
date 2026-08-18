@@ -1,5 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { DEFAULT_TOOL_DISPLAY_CONFIG } from "../../../config/config.ts";
+import { DEFAULT_TOOL_DISPLAY_CONFIG, type ToolDisplayConfig } from "../../../config/config.ts";
 import { showMoreHintText } from "../show-more-hint.ts";
 import {
 	buildCollapsedDiffHintText,
@@ -43,6 +43,20 @@ export function resolveDiffDisplayLimit(
 		? maxCollapsedLines
 		: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines;
 	return expanded ? Math.max(0, expandedLimit) : Math.max(1, collapsedLimit);
+}
+
+/** Write collapsed body limit. Missing/NaN falls back to edit's `diffCollapsedLines`. */
+export function resolveWriteCollapsedLimit(
+	config: Pick<ToolDisplayConfig, "writeDiffCollapsedLines" | "diffCollapsedLines">,
+): number {
+	const value = config.writeDiffCollapsedLines;
+	if (Number.isFinite(value)) {
+		return Math.max(0, value);
+	}
+	const fallback = Number.isFinite(config.diffCollapsedLines)
+		? config.diffCollapsedLines
+		: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines;
+	return Math.max(0, fallback);
 }
 
 /**

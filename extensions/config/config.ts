@@ -16,6 +16,8 @@ export interface ToolDisplayConfig {
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
 	diffCollapsedLines: number;
+	/** Write-only collapsed body lines. 0 = `↳ created • click to show more`. */
+	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
 }
@@ -26,6 +28,11 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	diffSplitMinWidth: 120,
 	/** Collapsed tool/diff body: ~half a typical terminal after chrome. */
 	diffCollapsedLines: 24,
+	/**
+	 * Write create/overwrite collapsed body.
+	 * 0 = `↳ created • click to show more` (stats stay on the title).
+	 */
+	writeDiffCollapsedLines: 0,
 	diffWordWrap: true,
 	/**
 	 * Expanded tool/diff body cap. 40 ≈ one screen of content after title,
@@ -42,6 +49,7 @@ export type Config = {
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
 	diffCollapsedLines: number;
+	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
 	useSummaryTitlesAsThinkingTitle: boolean;
@@ -64,6 +72,8 @@ export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
 export const DIFF_SPLIT_MIN_WIDTH_VALUES = ["80", "100", "120", "140", "160", "180"];
 export const DIFF_COLLAPSED_LINES_VALUES = ["12", "24", "36", "48", "80", "120"];
+/** Write collapsed presets. 0 = stats only (`+N -0` + expand hint). */
+export const WRITE_DIFF_COLLAPSED_LINES_VALUES = ["0", "4", "8", "12", "24", "36"];
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
 export const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
@@ -90,6 +100,7 @@ export const DEFAULT_CONFIG: Config = {
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
 	diffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines,
+	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
 	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
 	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
 	useSummaryTitlesAsThinkingTitle: true,
@@ -164,6 +175,12 @@ export function normalizeConfig(input: unknown): Config {
 			1,
 			500,
 		),
+		writeDiffCollapsedLines: pickPositiveInt(
+			source.writeDiffCollapsedLines,
+			DEFAULT_CONFIG.writeDiffCollapsedLines,
+			0,
+			500,
+		),
 		diffWordWrap: source.diffWordWrap !== false,
 		expandedPreviewMaxLines: pickPositiveInt(
 			source.expandedPreviewMaxLines,
@@ -207,6 +224,7 @@ export function getToolDisplayConfig(source: Config = config): ToolDisplayConfig
 		diffIndicatorMode: source.diffIndicatorMode,
 		diffSplitMinWidth: source.diffSplitMinWidth,
 		diffCollapsedLines: source.diffCollapsedLines,
+		writeDiffCollapsedLines: source.writeDiffCollapsedLines,
 		diffWordWrap: source.diffWordWrap,
 		expandedPreviewMaxLines: source.expandedPreviewMaxLines,
 	};
@@ -224,6 +242,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`diffIndicator=${source.diffIndicatorMode}`,
 		`diffSplitMin=${source.diffSplitMinWidth}`,
 		`diffCollapsed=${source.diffCollapsedLines}`,
+		`writeCollapsed=${source.writeDiffCollapsedLines}`,
 		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
 		`expandedMax=${source.expandedPreviewMaxLines}`,
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,

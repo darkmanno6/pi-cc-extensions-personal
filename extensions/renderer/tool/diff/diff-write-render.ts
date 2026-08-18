@@ -1,5 +1,6 @@
 import { Text, truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { sanitizeToolResultText } from "../../../utils/tool-result-sanitize.ts";
+import { showMoreHintText } from "../show-more-hint.ts";
 import { splitWriteContentLines } from "./diff-text.ts";
 import {
 	collectDiffStats,
@@ -31,9 +32,11 @@ import {
 import { renderDiffFrameLine, renderSingleDiffRow, renderWriteHeader } from "./diff-header.ts";
 import {
 	applyLineLimit,
+	clampDiffLineToWidth,
 	clampDiffLinesToWidth,
 	resolveDiffDisplayLimit,
 	resolveDiffProcessBudget,
+	resolveWriteCollapsedLimit,
 	takeEntriesForLineBudget,
 	takeSplitRowsForBudget,
 } from "./diff-limits.ts";
@@ -286,6 +289,41 @@ function renderWriteOverwriteGuardRows(
 	return renderSingleDiffRow(buildWriteOverwriteGuardText(guard, width), "warning", width, theme);
 }
 
+/** Folded write with `writeDiffCollapsedLines: 0`: `↳ created • click to show more`. */
+function renderWriteCollapsedHintLine(
+	wasOverwrite: boolean,
+	width: number,
+	theme: DiffTheme,
+	hovered: boolean,
+	headerLabel?: string,
+): string[] {
+	const safeWidth = normalizeDiffRenderWidth(width);
+	if (safeWidth === 0) {
+		return [""];
+	}
+	const actionLabel = headerLabel?.trim() || (wasOverwrite ? "overwritten" : "created");
+	const clickLabel = showMoreHintText();
+	const candidates = [`↳ ${actionLabel} • ${clickLabel}`, `↳ ${actionLabel}`, actionLabel, "…"];
+	let text = candidates[candidates.length - 1] ?? "…";
+	for (const candidate of candidates) {
+		if (visibleWidth(candidate) <= safeWidth) {
+			text = candidate;
+			break;
+		}
+	}
+	if (visibleWidth(text) > safeWidth) {
+		text = truncateToWidth(text, safeWidth, "");
+	}
+	const clickIndex = text.lastIndexOf(clickLabel);
+	const styled =
+		hovered && clickIndex >= 0
+			? theme.fg("muted", text.slice(0, clickIndex)) +
+				theme.fg("text", clickLabel) +
+				theme.fg("muted", text.slice(clickIndex + clickLabel.length))
+			: theme.fg("muted", text);
+	return [clampDiffLineToWidth(styled, safeWidth)];
+}
+
 /**
  * write 变更行统计（compact 单行用）：复用当前 write diff 算法。
  * 新文件 = 全部新内容为 added；覆盖已有文件用 LCS 精确统计。
@@ -392,6 +430,28 @@ export function renderWriteDiffResult(
 				return cached;
 			}
 
+			const writeCollapsedLimit = resolveWriteCollapsedLimit(live);
+			const statsOnlyCollapsed = !options.expanded && writeCollapsedLimit === 0;
+			if (statsOnlyCollapsed) {
+				return cache.set(
+					safeWidth,
+					options.expanded,
+					mode,
+					configKey,
+					hovered,
+					clampDiffLinesToWidth(
+						renderWriteCollapsedHintLine(
+							options.fileExistedBeforeWrite === true,
+							safeWidth,
+							theme,
+							hovered,
+							options.headerLabel,
+						),
+						safeWidth,
+					),
+				);
+			}
+
 			const header = renderWriteHeader(
 				options.fileExistedBeforeWrite === true,
 				safeWidth,
@@ -442,7 +502,7 @@ export function renderWriteDiffResult(
 			const data = getDetailedData();
 			const displayLimit = resolveDiffDisplayLimit(
 				options.expanded,
-				live.diffCollapsedLines,
+				writeCollapsedLimit,
 				live.expandedPreviewMaxLines,
 			);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
@@ -480,7 +540,7 @@ export function renderWriteDiffResult(
 				bodyRows,
 				safeWidth,
 				options.expanded,
-				live.diffCollapsedLines,
+				writeCollapsedLimit,
 				live.expandedPreviewMaxLines,
 				data.hunkCount,
 				theme,

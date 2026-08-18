@@ -2,7 +2,7 @@
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
 > 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
-> 当前版本：ccstyle 0.8.58 · mode=`compact`。
+> 当前版本：ccstyle 0.8.60 · mode=`compact`。
 > renderer 变更后请运行 `npm run docs:tool-render` 同步本文件。
 
 ## 1. 消息折叠摘要行
@@ -16,13 +16,13 @@
 展开（Ctrl+O / 点击摘要行）后恢复原生渲染：
 
 ```text
-  Thinking...
-
    $ npm test
 
    pass 79/79
 
    read a.ts
+
+  Thinking...
 ```
 
 - 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。
@@ -52,26 +52,33 @@ bash 折叠行数: 0
 
 展开（Ctrl+O / 点击）后恢复 default 风格工具卡或原生 renderer。
 
-## 3. edit / write 独立单行
+## 3. edit / write 独立行
 
-edit/write 折叠时显示统计单行，展开时走 rich diff：
+edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：
 
 ```text
- ✓ edit sample.ts (+1 -1) • click to show more
+ ✓ edit sample.ts (+1 -1)
+   ↳ diff • +1 • -1 • unified [━━━━━━━━]
+ ───────────────────────────────────────────────────────────────────────
+ @@ -1 +1 @@
+ ▌  1 │ const x = 1
+ ▌  1 │ const x = 2
+ ───────────────────────────────────────────────────────────────────────
 
- ✓ write out.ts (+1 -0) • click to show more
+ ✓ write out.ts (+1 -0)
+   ↳ created • click to show more
 ```
 
 展开 edit：
 
 ```text
   ✓ edit sample.ts (+1 -1)
-    ↳ diff • +1 • -1 • unified [━━━━━━━━]
-  ───────────────────────────────────────────
-  @@ -1 +1 @@
-  ▌  1 │ const x = 1
-  ▌  1 │ const x = 2
-  ───────────────────────────────────────────
+ ↳ diff • +1 • -1 • unified [━━━━━━━━]
+ ────────────────────────────────────────────
+ @@ -1 +1 @@
+ ▌  1 │ const x = 1
+ ▌  1 │ const x = 2
+ ────────────────────────────────────────────
 ```
 
 ## 4. 无 toolCall 的最终回复

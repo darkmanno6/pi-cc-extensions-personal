@@ -1,8 +1,9 @@
 /**
  * Compact mode：每条含 toolCall 的 assistant message 折叠为一条逐步累加的摘要行
- * （`Ran for 8s, bash×2, read×2`），edit/write 独立单行（`✓ write <path> (+25 -0)`），
+ * （`Ran for 8s, bash×2, read×2`），edit/write 独立标题行（`✓ write <path> (+25 -0)`），
  * 普通工具折叠时不显示独立行；展开（Ctrl+O / fullscreen 点击）在单个工具卡中恢复
- * compact-thinking/Pi 原生或专用 renderer。edit/write 折叠时显示统计，展开时显示 rich diff。
+ * compact-thinking/Pi 原生或专用 renderer。edit/write 复用 mode=on 的 rich diff
+ * 与 `diffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
  * 底部 Agents/Tasks 面板由 pi-subagents/pi-tasks 独立 widget 负责，不经 tool 卡外置。
  *
@@ -19,7 +20,7 @@ import {
 	ToolExecutionComponent,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, Box } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, Box, Spacer } from "@earendil-works/pi-tui";
 import { config, getToolDisplayConfig } from "../config/config.ts";
 import { toolLoadingIcon } from "../utils/tool-loading-icon.ts";
 import { sanitizeToolResultText } from "../utils/tool-result-sanitize.ts";
@@ -33,6 +34,7 @@ import {
 } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult } from "./tool/diff/index.ts";
 import type { WriteExecutionMetadataStore } from "./tool/diff/write-execution.ts";
+import { isToolCallHovered } from "./mouse/hover.ts";
 import { insetComponent, renderExpandedToolResult, scheduleAnimation } from "./tool/result.ts";
 import { oneLine } from "../utils/format.ts";
 import { paddedBackgroundRow } from "./tool/grouping.ts";
@@ -475,6 +477,7 @@ function compactEditWriteLine(
 	component: any,
 	width: number,
 	writeMetadata?: WriteExecutionMetadataStore,
+	options: { hint?: boolean } = {},
 ): string[] {
 	const theme = themeOf();
 	const name = String(component.toolName ?? "tool");
@@ -510,7 +513,8 @@ function compactEditWriteLine(
 	}
 	const iconPart = ` ${theme.fg(iconColor, icon)} `;
 	const namePart = theme.fg("toolTitle", name);
-	const hintText = component.expanded ? "" : ` • ${showMoreHintText()}`;
+	const hintText =
+		options.hint !== false && component.expanded !== true ? ` • ${showMoreHintText()}` : "";
 	const fixedWidth =
 		visibleWidth(iconPart) +
 		visibleWidth(namePart) +
@@ -522,34 +526,50 @@ function compactEditWriteLine(
 	return ["", truncateToWidth(line, width, "")];
 }
 
-/** compact edit/write 展开：复用 mode=on 的 rich diff；不可用时回退 Input/Output。 */
-function compactEditWriteExpandedLines(
+/**
+ * compact edit/write：标题行 + mode=on 同一套 rich diff。
+ * 折叠/展开都走 `renderRichToolResult`，limits 不另开一套。
+ */
+function compactEditWriteLines(
 	component: any,
 	width: number,
 	writeMetadata?: WriteExecutionMetadataStore,
 ): string[] {
 	const theme = themeOf();
 	const result = component.result;
+	const expanded = component.expanded === true;
 	const isError = result?.isError === true;
-	const candidate = writeMetadata
-		? renderRichToolResult(
-				String(component.toolName ?? ""),
-				result,
-				{
-					expanded: true,
-					isPartial: component.isPartial === true,
-					isError,
-				},
-				theme,
-				component,
-				writeMetadata,
-				getToolDisplayConfig,
-			)
-		: undefined;
-	let detail: any;
-	if (isRichDiffComponent(candidate)) {
+	const isPending = !result || component.isPartial === true;
+	const candidate =
+		!isPending && writeMetadata
+			? renderRichToolResult(
+					String(component.toolName ?? ""),
+					result,
+					{
+						expanded,
+						isPartial: component.isPartial === true,
+						isError,
+						isHovered: () => isToolCallHovered(component.toolCallId),
+					},
+					theme,
+					component,
+					writeMetadata,
+					getToolDisplayConfig,
+				)
+			: undefined;
+	const hasRich = isRichDiffComponent(candidate);
+	if (hasRich) {
 		component.resultRendererComponent = candidate;
-		detail = insetComponent(candidate as any);
+	}
+
+	const title = compactEditWriteLine(component, width, writeMetadata, { hint: !hasRich });
+	if (!hasRich && !expanded) {
+		return title;
+	}
+
+	let detail: any;
+	if (hasRich) {
+		detail = expanded ? candidate : insetComponent(candidate as any);
 	} else {
 		const outputText = sanitizeToolResultText(
 			Array.isArray(result?.content)
@@ -571,10 +591,14 @@ function compactEditWriteExpandedLines(
 		component.resultRendererComponent = detail;
 	}
 
+	if (!expanded) {
+		return [...title, ...detail.render(width)];
+	}
+
 	const box = editWriteExpandedCard(theme);
 	box.addChild({
 		render(innerWidth: number): string[] {
-			return compactEditWriteLine(component, innerWidth, writeMetadata).slice(1);
+			return compactEditWriteLine(component, innerWidth, writeMetadata, { hint: false }).slice(1);
 		},
 		invalidate() {},
 	});
@@ -788,7 +812,8 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				return;
 			}
 			try {
-				uiRef?.requestRender?.(true);
+				// 非 force：保留 fullscreen 布局缓存和差分绘制。
+				uiRef?.requestRender?.();
 			} catch {
 				/* 无 UI */
 			}
@@ -864,18 +889,65 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		}
 
 		if (round.anchor.expanded === true) {
-			const assistantChildren: any[] = [];
+			const toolsById = new Map<string, any>();
+			for (const tool of trackedToolComponents) {
+				if (typeof tool?.toolCallId === "string") toolsById.set(tool.toolCallId, tool);
+			}
+			const cardItems: Array<{ child?: any; tool?: any }> = [];
+			const placedToolIds = new Set<string>();
+			const takeAssistantRun = (kids: any[], cursor: { i: number }) => {
+				while (cursor.i < kids.length && kids[cursor.i] instanceof Spacer) {
+					cardItems.push({ child: kids[cursor.i++] });
+				}
+				if (cursor.i < kids.length) cardItems.push({ child: kids[cursor.i++] });
+			};
+			const placeTool = (id: string, fallbackName?: string) => {
+				const tool = toolsById.get(id);
+				if (!tool || EDIT_WRITE_TOOLS.has(String(tool.toolName ?? fallbackName ?? ""))) return;
+				if (placedToolIds.has(id)) return;
+				placedToolIds.add(id);
+				cardItems.push({ tool });
+			};
 			for (const [component, message] of round.messages) {
 				passThroughAssistant(component, message);
-				if (Array.isArray(component.contentContainer?.children)) {
-					assistantChildren.push(...component.contentContainer.children);
-				}
+				const kids = Array.isArray(component.contentContainer?.children)
+					? [...component.contentContainer.children]
+					: [];
 				component.contentContainer?.clear?.();
+				const cursor = { i: 0 };
+				let inThinkingRun = false;
+				for (const item of Array.isArray(message?.content) ? message.content : []) {
+					if (item?.type === "thinking") {
+						if (!String(item.thinking ?? "").trim()) continue;
+						if (!inThinkingRun) {
+							takeAssistantRun(kids, cursor);
+							inThinkingRun = true;
+						}
+						continue;
+					}
+					inThinkingRun = false;
+					if (item?.type === "text" && String(item.text ?? "").trim()) {
+						takeAssistantRun(kids, cursor);
+						continue;
+					}
+					if (item?.type === "toolCall" && typeof item.id === "string") {
+						placeTool(item.id, item.name);
+					}
+				}
+				while (cursor.i < kids.length) cardItems.push({ child: kids[cursor.i++] });
+			}
+			for (const message of round.detachedMessages) {
+				for (const item of Array.isArray(message?.content) ? message.content : []) {
+					if (item?.type === "toolCall" && typeof item.id === "string") {
+						placeTool(item.id, item.name);
+					}
+				}
 			}
 			const ids = roundToolCallIds(round);
 			for (const id of ids) {
 				round.suppressedToolIds.add(id);
 				expandedRoundToolIds.add(id);
+				if (!placedToolIds.has(id)) placeTool(id);
 			}
 			// Round 展开只打开外层卡片。普通工具保持折叠，避免长输出递归撑满屏幕。
 			for (const tool of trackedToolComponents) {
@@ -896,21 +968,20 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 				render(width: number): string[] {
 					const theme = themeOf();
 					const box = expandedToolCard(theme);
-					for (const child of assistantChildren) box.addChild(child);
-					const ids = roundToolCallIds(round);
-					for (const tool of trackedToolComponents) {
-						if (!ids.has(tool.toolCallId) || EDIT_WRITE_TOOLS.has(String(tool.toolName ?? ""))) {
-							continue;
+					for (const item of cardItems) {
+						if (item.child) box.addChild(item.child);
+						else if (item.tool) {
+							const tool = item.tool;
+							box.addToolChild({
+								render: (innerWidth: number) => patch.toolOriginalRender.call(tool, innerWidth),
+								invalidate: () => tool.invalidate?.(),
+							});
 						}
-						box.addToolChild({
-							render: (innerWidth: number) => patch.toolOriginalRender.call(tool, innerWidth),
-							invalidate: () => tool.invalidate?.(),
-						});
 					}
 					return ["", ...box.render(width)];
 				},
 				invalidate() {
-					for (const child of assistantChildren) child.invalidate?.();
+					for (const item of cardItems) item.child?.invalidate?.();
 				},
 			});
 			// 展开卡内工具会显示 error，外层仍挂 abort/length，避免只藏在折叠工具里。
@@ -1066,9 +1137,7 @@ export function installCompactMode(deps: CompactModeInstallDeps): CompactModeHoo
 		const name = String(this.toolName ?? "");
 		if (EDIT_WRITE_TOOLS.has(name)) {
 			if (!this.result || this.isPartial === true) scheduleAnimation(this);
-			const lines = compactEditWriteLine(this, width, deps.writeMetadata);
-			if (this.expanded !== true) return lines;
-			return compactEditWriteExpandedLines(this, width, deps.writeMetadata);
+			return compactEditWriteLines(this, width, deps.writeMetadata);
 		}
 		// Agent/Task 等同普通工具：折叠不外置（live 面板走独立 widget）。
 		if (expandedRoundToolIds.has(String(this.toolCallId ?? ""))) return [];

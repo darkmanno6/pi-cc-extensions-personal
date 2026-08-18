@@ -25,6 +25,7 @@ import {
 	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
+	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 	updateConfig,
 	type CompactStyleMode,
 	type Config,
@@ -40,7 +41,7 @@ export type CcstylePanelHooks = {
 
 function modeSettingDescription(mode: CompactStyleMode): string {
 	if (mode === "compact") {
-		return "(Experimental) One summary line per assistant round; expanded edit/write rows show rich diffs.";
+		return "(Experimental) One summary line per assistant round; edit/write reuse the same Diff preview settings as on.";
 	}
 	if (mode === "off") {
 		return "Pi native tool rendering. Diff options below still apply independently.";
@@ -288,13 +289,23 @@ export async function showCcstylePanel(
 		};
 		const diffCollapsedSetting = {
 			id: "diffCollapsedLines",
-			label: "Collapsed lines",
+			label: "Edit collapsed lines",
 			description:
-				"How many diff body lines to show before the expand hint (Ctrl+O / click). Enter to type a custom value.",
+				"How many edit/diff body lines to show before the expand hint (Ctrl+O / click). Write uses its own setting below.",
 			currentValue: String(config.diffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, diffCollapsedSetting, closeSubmenu),
+		};
+		const writeDiffCollapsedSetting = {
+			id: "writeDiffCollapsedLines",
+			label: "Write collapsed lines",
+			description:
+				"Write-only collapsed body lines. 0 shows ↳ created + expand hint (stats stay on the title). Enter to type a custom value.",
+			currentValue: String(config.writeDiffCollapsedLines),
+			values: [...WRITE_DIFF_COLLAPSED_LINES_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, writeDiffCollapsedSetting, closeSubmenu),
 		};
 		const diffWordWrapSetting = {
 			id: "diffWordWrap",
@@ -453,6 +464,17 @@ export async function showCcstylePanel(
 					});
 					diffCollapsedSetting.currentValue = String(config.diffCollapsedLines);
 					break;
+				case "writeDiffCollapsedLines":
+					updateConfig({
+						writeDiffCollapsedLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.writeDiffCollapsedLines,
+							0,
+							500,
+						),
+					});
+					writeDiffCollapsedSetting.currentValue = String(config.writeDiffCollapsedLines);
+					break;
 				case "diffWordWrap":
 					updateConfig({ diffWordWrap: value === "on" });
 					diffWordWrapSetting.description = config.diffWordWrap
@@ -519,6 +541,7 @@ export async function showCcstylePanel(
 					diffIndicatorSetting,
 					diffSplitSetting,
 					diffCollapsedSetting,
+					writeDiffCollapsedSetting,
 					diffWordWrapSetting,
 					expandedMaxSetting,
 				],

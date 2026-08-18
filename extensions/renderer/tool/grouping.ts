@@ -180,11 +180,13 @@ export class ToolGroupComponent extends Container {
 	}
 
 	addTool(tool: any): void {
+		this.settledCache = undefined;
 		this.children.push(tool);
 		tool[PARENT_KEY] = this;
 	}
 
 	releaseTools(): any[] {
+		this.settledCache = undefined;
 		const tools = [...this.children];
 		this.children.length = 0;
 		this.patch.groups.delete(this);
@@ -192,18 +194,21 @@ export class ToolGroupComponent extends Container {
 	}
 
 	removeTool(tool: any): void {
+		this.settledCache = undefined;
 		const index = this.children.indexOf(tool);
 		if (index >= 0) this.children.splice(index, 1);
 		if (tool?.[PARENT_KEY] === this) delete tool[PARENT_KEY];
 	}
 
 	setExpanded(expanded: boolean): void {
+		if (this._expanded !== expanded) this.settledCache = undefined;
 		this._expanded = expanded;
 		for (const tool of this.children)
 			(tool as Component & { setExpanded?: (expanded: boolean) => void }).setExpanded?.(expanded);
 	}
 
 	setHintHovered(hovered: boolean): void {
+		if (this.hintHovered !== hovered) this.settledCache = undefined;
 		this.hintHovered = hovered;
 	}
 
@@ -232,6 +237,7 @@ export class ToolGroupComponent extends Container {
 	}
 
 	invalidate(): void {
+		this.settledCache = undefined;
 		for (const tool of this.children) tool.invalidate?.();
 	}
 

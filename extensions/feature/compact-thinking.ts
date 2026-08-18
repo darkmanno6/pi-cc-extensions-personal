@@ -174,10 +174,37 @@ function thinkingExpandAction(): string | undefined {
 }
 
 // 只 wrap 尾部窗口；缓存未着色折行，着色放到取出时做，避免主题切换命中旧 ANSI。
-const previewCache = new Map<string, { lines: string[]; hiddenBefore: number }>();
-const PREVIEW_CACHE_MAX = 500;
+type PreviewCacheEntry = { lines: string[]; hiddenBefore: number };
+const previewCache = new Map<string, PreviewCacheEntry>();
+export const THINKING_PREVIEW_CACHE_MAX = 2_048;
 const PREVIEW_BUDGET_MIN_CHARS = 2_000;
 const PREVIEW_BUDGET_SLACK_LINES = 2;
+
+function getCachedPreview(key: string): PreviewCacheEntry | undefined {
+	const entry = previewCache.get(key);
+	if (!entry) return undefined;
+	previewCache.delete(key);
+	previewCache.set(key, entry);
+	return entry;
+}
+
+function cachePreview(key: string, entry: PreviewCacheEntry): void {
+	previewCache.delete(key);
+	while (previewCache.size >= THINKING_PREVIEW_CACHE_MAX) {
+		const oldest = previewCache.keys().next().value;
+		if (oldest === undefined) break;
+		previewCache.delete(oldest);
+	}
+	previewCache.set(key, entry);
+}
+
+export function clearThinkingPreviewCache(): void {
+	previewCache.clear();
+}
+
+export function thinkingPreviewCacheSize(): number {
+	return previewCache.size;
+}
 
 /** 按可见宽度估算折行数，不走 Text 全量 wrap。无换行长段也能计到隐藏行。 */
 function countWrappedLines(text: string, contentWidth: number): number {
@@ -219,14 +246,13 @@ function layoutThinkingPreview(
 		else cut = 0;
 	}
 	const cacheKey = `${width}:${padding}:${cut}:${source}`;
-	let entry = previewCache.get(cacheKey);
+	let entry = getCachedPreview(cacheKey);
 	if (!entry) {
 		entry = {
 			lines: wrapTextWithAnsi(source.replace(/\t/g, "   "), contentWidth),
 			hiddenBefore: cut > 0 ? countWrappedLines(text.slice(0, cut), contentWidth) : 0,
 		};
-		if (previewCache.size >= PREVIEW_CACHE_MAX) previewCache.clear();
-		previewCache.set(cacheKey, entry);
+		cachePreview(cacheKey, entry);
 	}
 	const hiddenLines = entry.hiddenBefore + Math.max(0, entry.lines.length - config.previewLines);
 	const visible = hiddenLines > 0 ? entry.lines.slice(-config.previewLines) : entry.lines;
@@ -265,6 +291,15 @@ export class ThinkingPreviewBlock implements Component {
 	private _expanded: boolean;
 	private hintHovered = false;
 	private expandedBody: { width: number; lines: string[] } | undefined;
+	private collapsedMemo:
+		| {
+				width: number;
+				previewLines: number;
+				hintHovered: boolean;
+				expandAction: string | undefined;
+				lines: string[];
+		  }
+		| undefined;
 
 	constructor(
 		heading: string,
@@ -294,6 +329,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	setExpanded(expanded: boolean): void {
+		if (this._expanded !== expanded) this.collapsedMemo = undefined;
 		this._expanded = expanded;
 		if (expanded) expandedThinking.add(this.messageTimestamp);
 		else {
@@ -303,6 +339,7 @@ export class ThinkingPreviewBlock implements Component {
 	}
 
 	setHintHovered(hovered: boolean): void {
+		if (this.hintHovered !== hovered) this.collapsedMemo = undefined;
 		this.hintHovered = hovered;
 	}
 
@@ -362,16 +399,39 @@ export class ThinkingPreviewBlock implements Component {
 			});
 			return box.render(width);
 		}
+
+		const expandAction = thinkingExpandAction();
+		if (
+			this.collapsedMemo?.width === width &&
+			this.collapsedMemo.previewLines === config.previewLines &&
+			this.collapsedMemo.hintHovered === this.hintHovered &&
+			this.collapsedMemo.expandAction === expandAction
+		) {
+			return this.collapsedMemo.lines;
+		}
+
 		const body = this.bodyLines(width, this.padding);
 		const heading = this.headingLines(width, body.hiddenLines, this.padding);
-		if (!body.lines.length) return heading;
-		return [
-			...heading,
-			...body.lines.map((line) => padPreviewLine(this.style(line), width, this.padding)),
-		];
+		const lines = body.lines.length
+			? [
+					...heading,
+					...body.lines.map((line) => padPreviewLine(this.style(line), width, this.padding)),
+				]
+			: heading;
+		this.collapsedMemo = {
+			width,
+			previewLines: config.previewLines,
+			hintHovered: this.hintHovered,
+			expandAction,
+			lines,
+		};
+		return lines;
 	}
 
-	invalidate() {}
+	invalidate() {
+		this.collapsedMemo = undefined;
+		this.expandedBody = undefined;
+	}
 }
 
 function parseSummaryPart(text: string): SummaryPart | undefined {
@@ -922,6 +982,7 @@ function compactThinking(pi: ExtensionAPI) {
 		completedDurations.clear();
 		streamingComponents.clear();
 		expandedThinking.clear();
+		clearThinkingPreviewCache();
 		if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);
 
 		if (patchInstalled) {

@@ -8,8 +8,11 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import {
 	animateCompactThinkingText,
+	clearThinkingPreviewCache,
 	installCompactThinking,
 	ThinkingPreviewBlock,
+	thinkingPreviewCacheSize,
+	THINKING_PREVIEW_CACHE_MAX,
 } from "../extensions/feature/compact-thinking.ts";
 
 const config = {
@@ -17,6 +20,66 @@ const config = {
 	previewLines: 0,
 	animationIntervalMs: 30,
 };
+
+test("collapsed thinking previews memoize complete output until invalidated", () => {
+	const originalConfig = { ...config };
+	const { pi } = runtime();
+	const controller = installCompactThinking(pi, { ...originalConfig });
+	controller.updateConfig({ ...originalConfig, previewLines: 1 });
+	clearThinkingPreviewCache();
+	try {
+		const preview = new ThinkingPreviewBlock(
+			"Thought",
+			"alpha beta gamma delta epsilon zeta eta theta",
+			0,
+			1,
+			(text) => text,
+		);
+		const first = preview.render(12);
+		assert.ok(
+			first.some((line) => line.includes("more")),
+			"composed output includes its hint",
+		);
+		assert.strictEqual(preview.render(12), first, "same state reuses complete output");
+
+		assert.notStrictEqual(preview.render(16), first, "width changes recompute output");
+		const beforeConfigChange = preview.render(16);
+		controller.updateConfig({ ...originalConfig, previewLines: 2 });
+		assert.notStrictEqual(
+			preview.render(16),
+			beforeConfigChange,
+			"preview-line changes recompute output",
+		);
+
+		const beforeHover = preview.render(16);
+		preview.setHintHovered(true);
+		assert.notStrictEqual(preview.render(16), beforeHover, "hover changes recompute output");
+
+		const beforeInvalidation = preview.render(16);
+		preview.invalidate();
+		assert.notStrictEqual(preview.render(16), beforeInvalidation, "invalidation clears memo");
+	} finally {
+		controller.updateConfig(originalConfig);
+		clearThinkingPreviewCache();
+	}
+});
+
+test("thinking preview cache evicts one entry instead of clearing", () => {
+	const originalConfig = { ...config };
+	const { pi } = runtime();
+	const controller = installCompactThinking(pi, { ...originalConfig });
+	controller.updateConfig({ ...originalConfig, previewLines: 20 });
+	clearThinkingPreviewCache();
+	try {
+		for (let index = 0; index <= THINKING_PREVIEW_CACHE_MAX; index++) {
+			new ThinkingPreviewBlock("Thought", `preview-${index}`, 0, index, (text) => text).render(80);
+		}
+		assert.equal(thinkingPreviewCacheSize(), THINKING_PREVIEW_CACHE_MAX);
+	} finally {
+		controller.updateConfig(originalConfig);
+		clearThinkingPreviewCache();
+	}
+});
 
 test("compact summary reuses compact-thinking's sweep animation", () => {
 	const theme = {

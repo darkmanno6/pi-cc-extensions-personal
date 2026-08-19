@@ -281,6 +281,29 @@ test("off refresh ungroups, reload rescans existing tools, and stale shutdown pr
 	assert.equal(prototype.addChild, originalAdd);
 });
 
+test("pending and expanded groups bypass settled render caching", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const read = tool("read", "live-read");
+		const bash = tool("bash", "live-bash");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+
+		const pending = group.render(120);
+		assert.notStrictEqual(group.render(120), pending, "pending spinner output is not memoized");
+
+		read.updateResult({ content: [], isError: false });
+		bash.updateResult({ content: [], isError: false });
+		group.setExpanded(true);
+		const expanded = group.render(120);
+		assert.notStrictEqual(group.render(120), expanded, "expanded child output is not memoized");
+	} finally {
+		hooks.shutdown();
+	}
+});
+
 test("settled collapsed groups reuse the last render until inputs change", () => {
 	const hooks = installToolGrouping(() => true);
 	hooks.setTheme({ fg: (_color: string, text: string) => text });
@@ -296,6 +319,10 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 
 		const first = group.render(120);
 		assert.strictEqual(group.render(120), first, "identical settled frame reuses the cached lines");
+		group.invalidate();
+		const invalidated = group.render(120);
+		assert.notStrictEqual(invalidated, first, "invalidation clears settled output");
+		assert.strictEqual(group.render(120), invalidated, "new output is memoized");
 
 		const wider = group.render(160);
 		assert.notStrictEqual(wider, first);
@@ -321,11 +348,13 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 		const expanded = group.render(160);
 		assert.notStrictEqual(expanded, failed);
 		group.setExpanded(false);
-		assert.strictEqual(group.render(160), failed, "collapse reuses the last settled frame");
+		const collapsed = group.render(160);
+		assert.notStrictEqual(collapsed, failed, "expansion changes clear settled output");
+		assert.strictEqual(group.render(160), collapsed, "collapsed output is memoized again");
 
 		parent.addChild(tool("grep", "cached-grep", { pattern: "todo" }));
 		const grown = group.render(160);
-		assert.notStrictEqual(grown, failed);
+		assert.notStrictEqual(grown, collapsed);
 		assert.match(grown.join("\n"), /running/);
 		assert.match(grown.join("\n"), /<success>1<\/success> done/);
 		assert.match(grown.join("\n"), /<error>1<\/error> failed/);

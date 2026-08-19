@@ -39,7 +39,7 @@ export function displayConfigCacheKey(config: ToolDisplayConfig): string {
 		config.diffViewMode,
 		config.diffIndicatorMode,
 		String(config.diffSplitMinWidth),
-		String(config.diffCollapsedLines),
+		String(config.editDiffCollapsedLines),
 		String(config.writeDiffCollapsedLines),
 		config.diffWordWrap ? "1" : "0",
 		String(config.expandedPreviewMaxLines),

@@ -288,11 +288,11 @@ export async function showCcstylePanel(
 				buildNumberInputSubmenu(theme, diffSplitSetting, closeSubmenu),
 		};
 		const diffCollapsedSetting = {
-			id: "diffCollapsedLines",
+			id: "editDiffCollapsedLines",
 			label: "Edit collapsed lines",
 			description:
 				"How many edit/diff body lines to show before the expand hint (Ctrl+O / click). Write uses its own setting below.",
-			currentValue: String(config.diffCollapsedLines),
+			currentValue: String(config.editDiffCollapsedLines),
 			values: [...DIFF_COLLAPSED_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
 				buildNumberInputSubmenu(theme, diffCollapsedSetting, closeSubmenu),
@@ -458,11 +458,11 @@ export async function showCcstylePanel(
 					});
 					diffSplitSetting.currentValue = String(config.diffSplitMinWidth);
 					break;
-				case "diffCollapsedLines":
+				case "editDiffCollapsedLines":
 					updateConfig({
-						diffCollapsedLines: pickPositiveInt(value, DEFAULT_CONFIG.diffCollapsedLines, 1, 500),
+						editDiffCollapsedLines: pickPositiveInt(value, DEFAULT_CONFIG.editDiffCollapsedLines, 1, 500),
 					});
-					diffCollapsedSetting.currentValue = String(config.diffCollapsedLines);
+					diffCollapsedSetting.currentValue = String(config.editDiffCollapsedLines);
 					break;
 				case "writeDiffCollapsedLines":
 					updateConfig({

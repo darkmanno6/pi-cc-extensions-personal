@@ -143,7 +143,7 @@ export function renderEditDiffResult(
 			const headerRows = renderHeaderRows(parsed.stats, mode, safeWidth, theme);
 			const displayLimit = resolveDiffDisplayLimit(
 				options.expanded,
-				live.diffCollapsedLines,
+				live.editDiffCollapsedLines,
 				live.expandedPreviewMaxLines,
 			);
 			const processBudget = resolveDiffProcessBudget(displayLimit, wordWrap);
@@ -177,7 +177,7 @@ export function renderEditDiffResult(
 				bodyRows,
 				safeWidth,
 				options.expanded,
-				live.diffCollapsedLines,
+				live.editDiffCollapsedLines,
 				live.expandedPreviewMaxLines,
 				parsed.stats.hunks,
 				theme,

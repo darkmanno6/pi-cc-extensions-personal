@@ -3,7 +3,7 @@
  * （`Ran for 8s, bash×2, read×2`），edit/write 独立标题行（`✓ write <path> (+25 -0)`），
  * 普通工具折叠时不显示独立行；展开（Ctrl+O / fullscreen 点击）在单个工具卡中恢复
  * compact-thinking/Pi 原生或专用 renderer。edit/write 复用 mode=on 的 rich diff
- * 与 `diffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
+ * 与 `editDiffCollapsedLines` / `writeDiffCollapsedLines` / `expandedPreviewMaxLines`。
  * Agent/Task 族：调用只进摘要计数，tool 卡始终折叠（避免 pending→完成高度闪动）。
  * 底部 Agents/Tasks 面板由 pi-subagents/pi-tasks 独立 widget 负责，不经 tool 卡外置。
  *

@@ -56,7 +56,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "diffViewMode": "auto",                  // diff 布局：auto / split / unified
   "diffIndicatorMode": "bars",             // diff 变更指示：bars / classic / none
   "diffSplitMinWidth": 120,                // 自动布局下使用左右分栏的最小终端宽度
-  "diffCollapsedLines": 24,                // 折叠时展示的 edit/diff 行数，超出显示展开提示（Ctrl+O / 点击）
+  "editDiffCollapsedLines": 24,            // Edit 折叠行数；超出显示展开提示（Ctrl+O / 点击）
   "writeDiffCollapsedLines": 0,            // write 折叠行数；0 = ↳ created • 展开提示（统计在标题）
   "diffWordWrap": true,                    // 长 diff 行是否换行（否则截断）
   "expandedPreviewMaxLines": 40,           // 展开后输出/diff 正文的最大行数

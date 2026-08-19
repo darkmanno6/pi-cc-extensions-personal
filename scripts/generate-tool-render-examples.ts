@@ -240,7 +240,7 @@ async function generateDefault() {
 			plainTheme,
 			{ args: { path: "sample.ts" } },
 			store,
-			() => ({ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2 }),
+			() => ({ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 2 }),
 		);
 		const longHint =
 			renderLines(longCollapsed).find((l) => l.includes("more")) ??

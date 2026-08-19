@@ -15,7 +15,7 @@ export interface ToolDisplayConfig {
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
-	diffCollapsedLines: number;
+	editDiffCollapsedLines: number;
 	/** Write-only collapsed body lines. 0 = `↳ created • click to show more`. */
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
@@ -26,8 +26,8 @@ export const DEFAULT_TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
 	diffViewMode: "auto",
 	diffIndicatorMode: "bars",
 	diffSplitMinWidth: 120,
-	/** Collapsed tool/diff body: ~half a typical terminal after chrome. */
-	diffCollapsedLines: 24,
+	/** Collapsed edit/diff body: ~half a typical terminal after chrome. */
+	editDiffCollapsedLines: 24,
 	/**
 	 * Write create/overwrite collapsed body.
 	 * 0 = `↳ created • click to show more` (stats stay on the title).
@@ -48,7 +48,7 @@ export type Config = {
 	diffViewMode: DiffViewMode;
 	diffIndicatorMode: DiffIndicatorMode;
 	diffSplitMinWidth: number;
-	diffCollapsedLines: number;
+	editDiffCollapsedLines: number;
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
@@ -99,7 +99,7 @@ export const DEFAULT_CONFIG: Config = {
 	diffViewMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffViewMode,
 	diffIndicatorMode: DEFAULT_TOOL_DISPLAY_CONFIG.diffIndicatorMode,
 	diffSplitMinWidth: DEFAULT_TOOL_DISPLAY_CONFIG.diffSplitMinWidth,
-	diffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines,
+	editDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines,
 	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
 	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
 	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
@@ -169,9 +169,9 @@ export function normalizeConfig(input: unknown): Config {
 			40,
 			300,
 		),
-		diffCollapsedLines: pickPositiveInt(
-			source.diffCollapsedLines,
-			DEFAULT_CONFIG.diffCollapsedLines,
+		editDiffCollapsedLines: pickPositiveInt(
+			source.editDiffCollapsedLines ?? source.diffCollapsedLines,
+			DEFAULT_CONFIG.editDiffCollapsedLines,
 			1,
 			500,
 		),
@@ -223,7 +223,7 @@ export function getToolDisplayConfig(source: Config = config): ToolDisplayConfig
 		diffViewMode: source.diffViewMode,
 		diffIndicatorMode: source.diffIndicatorMode,
 		diffSplitMinWidth: source.diffSplitMinWidth,
-		diffCollapsedLines: source.diffCollapsedLines,
+		editDiffCollapsedLines: source.editDiffCollapsedLines,
 		writeDiffCollapsedLines: source.writeDiffCollapsedLines,
 		diffWordWrap: source.diffWordWrap,
 		expandedPreviewMaxLines: source.expandedPreviewMaxLines,
@@ -241,7 +241,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`diffView=${source.diffViewMode}`,
 		`diffIndicator=${source.diffIndicatorMode}`,
 		`diffSplitMin=${source.diffSplitMinWidth}`,
-		`diffCollapsed=${source.diffCollapsedLines}`,
+		`editCollapsed=${source.editDiffCollapsedLines}`,
 		`writeCollapsed=${source.writeDiffCollapsedLines}`,
 		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
 		`expandedMax=${source.expandedPreviewMaxLines}`,

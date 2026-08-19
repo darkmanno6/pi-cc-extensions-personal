@@ -101,7 +101,7 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 	const component = renderEditDiffResult(
 		{ diff },
 		{ expanded: false, filePath: "sample.ts", isHovered: () => hovered },
-		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2 },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 2 },
 		hoverTheme,
 		"",
 	);
@@ -120,7 +120,7 @@ test("edit/write collapsed diff hints switch from muted to white text on hover",
 			fileExistedBeforeWrite: false,
 			isHovered: () => hovered,
 		},
-		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, diffCollapsedLines: 2, writeDiffCollapsedLines: 2 },
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 2, writeDiffCollapsedLines: 2 },
 		hoverTheme,
 		"",
 	);
@@ -138,7 +138,7 @@ test("diff indicator mode live-updates on the same component via config getter",
 		...DEFAULT_TOOL_DISPLAY_CONFIG,
 		diffViewMode: "unified",
 		diffIndicatorMode: "classic",
-		diffCollapsedLines: 80,
+		editDiffCollapsedLines: 80,
 		expandedPreviewMaxLines: 200,
 	};
 	const component = renderRichToolResult(
@@ -390,7 +390,7 @@ test("write collapsed preview uses writeDiffCollapsedLines independently of edit
 		store,
 		{
 			...DEFAULT_TOOL_DISPLAY_CONFIG,
-			diffCollapsedLines: 24,
+			editDiffCollapsedLines: 24,
 			writeDiffCollapsedLines: 4,
 		},
 	);
@@ -413,7 +413,7 @@ test("write collapsed preview uses writeDiffCollapsedLines independently of edit
 		store,
 		{
 			...DEFAULT_TOOL_DISPLAY_CONFIG,
-			diffCollapsedLines: 24,
+			editDiffCollapsedLines: 24,
 			writeDiffCollapsedLines: 0,
 		},
 	);
@@ -523,7 +523,8 @@ test("normalizeConfig defaults writeDiffCollapsedLines to 0 and allows explicit 
 	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 12 }).writeDiffCollapsedLines, 12);
-	assert.equal(normalizeConfig({ diffCollapsedLines: 48 }).writeDiffCollapsedLines, 0);
+	assert.equal(normalizeConfig({ editDiffCollapsedLines: 48 }).writeDiffCollapsedLines, 0);
+	assert.equal(normalizeConfig({ diffCollapsedLines: 48 }).editDiffCollapsedLines, 48);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: -3 }).writeDiffCollapsedLines, 0);
 });
 

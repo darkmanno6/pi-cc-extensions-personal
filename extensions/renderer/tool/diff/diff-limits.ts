@@ -41,20 +41,20 @@ export function resolveDiffDisplayLimit(
 		: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines;
 	const collapsedLimit = Number.isFinite(maxCollapsedLines)
 		? maxCollapsedLines
-		: DEFAULT_TOOL_DISPLAY_CONFIG.diffCollapsedLines;
+		: DEFAULT_TOOL_DISPLAY_CONFIG.editDiffCollapsedLines;
 	return expanded ? Math.max(0, expandedLimit) : Math.max(1, collapsedLimit);
 }
 
-/** Write collapsed body limit. Missing/NaN falls back to edit's `diffCollapsedLines`. */
+/** Write collapsed body limit. Missing/NaN falls back to edit's `editDiffCollapsedLines`. */
 export function resolveWriteCollapsedLimit(
-	config: Pick<ToolDisplayConfig, "writeDiffCollapsedLines" | "diffCollapsedLines">,
+	config: Pick<ToolDisplayConfig, "writeDiffCollapsedLines" | "editDiffCollapsedLines">,
 ): number {
 	const value = config.writeDiffCollapsedLines;
 	if (Number.isFinite(value)) {
 		return Math.max(0, value);
 	}
-	const fallback = Number.isFinite(config.diffCollapsedLines)
-		? config.diffCollapsedLines
+	const fallback = Number.isFinite(config.editDiffCollapsedLines)
+		? config.editDiffCollapsedLines
 		: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines;
 	return Math.max(0, fallback);
 }

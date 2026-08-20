@@ -896,6 +896,10 @@ test("lazy-proxy tui: fullscreen skill hint click expands like other cards", () 
 		const plain = heading.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 		const hintCol = plain.indexOf("to show more") + 1;
 		assert.ok(hintCol > 0, `expected show-more hint, got: ${plain}`);
+		tui.handleViewportInput(`\x1b[<32;${hintCol};1M`);
+		assert.equal((skill as any).hintHovered, true, "skill hint hover is enabled");
+		tui.handleViewportInput(`\x1b[<32;1;1M`);
+		assert.equal((skill as any).hintHovered, false, "moving outside hint clears hover");
 		tui.handleViewportInput(`\x1b[<0;${hintCol};1M`);
 		assert.equal((skill as any).expanded, true, "skill hint click expands");
 		renderer.currentLayout = fullscreenLayout(skill, null);

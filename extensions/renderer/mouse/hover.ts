@@ -54,6 +54,16 @@ export function setHoveredThinking(block: ThinkingPreviewBlock | null): boolean 
 	return true;
 }
 
+let hoveredMessageDisplay: any = null;
+
+export function setHoveredMessageDisplay(component: any): boolean {
+	if (component === hoveredMessageDisplay) return false;
+	hoveredMessageDisplay?.setHintHovered?.(false);
+	hoveredMessageDisplay = component;
+	component?.setHintHovered?.(true);
+	return true;
+}
+
 let hoveredToolIoView: ExpandedToolIoView | null = null;
 let hoveredToolIoSection: ToolIoSection | null = null;
 
@@ -110,6 +120,7 @@ export type FullscreenHoverTarget =
 	| { kind: "button" }
 	| { kind: "group"; component: ToolGroupComponent }
 	| { kind: "thinking"; component: ThinkingPreviewBlock }
+	| { kind: "message"; component: any }
 	| { kind: "assistant"; component: any }
 	| {
 			kind: "tool";
@@ -133,6 +144,8 @@ export function applyFullscreenHover(tui: any, target: FullscreenHoverTarget | n
 	if (setHoveredToolGroup(nextGroup)) changed = true;
 	const nextThinking = target?.kind === "thinking" ? target.component : null;
 	if (setHoveredThinking(nextThinking)) changed = true;
+	const nextMessage = target?.kind === "message" ? target.component : null;
+	if (setHoveredMessageDisplay(nextMessage)) changed = true;
 	const nextAssistant = target?.kind === "assistant" ? target.component : null;
 	if (setHoveredCompactAssistant(nextAssistant)) changed = true;
 	const nextView = target?.kind === "tool" ? target.view : null;

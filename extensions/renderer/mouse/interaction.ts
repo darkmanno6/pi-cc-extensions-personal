@@ -59,6 +59,7 @@ import {
 	setHoveredToolCallId,
 	setHoveredToolGroup,
 	setHoveredThinking,
+	setHoveredMessageDisplay,
 	setHoveredToolIo,
 	type FullscreenHoverTarget,
 } from "./hover.ts";
@@ -174,6 +175,7 @@ function collapseExpandedCard(tui: any, card: any): boolean {
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredThinking(null);
+	setHoveredMessageDisplay(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	card.invalidate?.();
@@ -345,6 +347,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredThinking(null);
+	setHoveredMessageDisplay(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	card.invalidate?.();
@@ -416,8 +419,7 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 				// compact 摘要行：折叠时仅提示文字高亮，展开卡整体高亮。
 				if (component.expanded || overHint) target = { kind: "assistant", component };
 			} else if (isMessageDisplayComponent(component)) {
-				// skill/compaction/branch：折叠只点 hint；展开后双击收起。
-				if (component.expanded || overHint) target = { kind: "assistant", component };
+				if (overHint) target = { kind: "message", component };
 			}
 		}
 	}
@@ -814,6 +816,7 @@ export function teardownToolMouseInteraction(
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredThinking(null);
+	setHoveredMessageDisplay(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
 	clearExpandPanelDoubleClick();
@@ -841,6 +844,7 @@ export function teardownToolMouseInteraction(
 export function resetToolHoverState(): void {
 	setHoveredToolCallId(null);
 	setHoveredThinking(null);
+	setHoveredMessageDisplay(null);
 	setHoveredCompactAssistant(null);
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);

@@ -55,6 +55,15 @@ const BRANCH_KIND: DisplayKind = {
 	body: (component) => String(component.message?.summary ?? ""),
 };
 
+function ensureHintHover(component: any): void {
+	if (typeof component.setHintHovered === "function") return;
+	component.setHintHovered = function (this: any, hovered: boolean) {
+		if (this.hintHovered === hovered) return;
+		this.hintHovered = hovered;
+		this.invalidate?.();
+	};
+}
+
 function renderCcstyle(component: any, kind: DisplayKind): void {
 	const theme = displayTheme;
 	if (!theme) return; // 主题未就绪时保留原生渲染
@@ -64,12 +73,20 @@ function renderCcstyle(component: any, kind: DisplayKind): void {
 		component.paddingY = 0; // 工具组件 paddingY=0；原生 Box 默认 1，会上下各留一个空行
 	}
 	component.clear();
+	ensureHintHover(component);
 	const icon = `${BRIGHT_GREEN}✓${ANSI_FG_RESET}`; // 已完成消息，等同工具成功态
 	const title = theme.fg("toolTitle", kind.title(component));
 	if (!component.expanded) {
-		const hint = theme.fg("dim", ` • ${showMoreHintText()}`);
+		const hovered = component.hintHovered === true;
+		const hint = `${theme.fg("dim", " • ")}${theme.fg(hovered ? "text" : "dim", showMoreHintText())}`;
 		component.addChild(new Text(`${icon} ${title}${hint}`, 0, 0));
 		return;
+	}
+	// 展开卡与 tool 一致：userMessageBg + 上下左右 1 格
+	component.paddingX = 1;
+	component.paddingY = 1;
+	if (typeof theme.bg === "function" && typeof component.setBgFn === "function") {
+		component.setBgFn((text: string) => theme.bg("userMessageBg", text));
 	}
 	component.addChild(new Text(`${icon} ${title}`, 0, 0));
 	component.addChild(new Spacer(1));

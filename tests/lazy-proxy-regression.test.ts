@@ -879,7 +879,11 @@ test("lazy-proxy tui: fullscreen skill hint click expands like other cards", () 
 	const dispose = installMessageDisplayRendering();
 	setMessageDisplayTheme({ fg: (_color: string, text: string) => text } as any);
 	const skill = new SkillInvocationMessageComponent(
-		{ name: "ponytail", content: "**lazy** content", userMessage: null } as unknown as ParsedSkillBlock,
+		{
+			name: "ponytail",
+			content: "**lazy** content",
+			userMessage: null,
+		} as unknown as ParsedSkillBlock,
 		getMarkdownTheme(),
 	);
 	const { terminal } = createTerminalFixture();

@@ -387,7 +387,10 @@ function layoutExpandedToolCard(
 	return { lines, hits };
 }
 
-function compactRoundCard(cardItems: Array<{ child?: any; tool?: any }>, toolRender: (tool: any, width: number) => string[]): any {
+function compactRoundCard(
+	cardItems: Array<{ child?: any; tool?: any }>,
+	toolRender: (tool: any, width: number) => string[],
+): any {
 	const children: any[] = [];
 	for (const item of cardItems) {
 		if (item.child) children.push(item.child);

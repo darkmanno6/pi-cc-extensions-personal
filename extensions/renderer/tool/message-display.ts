@@ -134,7 +134,7 @@ export function installMessageDisplayRendering(): () => void {
 }
 
 /** 三个消息组件共享的结构特征；CustomMessageComponent 用 rebuild 无 updateDisplay，不命中。 */
-function isMessageDisplayComponent(value: any): boolean {
+export function isMessageDisplayComponent(value: any): boolean {
 	return Boolean(
 		value &&
 			typeof value === "object" &&

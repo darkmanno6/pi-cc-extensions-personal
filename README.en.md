@@ -39,7 +39,7 @@ Run `/reload` after installation.
 | --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code Output          | Tool summaries, expand/collapse, rich edit/write diffs, and`on` / `compact` / `off` modes | `/ccstyle`                                      |
 | Markdown enhancements      | Mermaid art, admonitions, URL linking, and more                                           | Automatic                                        |
-| Fullscreen mode             | Tool card/group click-to-toggle, previews, hover highlight, and a back-to-bottom button   | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Fullscreen mode             | Tool card/group click to expand, double-click to collapse, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Diff / Thinking / Feature` tabs: startup header toggle and wheel step            | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, tools, skills, and messages           | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
@@ -68,6 +68,8 @@ Run `/reload` after installation.
 }
 ```
 
+> **Fullscreen clicks**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. Click a truncated Input/Output header to open the full preview. Double-click an expanded panel to collapse it. Single clicks on an expanded card still select text and open links.
+>
 > **Tip**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
 
 ## Local development

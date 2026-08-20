@@ -668,6 +668,13 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		assert.notEqual(expandedRich, collapsedRich, "expanded bakes a separate rich diff");
 		edit.render(120);
 		assert.equal(edit.resultRendererComponent, expandedRich, "expanded rich diff is reused");
+		const expandedRaw = edit.render(120);
+		assert.equal(expandedRaw[0], "", "expanded edit keeps the gap from previous tool");
+		const titlePlain =
+			expandedRaw
+				.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+				.find((line: string) => line.includes("edit a.ts")) ?? "";
+		assert.match(titlePlain, /^ ✓ edit a\.ts/, "expanded title uses Box pad only");
 		const expanded = renderText(edit).join("\n");
 		assert.match(expanded, /edit a\.ts \(\+1 -1\)/);
 		assert.match(expanded, /old/);

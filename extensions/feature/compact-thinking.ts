@@ -280,7 +280,7 @@ function hiddenPreviewHint(
 
 const expandedThinking = new Set<number>();
 
-/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、再点整块收起，对齐工具卡。 */
+/** 折叠预览 + 展开全文。fullscreen 点击 hint 展开、双击整块收起，对齐工具卡。 */
 export class ThinkingPreviewBlock implements Component {
 	private heading: string;
 	private text: string;

@@ -82,6 +82,8 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		tui.doRender();
 		const bottomPaddingRow = tui.previousLines.length - 1;
 		assert.equal(tui.previousLines[bottomPaddingRow].trim(), "");
+		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`), undefined);
+		assert.equal(group.expanded, true, "single click on expanded group does not collapse");
 		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, false);
 	} finally {
@@ -754,11 +756,13 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 			const row = tui.previousLines.indexOf(hintLine) + 1;
 			const col = hintLine.indexOf("/ click") + 1;
 
-			// Baseline in on mode: click expands (frame rebuilds), click collapses,
+			// Baseline in on mode: click expands (frame rebuilds), double-click collapses,
 			// hover repaints.
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, "tool-1");
 			tui.doRender();
+			tui.handleInput(`\x1b[<0;${col};${row}M`);
+			assert.equal(expandedToolId, "tool-1", "single click on expanded card does not collapse");
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, null);
 			tui.doRender();

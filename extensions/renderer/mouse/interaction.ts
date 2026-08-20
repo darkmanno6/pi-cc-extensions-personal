@@ -3,6 +3,7 @@ import { ThinkingPreviewBlock } from "../../feature/compact-thinking.ts";
 import { patchRegistry, TOOL_MOUSE_OWNER_KEY } from "../../utils/patch-keys.ts";
 import { ToolGroupComponent } from "../tool/grouping.ts";
 import { isCompactAssistantComponent, setHoveredCompactAssistant } from "../compact-mode.ts";
+import { isMessageDisplayComponent } from "../tool/message-display.ts";
 import { config } from "../../config/config.ts";
 import { isLazyProxyTui } from "../../utils/fullscreen-detect.ts";
 import { setToolTuiFullscreen } from "../tool/show-more-hint.ts";
@@ -153,6 +154,34 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 		tui.requestRender?.();
 }
 
+const EXPAND_PANEL_DOUBLE_CLICK_MS = 400;
+let lastExpandPanelClick: { card: any; at: number } | null = null;
+
+function isExpandPanelDoubleClick(card: any): boolean {
+	const now = Date.now();
+	const prev = lastExpandPanelClick;
+	lastExpandPanelClick = { card, at: now };
+	return Boolean(prev && prev.card === card && now - prev.at <= EXPAND_PANEL_DOUBLE_CLICK_MS);
+}
+
+function clearExpandPanelDoubleClick(): void {
+	lastExpandPanelClick = null;
+}
+
+function collapseExpandedCard(tui: any, card: any): boolean {
+	if (!isExpandPanelDoubleClick(card)) return false;
+	card.setExpanded(false);
+	setHoveredToolCallId(null);
+	setHoveredToolGroup(null);
+	setHoveredThinking(null);
+	setHoveredToolIo(null, null);
+	setHoveredCompactAssistant(null);
+	card.invalidate?.();
+	tui.requestRender?.();
+	clearExpandPanelDoubleClick();
+	return true;
+}
+
 function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	const region = interactionRegionAt(packet);
 	if (!region) return false;
@@ -160,16 +189,9 @@ function toggleToolAtMouseClick(tui: any, packet: SgrMousePacket): boolean {
 	if (region.kind === "show-more") return tryOpenToolIoShowMore(region);
 	const component = region.component;
 	if (!component) return false;
-	if (region.kind === "expanded-card") {
-		component.setExpanded(false);
-		setHoveredToolCallId(null);
-		setHoveredToolGroup(null);
-		setHoveredToolIo(null, null);
-		component.invalidate?.();
-		tui.requestRender?.();
-		return true;
-	}
+	if (region.kind === "expanded-card") return collapseExpandedCard(tui, component);
 	component.setExpanded(true);
+	clearExpandPanelDoubleClick();
 	setHoveredToolCallId(null);
 	setHoveredToolGroup(null);
 	setHoveredToolIo(null, null);
@@ -242,10 +264,10 @@ const FULLSCREEN_VIEWPORT_PATCH = Symbol("ccstyle.fullscreen-viewport-patch");
 const FULLSCREEN_WHEEL_SCROLL_ORIGINAL = Symbol("ccstyle.fullscreen-wheel-scroll-original");
 
 /**
- * 官方 fullscreen 工具卡点击：collapsed hint 点击展开
- * （有且仅保持一个展开：展开前收起其他工具卡），expanded 整卡二次点击收起，
- * 截断头 show-more 打开全量预览；回到底部按钮 scrollToBottom。
- * 滚动条列、含 OSC8 链接行、非工具区域放行官方。
+ * 官方 fullscreen 工具卡点击：collapsed hint 单击展开
+ * （有且仅保持一个展开：展开前收起其他工具卡），expanded 整卡双击收起，
+ * 截断头 show-more 单击打开全量预览；回到底部按钮 scrollToBottom。
+ * 滚动条列、含 OSC8 链接行、非工具区域、展开卡单击放行官方。
  */
 function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	const layout = tui.currentLayout;
@@ -276,7 +298,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 	const isGroup = component instanceof ToolGroupComponent;
 	const isAssistant = isCompactAssistantComponent(component);
 	const isThinking = component instanceof ThinkingPreviewBlock;
-	if (!isTool && !isGroup && !isAssistant && !isThinking) return false;
+	const isMessage = isMessageDisplayComponent(component);
+	if (!isTool && !isGroup && !isAssistant && !isThinking && !isMessage) return false;
 	if (!component.expanded) {
 		// collapsed 仅按钮文本可展开，不能把同一行正文/留白变成点击区。
 		const hint = collapsedHintHitbox(line);
@@ -286,11 +309,14 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 		collectFullscreenToolCards(hit.box.component, others);
 		for (const other of others) {
 			if (other !== component && other.expanded) {
+				// 展开 round 内 thinking 时不要把外层 compact 卡收起。
+				if (isThinking && isCompactAssistantComponent(other)) continue;
 				other.setExpanded(false);
 				other.invalidate?.();
 			}
 		}
 		component.setExpanded(true);
+		clearExpandPanelDoubleClick();
 	} else {
 		// 普通工具截断头 show-more：打开全量预览（不收起）。
 		const view = isTool ? component.resultRendererComponent : null;
@@ -312,8 +338,8 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
 				}
 			}
 		}
-		// 整卡二次点击：内部工具仍归所属 group，保持整体展开/收起语义。
-		card.setExpanded(false);
+		// 双击收起：内部工具仍归所属 group。单击放行官方（选择/链接）。
+		return collapseExpandedCard(tui, card);
 	}
 	// 点击后清 hover 高亮。
 	setHoveredToolCallId(null);
@@ -388,6 +414,9 @@ function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
 				}
 			} else if (isCompactAssistantComponent(component)) {
 				// compact 摘要行：折叠时仅提示文字高亮，展开卡整体高亮。
+				if (component.expanded || overHint) target = { kind: "assistant", component };
+			} else if (isMessageDisplayComponent(component)) {
+				// skill/compaction/branch：折叠只点 hint；展开后双击收起。
 				if (component.expanded || overHint) target = { kind: "assistant", component };
 			}
 		}
@@ -787,6 +816,7 @@ export function teardownToolMouseInteraction(
 	setHoveredThinking(null);
 	setHoveredToolIo(null, null);
 	setHoveredCompactAssistant(null);
+	clearExpandPanelDoubleClick();
 	try {
 		if (isLazyProxyTui(getToolMouseTui())) releaseFullscreenToolMouseMotion(getToolMouseTui());
 		else getToolMouseTui()?.terminal?.write?.(TOOL_MOUSE_DISABLE);

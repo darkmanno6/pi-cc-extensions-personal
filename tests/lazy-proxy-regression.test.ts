@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	getMarkdownTheme,
+	initTheme,
+	SkillInvocationMessageComponent,
+	type ParsedSkillBlock,
+} from "@earendil-works/pi-coding-agent";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
@@ -13,6 +19,7 @@ import { sharedToolHoverState, isToolCallHovered } from "../extensions/renderer/
 import { installCompactMode } from "../extensions/renderer/compact-mode.ts";
 import {
 	getMessageDisplayTheme,
+	installMessageDisplayRendering,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
 import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
@@ -413,11 +420,14 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(renderer.officialInputs.length, 0, "hint click consumed before official chain");
 	assert.deepEqual(ui.widget.render(), []);
 
-	// 二次点击（正文行）：整卡折叠。
+	// 展开卡单击不收起；双击折叠。
+	tui.handleViewportInput(`\x1b[<0;20;2M`);
+	assert.equal(tool.expanded, true, "single click on expanded card does not collapse");
 	tui.handleViewportInput(`\x1b[<0;20;2M`);
 	assert.equal(tool.expanded, false);
 
 	// hover：先经过 dock，再到 collapsed 工具行；dock 空缓存不得污染同一布局的工具缓存。
+	renderer.officialInputs.length = 0;
 	tui.handleViewportInput(`\x1b[<32;20;22M`);
 	const renderCallsBefore = renderer.renderCalls;
 	tui.handleViewportInput(`\x1b[<32;20;2M`);
@@ -614,12 +624,96 @@ test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", () 
 		assert.equal(assistant.expanded, true);
 		renderer.currentLayout = fullscreenLayout(assistant, null);
 		tui.handleViewportInput(`\x1b[<0;2;1M`);
-		assert.equal(assistant.expanded, false, "expanded assistant card click collapses it");
+		assert.equal(assistant.expanded, true, "single click on expanded assistant does not collapse");
+		tui.handleViewportInput(`\x1b[<0;2;1M`);
+		assert.equal(assistant.expanded, false, "double-click collapses the assistant card");
 	} finally {
 		installToolMouseInteraction({});
 		compact.shutdown();
 		config.mode = previousMode;
 		setMessageDisplayTheme(previousTheme);
+	}
+});
+
+test("lazy-proxy tui: fullscreen compact expanded round thinking hint expands in place", () => {
+	const previousMode = config.mode;
+	config.mode = "compact";
+	const dirHandlers = new Map<string, Function[]>();
+	const pi = {
+		on(name: string, handler: Function) {
+			const list = dirHandlers.get(name) ?? [];
+			list.push(handler);
+			dirHandlers.set(name, list);
+		},
+		appendEntry() {},
+	} as any;
+	const emit = (name: string, event: any = {}, ctx: any = {}) => {
+		for (const handler of dirHandlers.get(name) ?? []) handler(event, ctx);
+	};
+	const thinkingCtx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: { theme: {}, setWidget() {}, requestRender() {} },
+	};
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 0,
+		animationIntervalMs: 30,
+	});
+	emit("session_start", {}, thinkingCtx);
+	const compact = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
+	const message = {
+		role: "assistant",
+		timestamp: 1,
+		content: [
+			{ type: "thinking", thinking: "plan the click path" },
+			{ type: "toolCall", id: "b1", name: "bash", arguments: { command: "echo" } },
+		],
+	};
+	const assistant = new AssistantMessageComponent(message as any, true) as any;
+	assistant.updateContent(message);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(assistant, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		ui.widget.render();
+		assistant.setExpanded(true);
+		renderer.currentLayout = fullscreenLayout(assistant, null);
+		const rendered = assistant.render(80);
+		const hintRow = rendered.findIndex((line: string) => line.includes("to show more"));
+		const plain = (rendered[hintRow] ?? "").replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const hintCol = plain.indexOf("to show more") + 1;
+		assert.ok(hintRow >= 0 && hintCol > 0, `expected thinking hint, got: ${plain}`);
+
+		const findThinking = (node: any): ThinkingPreviewBlock | undefined => {
+			if (node instanceof ThinkingPreviewBlock) return node;
+			for (const child of node?.children ?? []) {
+				const hit = findThinking(child);
+				if (hit) return hit;
+			}
+		};
+		const block = findThinking(assistant);
+		assert.ok(block, "expanded round keeps the thinking block in the tree");
+
+		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
+		assert.equal(block!.expanded, true, "thinking hint click expands the preview");
+		assert.equal(assistant.expanded, true, "round stays open");
+		renderer.currentLayout = fullscreenLayout(assistant, null);
+		const expandedRow = assistant
+			.render(80)
+			.findIndex((line: string) => line.includes("plan the click path"));
+		assert.ok(expandedRow >= 0, "expanded thinking body is visible");
+		tui.handleViewportInput(`\x1b[<0;4;${expandedRow + 1}M`);
+		tui.handleViewportInput(`\x1b[<0;4;${expandedRow + 1}M`);
+		assert.equal(block!.expanded, false, "double-click collapses nested thinking");
+		assert.equal(assistant.expanded, true, "round stays open after thinking collapse");
+	} finally {
+		installToolMouseInteraction({});
+		compact.shutdown();
+		emit("session_shutdown", {}, thinkingCtx);
+		config.mode = previousMode;
 	}
 });
 
@@ -711,7 +805,9 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", () => 
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
 	assert.equal((group as any).expanded, true, "group click expands all children");
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
-	assert.equal((group as any).expanded, false, "second group click collapses all children");
+	assert.equal((group as any).expanded, true, "single click on expanded group does not collapse");
+	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
+	assert.equal((group as any).expanded, false, "double-click collapses all children");
 	installToolMouseInteraction({});
 });
 
@@ -768,10 +864,45 @@ test("lazy-proxy tui: fullscreen thinking preview hint toggles and hovers", () =
 		assert.equal(block.expanded, true, "thinking hint click expands the preview");
 		renderer.currentLayout = fullscreenLayout(block, null);
 		tui.handleViewportInput(`\x1b[<0;2;1M`);
-		assert.equal(block.expanded, false, "expanded thinking click collapses it");
+		assert.equal(block.expanded, true, "single click on expanded thinking does not collapse");
+		tui.handleViewportInput(`\x1b[<0;2;1M`);
+		assert.equal(block.expanded, false, "double-click collapses thinking");
 	} finally {
 		installToolMouseInteraction({});
 		emit("session_shutdown", {}, thinkingCtx);
+	}
+});
+
+test("lazy-proxy tui: fullscreen skill hint click expands like other cards", () => {
+	const previousMode = config.mode;
+	config.mode = "on";
+	const dispose = installMessageDisplayRendering();
+	setMessageDisplayTheme({ fg: (_color: string, text: string) => text } as any);
+	const skill = new SkillInvocationMessageComponent(
+		{ name: "ponytail", content: "**lazy** content", userMessage: null } as unknown as ParsedSkillBlock,
+		getMarkdownTheme(),
+	);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(skill, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const heading = skill.render(80)[0] ?? "";
+		const plain = heading.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+		const hintCol = plain.indexOf("to show more") + 1;
+		assert.ok(hintCol > 0, `expected show-more hint, got: ${plain}`);
+		tui.handleViewportInput(`\x1b[<0;${hintCol};1M`);
+		assert.equal((skill as any).expanded, true, "skill hint click expands");
+		renderer.currentLayout = fullscreenLayout(skill, null);
+		tui.handleViewportInput(`\x1b[<0;2;1M`);
+		assert.equal((skill as any).expanded, true, "single click on expanded skill does not collapse");
+		tui.handleViewportInput(`\x1b[<0;2;1M`);
+		assert.equal((skill as any).expanded, false, "double-click collapses skill");
+	} finally {
+		installToolMouseInteraction({});
+		dispose();
+		config.mode = previousMode;
 	}
 });
 
@@ -833,7 +964,9 @@ test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights
 		const bodyRow = group.render(80).findIndex((line) => line.includes("line 0"));
 		assert.ok(bodyRow > row);
 		tui.handleViewportInput(`\x1b[<0;10;${bodyRow + 1}M`);
-		assert.equal(group.expanded, false, "ordinary child-row click collapses the whole group");
+		assert.equal(group.expanded, true, "single click on expanded group body does not collapse");
+		tui.handleViewportInput(`\x1b[<0;10;${bodyRow + 1}M`);
+		assert.equal(group.expanded, false, "double-click collapses the whole group");
 	} finally {
 		installToolMouseInteraction({});
 	}

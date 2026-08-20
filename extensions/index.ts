@@ -5,6 +5,7 @@ import { config } from "./config/config.ts";
 import piAliases from "./feature/shell/aliases.ts";
 import piStartupHeader from "./feature/shell/startup-header.ts";
 import workingMessage from "./feature/shell/working-message.ts";
+import modelStatus from "./feature/shell/model-status.ts";
 
 // feature
 import agentAutocomplete from "./feature/reference/subagent.ts";
@@ -22,6 +23,7 @@ export default function (pi: ExtensionAPI): void {
 	if (config.enableAliases) piAliases(pi);
 	piStartupHeader(pi);
 	if (config.enableWorkingMessage) workingMessage(pi);
+	modelStatus(pi);
 
 	// render stack：thinking controller 直接交给 style 作 query
 	markdownEnhance(pi);

@@ -526,6 +526,12 @@ function compactEditWriteLine(
 	return ["", truncateToWidth(line, width, "")];
 }
 
+/** expanded 写进 rich diff 闭包，折叠/展开分槽缓存，避免每帧 parseDiff。 */
+const compactRichDiffCache = new WeakMap<
+	object,
+	{ result: unknown; collapsed?: unknown; expanded?: unknown }
+>();
+
 /**
  * compact edit/write：标题行 + mode=on 同一套 rich diff。
  * 折叠/展开都走 `renderRichToolResult`，limits 不另开一套。
@@ -540,23 +546,33 @@ function compactEditWriteLines(
 	const expanded = component.expanded === true;
 	const isError = result?.isError === true;
 	const isPending = !result || component.isPartial === true;
-	const candidate =
-		!isPending && writeMetadata
-			? renderRichToolResult(
-					String(component.toolName ?? ""),
-					result,
-					{
-						expanded,
-						isPartial: component.isPartial === true,
-						isError,
-						isHovered: () => isToolCallHovered(component.toolCallId),
-					},
-					theme,
-					component,
-					writeMetadata,
-					getToolDisplayConfig,
-				)
-			: undefined;
+	let candidate: unknown;
+	if (!isPending && writeMetadata) {
+		let entry = compactRichDiffCache.get(component);
+		if (!entry || entry.result !== result) {
+			entry = { result };
+			compactRichDiffCache.set(component, entry);
+		}
+		const slot = expanded ? "expanded" : "collapsed";
+		candidate = entry[slot];
+		if (!isRichDiffComponent(candidate)) {
+			candidate = renderRichToolResult(
+				String(component.toolName ?? ""),
+				result,
+				{
+					expanded,
+					isPartial: component.isPartial === true,
+					isError,
+					isHovered: () => isToolCallHovered(component.toolCallId),
+				},
+				theme,
+				component,
+				writeMetadata,
+				getToolDisplayConfig,
+			);
+			if (isRichDiffComponent(candidate)) entry[slot] = candidate;
+		}
+	}
 	const hasRich = isRichDiffComponent(candidate);
 	if (hasRich) {
 		component.resultRendererComponent = candidate;

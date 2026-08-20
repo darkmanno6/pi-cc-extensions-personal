@@ -630,6 +630,13 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 			isError: false,
 		});
 		assert.equal(edit.render(120)[0], "", "compact file rows keep one leading blank row");
+		const collapsedRich = edit.resultRendererComponent;
+		edit.render(120);
+		assert.equal(
+			edit.resultRendererComponent,
+			collapsedRich,
+			"collapsed rich diff is reused across frames",
+		);
 		const collapsed = renderText(edit).join("\n");
 		assert.match(collapsed, /edit a\.ts \(\+1 -1\)/);
 		assert.match(collapsed, /old/, "collapsed compact edit inherits the on-mode preview");
@@ -656,6 +663,11 @@ test("compact edit/write keeps the stats header and inherits on-mode diff limits
 		});
 		setMessageDisplayTheme(cardTheme);
 		edit.expanded = true;
+		edit.render(120);
+		const expandedRich = edit.resultRendererComponent;
+		assert.notEqual(expandedRich, collapsedRich, "expanded bakes a separate rich diff");
+		edit.render(120);
+		assert.equal(edit.resultRendererComponent, expandedRich, "expanded rich diff is reused");
 		const expanded = renderText(edit).join("\n");
 		assert.match(expanded, /edit a\.ts \(\+1 -1\)/);
 		assert.match(expanded, /old/);

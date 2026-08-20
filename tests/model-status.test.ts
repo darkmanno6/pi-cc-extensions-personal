@@ -20,7 +20,11 @@ function install() {
 
 test("model status uses name over id and does not call setFooter", async () => {
 	const { events, statuses, ui } = install();
-	const ctx = {
+	const ctx: {
+		hasUI: boolean;
+		ui: typeof ui;
+		model?: { provider?: string; name?: string; id?: string };
+	} = {
 		hasUI: true,
 		ui,
 		model: {

@@ -460,7 +460,12 @@ export async function showCcstylePanel(
 					break;
 				case "editDiffCollapsedLines":
 					updateConfig({
-						editDiffCollapsedLines: pickPositiveInt(value, DEFAULT_CONFIG.editDiffCollapsedLines, 1, 500),
+						editDiffCollapsedLines: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.editDiffCollapsedLines,
+							1,
+							500,
+						),
 					});
 					diffCollapsedSetting.currentValue = String(config.editDiffCollapsedLines);
 					break;

@@ -200,10 +200,56 @@ function cachePreview(key: string, entry: PreviewCacheEntry): void {
 
 export function clearThinkingPreviewCache(): void {
 	previewCache.clear();
+	expandedWrapCache.clear();
+}
+
+type ExpandedWrapEntry = { text: string; lines: string[] };
+const expandedWrapCache = new Map<string, ExpandedWrapEntry>();
+export const THINKING_EXPANDED_WRAP_CACHE_MAX = 64;
+
+function expandedWrapKey(messageTimestamp: number, runStartIndex: number, width: number): string {
+	return `${messageTimestamp}:${runStartIndex}:${width}`;
+}
+
+function wrapExpandedThinking(
+	messageTimestamp: number,
+	runStartIndex: number,
+	text: string,
+	width: number,
+): string[] {
+	const key = expandedWrapKey(messageTimestamp, runStartIndex, width);
+	const hit = expandedWrapCache.get(key);
+	if (hit && hit.text === text) {
+		expandedWrapCache.delete(key);
+		expandedWrapCache.set(key, hit);
+		return hit.lines;
+	}
+	const lines = wrapTextWithAnsi(text.replace(/\t/g, "   "), Math.max(1, width));
+	expandedWrapCache.delete(key);
+	while (expandedWrapCache.size >= THINKING_EXPANDED_WRAP_CACHE_MAX) {
+		const oldest = expandedWrapCache.keys().next().value;
+		if (oldest === undefined) break;
+		expandedWrapCache.delete(oldest);
+	}
+	expandedWrapCache.set(key, { text, lines });
+	return lines;
+}
+
+function evictExpandedWraps(messageTimestamp: number, runStartIndex: number): void {
+	for (const key of expandedWrapCache.keys()) {
+		const [ts, run] = key.split(":");
+		if (Number(ts) === messageTimestamp && Number(run) === runStartIndex) {
+			expandedWrapCache.delete(key);
+		}
+	}
 }
 
 export function thinkingPreviewCacheSize(): number {
 	return previewCache.size;
+}
+
+export function thinkingExpandedWrapCacheSize(): number {
+	return expandedWrapCache.size;
 }
 
 /** 按可见宽度估算折行数，不走 Text 全量 wrap。无换行长段也能计到隐藏行。 */
@@ -285,12 +331,12 @@ export class ThinkingPreviewBlock implements Component {
 	private heading: string;
 	private text: string;
 	private padding: number;
-	private messageTimestamp: number;
+	readonly messageTimestamp: number;
+	readonly runStartIndex: number;
 	private style: (text: string) => string;
 	private theme: Theme | undefined;
 	private _expanded: boolean;
 	private hintHovered = false;
-	private expandedBody: { width: number; lines: string[] } | undefined;
 	private collapsedMemo:
 		| {
 				width: number;
@@ -308,11 +354,13 @@ export class ThinkingPreviewBlock implements Component {
 		messageTimestamp: number,
 		style: (text: string) => string,
 		theme?: Theme,
+		runStartIndex = 0,
 	) {
 		this.heading = heading;
 		this.text = text;
 		this.padding = padding;
 		this.messageTimestamp = messageTimestamp;
+		this.runStartIndex = runStartIndex;
 		this.style = style;
 		this.theme = theme;
 		this._expanded = expandedThinking.has(messageTimestamp);
@@ -334,7 +382,7 @@ export class ThinkingPreviewBlock implements Component {
 		if (expanded) expandedThinking.add(this.messageTimestamp);
 		else {
 			expandedThinking.delete(this.messageTimestamp);
-			this.expandedBody = undefined;
+			evictExpandedWraps(this.messageTimestamp, this.runStartIndex);
 		}
 	}
 
@@ -368,13 +416,10 @@ export class ThinkingPreviewBlock implements Component {
 			return { lines: [], hiddenLines: 0 };
 		}
 		if (this._expanded) {
-			if (this.expandedBody?.width !== width) {
-				this.expandedBody = {
-					width,
-					lines: wrapTextWithAnsi(this.text.replace(/\t/g, "   "), Math.max(1, width)),
-				};
-			}
-			return { lines: this.expandedBody.lines, hiddenLines: 0 };
+			return {
+				lines: wrapExpandedThinking(this.messageTimestamp, this.runStartIndex, this.text, width),
+				hiddenLines: 0,
+			};
 		}
 		const preview = layoutThinkingPreview(this.text, width, padding);
 		return { lines: preview.visible, hiddenLines: preview.hiddenLines };
@@ -430,7 +475,6 @@ export class ThinkingPreviewBlock implements Component {
 
 	invalidate() {
 		this.collapsedMemo = undefined;
-		this.expandedBody = undefined;
 	}
 }
 
@@ -715,6 +759,7 @@ function compactThinking(pi: ExtensionAPI) {
 					message.timestamp,
 					thinkingStyle,
 					activeTheme,
+					runStartIndex,
 				),
 			);
 

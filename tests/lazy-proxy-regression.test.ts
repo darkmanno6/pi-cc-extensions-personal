@@ -873,6 +873,133 @@ test("lazy-proxy tui: fullscreen thinking preview hint toggles and hovers", () =
 	}
 });
 
+test("lazy-proxy tui: double-click collapses thinking after preview rebuild", () => {
+	const dirHandlers = new Map<string, Function[]>();
+	const pi = {
+		on(name: string, handler: Function) {
+			const list = dirHandlers.get(name) ?? [];
+			list.push(handler);
+			dirHandlers.set(name, list);
+		},
+		appendEntry() {},
+	} as any;
+	const emit = (name: string, event: any = {}, ctx: any = {}) => {
+		for (const handler of dirHandlers.get(name) ?? []) handler(event, ctx);
+	};
+	const thinkingCtx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: { theme: {}, setWidget() {}, requestRender() {} },
+	};
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+	});
+	emit("session_start", {}, thinkingCtx);
+	const timestamp = 42;
+	const body = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
+	const theme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any;
+	const makeBlock = () =>
+		new ThinkingPreviewBlock("Thought for 1s", body, 1, timestamp, (text) => text, theme);
+	const first = makeBlock();
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(first, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		const hintCol = (first.render(80)[0] ?? "").indexOf("click to show more") + 1;
+		assert.ok(hintCol > 0, "expected click hint");
+		tui.handleViewportInput(`\x1b[<0;${hintCol};1M`);
+		assert.equal(first.expanded, true);
+		renderer.currentLayout = fullscreenLayout(first, null);
+		tui.handleViewportInput("\x1b[<0;2;1M");
+		const rebuilt = makeBlock();
+		assert.equal(rebuilt.expanded, true, "rebuild keeps expanded via timestamp");
+		renderer.currentLayout = fullscreenLayout(rebuilt, null);
+		tui.handleViewportInput("\x1b[<0;2;1M");
+		assert.equal(rebuilt.expanded, false, "double-click uses timestamp, not instance");
+	} finally {
+		installToolMouseInteraction({});
+		emit("session_shutdown", {}, thinkingCtx);
+	}
+});
+
+test("lazy-proxy tui: thinking double-click identity is per run", () => {
+	const dirHandlers = new Map<string, Function[]>();
+	const pi = {
+		on(name: string, handler: Function) {
+			const list = dirHandlers.get(name) ?? [];
+			list.push(handler);
+			dirHandlers.set(name, list);
+		},
+		appendEntry() {},
+	} as any;
+	const emit = (name: string, event: any = {}, ctx: any = {}) => {
+		for (const handler of dirHandlers.get(name) ?? []) handler(event, ctx);
+	};
+	const thinkingCtx = {
+		mode: "tui",
+		sessionManager: { getBranch: () => [], getEntries: () => [] },
+		ui: { theme: {}, setWidget() {}, requestRender() {} },
+	};
+	installCompactThinking(pi, {
+		useSummaryTitlesAsThinkingTitle: false,
+		previewLines: 3,
+		animationIntervalMs: 30,
+	});
+	emit("session_start", {}, thinkingCtx);
+	const timestamp = 99;
+	const body = Array.from({ length: 20 }, (_, i) => `line-${i}`).join("\n");
+	const theme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any;
+	const runA = new ThinkingPreviewBlock(
+		"Thought for 1s",
+		body,
+		1,
+		timestamp,
+		(text) => text,
+		theme,
+		0,
+	);
+	const runB = new ThinkingPreviewBlock(
+		"Thought for 2s",
+		body,
+		1,
+		timestamp,
+		(text) => text,
+		theme,
+		4,
+	);
+	runA.setExpanded(true);
+	runB.setExpanded(true);
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(runA, null, terminal);
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		installToolMouseInteraction(ui.ctx);
+		renderer.currentLayout = fullscreenLayout(runA, null);
+		tui.handleViewportInput("\x1b[<0;2;1M");
+		assert.equal(runA.expanded, true, "first click on run A does not collapse");
+		renderer.currentLayout = fullscreenLayout(runB, null);
+		tui.handleViewportInput("\x1b[<0;2;1M");
+		assert.equal(runB.expanded, true, "click on run B is not a double-click of run A");
+		tui.handleViewportInput("\x1b[<0;2;1M");
+		assert.equal(runB.expanded, false, "second click on run B collapses that run");
+		assert.equal(runA.expanded, true, "run A instance stays expanded");
+	} finally {
+		installToolMouseInteraction({});
+		emit("session_shutdown", {}, thinkingCtx);
+	}
+});
+
 test("lazy-proxy tui: fullscreen skill hint click expands like other cards", () => {
 	const previousMode = config.mode;
 	config.mode = "on";

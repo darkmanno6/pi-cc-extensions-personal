@@ -12,7 +12,9 @@ import {
 	installCompactThinking,
 	ThinkingPreviewBlock,
 	thinkingPreviewCacheSize,
+	thinkingExpandedWrapCacheSize,
 	THINKING_PREVIEW_CACHE_MAX,
+	THINKING_EXPANDED_WRAP_CACHE_MAX,
 } from "../extensions/feature/compact-thinking.ts";
 
 const config = {
@@ -62,6 +64,57 @@ test("collapsed thinking previews memoize complete output until invalidated", ()
 		controller.updateConfig(originalConfig);
 		clearThinkingPreviewCache();
 	}
+});
+
+test("expanded wrap cache keys by run and evicts on collapse", () => {
+	clearThinkingPreviewCache();
+	const theme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any;
+	const bodyA = Array.from({ length: 12 }, (_, i) => `alpha-${i}`).join(" ");
+	const bodyB = Array.from({ length: 12 }, (_, i) => `beta-${i}`).join(" ");
+	const a = new ThinkingPreviewBlock("Thought", bodyA, 0, 7, (text) => text, theme, 1);
+	const b = new ThinkingPreviewBlock("Thought", bodyB, 0, 7, (text) => text, theme, 10);
+	a.setExpanded(true);
+	b.setExpanded(true);
+	a.render(40);
+	b.render(40);
+	assert.equal(thinkingExpandedWrapCacheSize(), 2, "two runs keep separate wrap slots");
+	a.render(40);
+	b.render(40);
+	assert.equal(thinkingExpandedWrapCacheSize(), 2, "rerender does not thrash sibling slots");
+	a.setExpanded(false);
+	assert.equal(thinkingExpandedWrapCacheSize(), 1, "collapse drops only that run's wraps");
+	b.setExpanded(false);
+	assert.equal(thinkingExpandedWrapCacheSize(), 0);
+	clearThinkingPreviewCache();
+});
+
+test("expanded wrap cache evicts oldest beyond cap", () => {
+	clearThinkingPreviewCache();
+	const theme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_slot: string, text: string) => text,
+	} as any;
+	const blocks: ThinkingPreviewBlock[] = [];
+	for (let index = 0; index <= THINKING_EXPANDED_WRAP_CACHE_MAX; index++) {
+		const block = new ThinkingPreviewBlock(
+			"Thought",
+			`wrap-body-${index} `.repeat(8),
+			0,
+			index,
+			(text) => text,
+			theme,
+			0,
+		);
+		block.setExpanded(true);
+		block.render(40);
+		blocks.push(block);
+	}
+	assert.equal(thinkingExpandedWrapCacheSize(), THINKING_EXPANDED_WRAP_CACHE_MAX);
+	for (const block of blocks) block.setExpanded(false);
+	clearThinkingPreviewCache();
 });
 
 test("thinking preview cache evicts one entry instead of clearing", () => {

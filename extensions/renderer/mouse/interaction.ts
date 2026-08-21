@@ -156,13 +156,20 @@ function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
 }
 
 const EXPAND_PANEL_DOUBLE_CLICK_MS = 400;
-let lastExpandPanelClick: { card: any; at: number } | null = null;
+let lastExpandPanelClick: { id: unknown; at: number } | null = null;
+
+function expandPanelIdentity(card: any): unknown {
+	return card instanceof ThinkingPreviewBlock
+		? `${card.messageTimestamp}:${card.runStartIndex}`
+		: card;
+}
 
 function isExpandPanelDoubleClick(card: any): boolean {
 	const now = Date.now();
+	const id = expandPanelIdentity(card);
 	const prev = lastExpandPanelClick;
-	lastExpandPanelClick = { card, at: now };
-	return Boolean(prev && prev.card === card && now - prev.at <= EXPAND_PANEL_DOUBLE_CLICK_MS);
+	lastExpandPanelClick = { id, at: now };
+	return Boolean(prev && prev.id === id && now - prev.at <= EXPAND_PANEL_DOUBLE_CLICK_MS);
 }
 
 function clearExpandPanelDoubleClick(): void {

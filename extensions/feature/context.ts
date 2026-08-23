@@ -13,10 +13,15 @@ import { padLine } from "../utils/format.ts";
 export type ContextPart = {
 	label: string;
 	tokens: number;
-	color: "accent" | "success" | "warning" | "customMessageLabel" | "muted" | "dim";
+	color: "accent" | "success" | "warning" | "customMessageLabel" | "muted" | "dim" | "error";
 };
 
-type PreviewKey = "systemPrompt" | "tools" | "toolResults" | "contextFiles";
+type PreviewKey =
+	| "systemPrompt"
+	| "memoryFiles"
+	| "tools"
+	| "toolResults"
+	| "contextFiles";
 
 type ContextPreview = {
 	key: PreviewKey;
@@ -47,11 +52,16 @@ export function escCloseHitbox(bounds: DialogBounds): {
 	};
 }
 
-let activeTextPreviews = 0;
+let activeContextOverlays = 0;
 
-/** fullscreen 输入包装用于把鼠标事件继续传给当前文本预览 overlay。 */
+/** fullscreen 输入包装用于把鼠标事件继续传给当前 context 主弹框或文本预览 overlay。 */
 export function hasActiveTextPreview(): boolean {
-	return activeTextPreviews > 0;
+	return activeContextOverlays > 0;
+}
+
+/** 官方 fullscreen 打开 overlay 时会退回 1002；重新启用 1003 才能收到无按键 hover。 */
+function ensureFullscreenMouseMotion(tui: any): void {
+	if (tui.mode === "fullscreen") tui.terminal?.write?.("\x1b[?1003h\x1b[?1006h");
 }
 
 export async function showTextPreview(
@@ -60,10 +70,11 @@ export async function showTextPreview(
 	rawContent: string,
 ): Promise<void> {
 	const content = normalizePreviewText(rawContent);
-	activeTextPreviews++;
+	activeContextOverlays++;
 	try {
 		await ctx.ui.custom(
 			(tui, theme, _keybindings, done) => {
+				ensureFullscreenMouseMotion(tui);
 				let scrollOffset = 0;
 				let pageSize = 1;
 				let totalLines = 1;
@@ -249,7 +260,7 @@ export async function showTextPreview(
 			},
 		);
 	} finally {
-		activeTextPreviews--;
+		activeContextOverlays--;
 	}
 }
 
@@ -337,6 +348,13 @@ export function collectContextBreakdown(
 	let toolResultTokens = 0;
 	let contextTokens = 0;
 
+	const memoryPreview: string[] = [];
+	let memoryTokens = 0;
+	for (const file of options.contextFiles ?? []) {
+		memoryTokens += tokenEstimate(file.content);
+		memoryPreview.push(`## ${file.path}\n\n${previewValue(file.content)}`);
+	}
+
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
 		const definition = {
@@ -397,12 +415,14 @@ export function collectContextBreakdown(
 	return {
 		parts: [
 			{ label: "System prompt", tokens: tokenEstimate(systemPrompt), color: "accent" },
+			{ label: "Memory", tokens: memoryTokens, color: "error" },
 			{ label: "Tools", tokens: toolDefinitionTokens, color: "success" },
 			{ label: "Tool results", tokens: toolResultTokens, color: "customMessageLabel" },
 			{ label: "Context", tokens: contextTokens, color: "warning" },
 		] satisfies ContextPart[],
 		previews: {
 			systemPrompt: systemPrompt || "No system prompt.",
+			memoryFiles: memoryPreview.join("\n\n") || "No memory files in context.",
 			tools: toolDefinitionPreview.join("\n\n") || "No active tool definitions.",
 			toolResults: toolResultPreview.join("\n\n") || "No tool results in the current context.",
 			contextFiles: contextPreview.join("\n\n") || "No conversation context.",
@@ -419,9 +439,10 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 			const tools = pi.getAllTools();
 			const breakdown = collectContextBreakdown(ctx, tools);
 			const estimated = breakdown.parts.reduce((sum, part) => sum + part.tokens, 0);
-			const fixedTokens = breakdown.parts.slice(0, 2).reduce((sum, part) => sum + part.tokens, 0);
+			// System prompt、Memory、Tools 为固定项，capParts 时保持原值不压缩。
+			const fixedTokens = breakdown.parts.slice(0, 3).reduce((sum, part) => sum + part.tokens, 0);
 			const used = Math.max(resolveUsedTokens(usage, estimated, contextWindow), fixedTokens);
-			const parts = capParts(breakdown.parts, used, 2);
+			const parts = capParts(breakdown.parts, used, 3);
 			const attributed = parts.reduce((sum, part) => sum + part.tokens, 0);
 			const other = Math.max(0, used - attributed);
 			const free = Math.max(0, contextWindow - used);
@@ -443,6 +464,12 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 					label: "System prompt",
 					title: "System Prompt",
 					content: breakdown.previews.systemPrompt,
+				},
+				{
+					key: "memoryFiles",
+					label: "Memory",
+					title: "Memory Files",
+					content: breakdown.previews.memoryFiles,
 				},
 				{
 					key: "tools",
@@ -473,9 +500,14 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 			);
 			let selectedPreviewIndex = 0;
 
-			while (true) {
-				const action = await ctx.ui.custom(
+		while (true) {
+			// 主弹框也计入活动 overlay，fullscreen 下官方输入链才会把鼠标包放行给行点击。
+			activeContextOverlays++;
+			let action;
+			try {
+				action = await ctx.ui.custom(
 					(tui, theme, _keybindings, done) => {
+						ensureFullscreenMouseMotion(tui);
 						let previewHitboxes: Array<{
 							key: PreviewKey;
 							row: number;
@@ -483,6 +515,8 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 							endCol: number;
 						}> = [];
 						let escHitbox: { row: number; startCol: number; endCol: number } | undefined;
+						let escHovered = false;
+						let hoveredKey: PreviewKey | undefined;
 
 						return {
 							invalidate() {},
@@ -508,12 +542,29 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 								}
 
 								const mouse = parseSgrMousePacket(data);
-								if (
-									mouse?.final !== "M" ||
-									mouseBaseButton(mouse.code) !== 0 ||
-									(mouse.code & 32) !== 0
-								)
+								if (!mouse || mouse.final !== "M") return;
+								if ((mouse.code & 32) !== 0) {
+									// SGR 1003 的无按键 hover code 为 35，不能按左键事件过滤。
+									const overEsc = Boolean(
+										escHitbox &&
+											mouse.row === escHitbox.row &&
+											mouse.col >= escHitbox.startCol &&
+											mouse.col <= escHitbox.endCol,
+									);
+									const hovered = previewHitboxes.find(
+										(candidate) =>
+											mouse.row === candidate.row &&
+											mouse.col >= candidate.startCol &&
+											mouse.col <= candidate.endCol,
+									);
+									if (overEsc !== escHovered || hovered?.key !== hoveredKey) {
+										escHovered = overEsc;
+										hoveredKey = hovered?.key;
+										tui.requestRender();
+									}
 									return;
+								}
+								if (mouseBaseButton(mouse.code) !== 0) return;
 								if (
 									escHitbox &&
 									mouse.row === escHitbox.row &&
@@ -569,14 +620,16 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 									const label = part.label.padEnd(labelWidth);
 									const amount = `${formatTokens(part.tokens).padStart(7)}  ${pct.toFixed(1).padStart(5)}%`;
 									const selected = part.label === selectedLabel;
+									const hoverLabel = visiblePreviews.find((p) => p.key === hoveredKey)?.label;
 									const prefix = selected ? "› " : "  ";
 									const row = padLine(`${prefix}${swatch} ${label} ${amount}`, inner);
-									return selected ? theme.bg("selectedBg", row) : row;
+									if (selected) return theme.bg("selectedBg", row);
+									return part.label === hoverLabel ? theme.bg("customMessageBg", row) : row;
 								});
 								const border = (text: string) => theme.fg("border", text);
 								const lines = [
 									border(`╭${"─".repeat(inner)}╮`),
-									`${border("│")}${padLine(` ${title}  ${theme.fg("muted", subtitle)}`, inner - escWidth)}${theme.fg("muted", "[esc]")}${border("│")}`,
+									`${border("│")}${padLine(` ${title}  ${theme.fg("muted", subtitle)}`, inner - escWidth)}${theme.fg(escHovered ? "text" : "muted", "[esc]")}${border("│")}`,
 									`${border("├")}${border("─".repeat(inner))}${border("┤")}`,
 									`${border("│")}${padLine(` ${segments}`, inner)}${border("│")}`,
 									`${border("│")}${" ".repeat(inner)}${border("│")}`,
@@ -626,8 +679,11 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 						},
 					},
 				);
+			} finally {
+				activeContextOverlays--;
+			}
 
-				if (!action) break;
+			if (!action) break;
 				const preview = previewByKey.get(action as PreviewKey);
 				if (!preview) continue;
 

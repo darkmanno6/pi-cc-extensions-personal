@@ -51,24 +51,38 @@ Run `/reload` after installation.
 
 ```js
 {
-  "mode": "on",                            // on: Claude Code style; compact: one-line summaries; off: Pi native rendering
-  "excludeRenderers": [],                  // exact tool names that keep their native renderer; Agent always keeps its dedicated renderer
-  "diffViewMode": "auto",                  // diff layout: auto / split / unified
-  "diffIndicatorMode": "bars",             // diff change indicators: bars / classic / none
-  "diffSplitMinWidth": 120,                // min terminal width before auto layout uses side-by-side columns
-  "editDiffCollapsedLines": 24,            // Edit collapsed lines; beyond that shows the expand hint (Ctrl+O / click)
-  "writeDiffCollapsedLines": 0,            // write collapsed body lines; 0 = ↳ created • expand hint (stats stay on the title)
-  "diffWordWrap": true,                    // whether long diff lines wrap (otherwise truncated)
-  "expandedPreviewMaxLines": 40,           // max body lines for expanded output/diff
-  "useSummaryTitlesAsThinkingTitle": true, // use the latest provider summary as the active thinking title
-  "previewLines": 3,                       // thinking preview lines; 0 hides the preview body
-  "animationIntervalMs": 90,               // thinking title animation interval in ms
-  "showStartupHeader": true,               // custom startup header (logo + tips) toggle
-  "scrollStepLines": 3                     // fullscreen mouse wheel scroll lines
+  "mode": "on",                            // on / compact / off
+  "excludeRenderers": [],                  // tools keeping the native renderer; Agent always keeps its dedicated renderer
+
+  // diff
+  "diffViewMode": "auto",                  // layout: auto / split / unified
+  "diffIndicatorMode": "bars",             // change indicators: bars / classic / none
+  "diffSplitMinWidth": 120,                // min terminal width for side-by-side columns
+  "editDiffCollapsedLines": 24,            // Edit collapse lines; beyond that shows the expand hint
+  "writeDiffCollapsedLines": 0,            // write collapse lines; 0 = creation summary only
+  "diffWordWrap": true,                    // wrap long diff lines
+  "expandedPreviewMaxLines": 40,           // max lines for expanded bodies
+
+  // thinking
+  "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
+  "previewLines": 3,                       // preview lines; 0 hides
+  "animationIntervalMs": 90,               // title animation interval (ms)
+
+  // ui
+  "showStartupHeader": true,               // startup header (logo + tips) toggle
+  "scrollStepLines": 3,                    // fullscreen wheel scroll step
+
+  // features
+  "enableSessionReference": true,          // @ session references
+  "enableSubagentAutocomplete": true,      // @ subagent completion and delegation hints
+  "enableContextCommand": true,            // /context usage check
+  "enableAgentSummary": true,              // per-turn tool summary
+  "enableWorkingMessage": true,            // Working... bottom token/elapsed
+  "enableAliases": true                    // /clear, /exit aliases
 }
 ```
 
-> **Fullscreen clicks**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. Click a truncated Input/Output header to open the full preview. Double-click an expanded panel to collapse it. Single clicks on an expanded card still select text and open links.
+> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. Double-click an expanded panel to collapse it.
 >
 > **Tip**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
 

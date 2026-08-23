@@ -76,12 +76,16 @@ test("context breakdown separates tools, results, and conversation without infla
 		parts.map(({ label, color }) => [label, color]),
 		[
 			["System prompt", "accent"],
+			["Memory", "error"],
 			["Tools", "success"],
 			["Tool results", "customMessageLabel"],
 			["Context", "warning"],
 		],
 	);
 	assert.equal(parts.find((part) => part.label === "System prompt")?.tokens, 50);
+	assert.equal(parts.find((part) => part.label === "Memory")?.tokens, 1);
+	assert.match(breakdown.previews.memoryFiles, /## AGENTS\.md/);
+	assert.match(breakdown.previews.memoryFiles, /cccc/);
 	assert.equal(parts.find((part) => part.label === "Tool results")?.tokens, 2);
 	assert.equal(parts.find((part) => part.label === "Context")?.tokens, 8);
 	assert.equal(breakdown.previews.systemPrompt, "s".repeat(200));
@@ -98,9 +102,9 @@ test("context breakdown separates tools, results, and conversation without infla
 
 	const fitted = capParts(parts, parts.reduce((sum, part) => sum + part.tokens, 0) + 10);
 	assert.deepEqual(fitted, parts, "estimates are not inflated to fill provider usage");
-	const fixedTokens = parts.slice(0, 2).reduce((sum, part) => sum + part.tokens, 0);
-	const capped = capParts(parts, fixedTokens + 5, 2);
-	assert.deepEqual(capped.slice(0, 2), parts.slice(0, 2), "system prompt and tools stay stable");
+	const fixedTokens = parts.slice(0, 3).reduce((sum, part) => sum + part.tokens, 0);
+	const capped = capParts(parts, fixedTokens + 5, 3);
+	assert.deepEqual(capped.slice(0, 3), parts.slice(0, 3), "system prompt, memory and tools stay stable");
 	assert.equal(
 		capped.reduce((sum, part) => sum + part.tokens, 0),
 		fixedTokens + 5,
@@ -110,7 +114,7 @@ test("context breakdown separates tools, results, and conversation without infla
 		{ label: "Other", tokens: 10, color: "muted" },
 		{ label: "Free space", tokens: 100, color: "dim" },
 	];
-	assert.equal(new Set(finalParts.map((part) => part.color)).size, 6);
+	assert.equal(new Set(finalParts.map((part) => part.color)).size, 7);
 });
 
 test("resolveUsedTokens rejects inconsistent or implausibly small provider usage", () => {

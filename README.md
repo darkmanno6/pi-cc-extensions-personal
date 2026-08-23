@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%" alt="pi-cc-extensions：Pi 终端效率扩展套件">
+  <img src="./assets/readme/hero.svg" width="100%">
 </p>
 
 <p align="center">
@@ -51,30 +51,38 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ```js
 {
-  "mode": "on",                            // on：Claude Code 风格；compact：单行摘要；off：Pi 原生渲染
-  "excludeRenderers": [],                  // 走原生渲染的工具名列表（精确匹配），Agent 始终保留专用渲染器
-  "diffViewMode": "auto",                  // diff 布局：auto / split / unified
-  "diffIndicatorMode": "bars",             // diff 变更指示：bars / classic / none
-  "diffSplitMinWidth": 120,                // 自动布局下使用左右分栏的最小终端宽度
-  "editDiffCollapsedLines": 24,            // Edit 折叠行数；超出显示展开提示（Ctrl+O / 点击）
-  "writeDiffCollapsedLines": 0,            // write 折叠行数；0 = ↳ created • 展开提示（统计在标题）
-  "diffWordWrap": true,                    // 长 diff 行是否换行（否则截断）
-  "expandedPreviewMaxLines": 40,           // 展开后输出/diff 正文的最大行数
-  "useSummaryTitlesAsThinkingTitle": true, // 用最新 provider 摘要作为思考标题
-  "previewLines": 3,                       // thinking 预览行数，0 隐藏预览正文
-  "animationIntervalMs": 90,               // thinking 标题动画间隔（毫秒）
-  "showStartupHeader": true,               // 自定义启动头（logo + tips）开关
-  "scrollStepLines": 3,                     // fullscreen 滚轮滚动步进行数
-  "enableSessionReference": true,           // @ session 引用（搜历史会话注入上下文）
-  "enableSubagentAutocomplete": true,       // @ subagent 自动补全与委派提示
-  "enableContextCommand": true,             // /context 上下文占用检查
-  "enableAgentSummary": true,               // 每回合工具统计摘要
-  "enableWorkingMessage": true,             // Working... 底部 token/耗时展示
-  "enableAliases": true                     // /clear、/exit 别名
+  "mode": "on",                            // on / compact / off
+  "excludeRenderers": [],                  // 走原生渲染的工具名；Agent 始终保留专用渲染器
+
+  // diff
+  "diffViewMode": "auto",                  // 布局：auto / split / unified
+  "diffIndicatorMode": "bars",             // 变更指示：bars / classic / none
+  "diffSplitMinWidth": 120,                // 左右分栏的最小终端宽度
+  "editDiffCollapsedLines": 24,            // Edit 折叠行数，超出显示展开提示
+  "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要
+  "diffWordWrap": true,                    // 长 diff 行换行
+  "expandedPreviewMaxLines": 40,           // 展开正文最大行数
+
+  // thinking
+  "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
+  "previewLines": 3,                       // 预览行数，0 隐藏
+  "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
+
+  // ui
+  "showStartupHeader": true,               // 启动头（logo + tips）开关
+  "scrollStepLines": 3,                    // fullscreen 滚轮步进
+
+  // features
+  "enableSessionReference": true,          // @ session 引用
+  "enableSubagentAutocomplete": true,      // @ subagent 补全与委派提示
+  "enableContextCommand": true,            // /context 上下文检查
+  "enableAgentSummary": true,              // 每回合工具摘要
+  "enableWorkingMessage": true,            // Working... 底部 token/耗时
+  "enableAliases": true                    // /clear、/exit 别名
 }
 ```
 
-> **Fullscreen 点击**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要。单击截断的 Input/Output 打开全量预览。双击展开面板收起。展开卡上的单击仍可选择文本、打开链接。
+> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要，双击展开面板收起。
 >
 > **建议**：`markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
 
@@ -88,7 +96,7 @@ npm run typecheck
 
 ## 兼容性
 
-- Node.js `>=22.19.0`，Pi `^0.84.0`（通过根目录 `package.json` 的 `pi.extensions` 和 `pi.themes` 加载）
+- Node.js `>=22.19.0`，Pi `^0.84.0`
 
 ## 推荐搭配
 

@@ -104,7 +104,11 @@ test("context breakdown separates tools, results, and conversation without infla
 	assert.deepEqual(fitted, parts, "estimates are not inflated to fill provider usage");
 	const fixedTokens = parts.slice(0, 3).reduce((sum, part) => sum + part.tokens, 0);
 	const capped = capParts(parts, fixedTokens + 5, 3);
-	assert.deepEqual(capped.slice(0, 3), parts.slice(0, 3), "system prompt, memory and tools stay stable");
+	assert.deepEqual(
+		capped.slice(0, 3),
+		parts.slice(0, 3),
+		"system prompt, memory and tools stay stable",
+	);
 	assert.equal(
 		capped.reduce((sum, part) => sum + part.tokens, 0),
 		fixedTokens + 5,

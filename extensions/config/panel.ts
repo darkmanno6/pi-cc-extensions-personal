@@ -182,7 +182,7 @@ function buildNumberInputSubmenu(
 
 /** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
 type CcstyleSection = {
-	id: "style" | "editor" | "diff" | "thinking" | "feature";
+	id: "style" | "diff" | "thinking" | "ui" | "feature";
 	label: string;
 	items: any[];
 };
@@ -557,11 +557,14 @@ export async function showCcstylePanel(
 				items: [thinkingTitleSetting, thinkingPreviewSetting, thinkingAnimationSetting],
 			},
 			{
+				id: "ui",
+				label: "UI",
+				items: [startupHeaderSetting, scrollStepSetting],
+			},
+			{
 				id: "feature",
 				label: "Feature",
 				items: [
-					startupHeaderSetting,
-					scrollStepSetting,
 					sessionReferenceToggle.setting,
 					subagentAutocompleteToggle.setting,
 					contextCommandToggle.setting,

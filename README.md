@@ -40,7 +40,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | Mermaid 图、提示框、URL 链接化等                                                        | 自动生效                                        |
 | Fullscreen mode       | 工具卡/group 单击展开、双击收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
-| 配置面板              | `Style / Diff / Thinking / Feature` 四页签，含启动头开关与滚轮步进              | `/ccstyle`                                      |
+| 配置面板              | `Style / Diff / Thinking / UI / Feature` 五页签                                 | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Tools、Skills 和消息内容                  | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |

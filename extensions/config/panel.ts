@@ -25,6 +25,7 @@ import {
 	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
+	TOOL_INPUT_NAME_LENGTH_VALUES,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 	updateConfig,
 	type CompactStyleMode,
@@ -263,6 +264,16 @@ export async function showCcstylePanel(
 				);
 			},
 		};
+		const toolInputNameSetting = {
+			id: "toolInputNameLength",
+			label: "Input clip",
+			description:
+				"Max characters for path/command/name in single and grouped tool summaries. Enter to type a custom value.",
+			currentValue: String(config.toolInputNameLength),
+			values: [...TOOL_INPUT_NAME_LENGTH_VALUES],
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
+				buildNumberInputSubmenu(theme, toolInputNameSetting, closeSubmenu),
+		};
 		const diffViewSetting = {
 			id: "diffViewMode",
 			label: "Diff layout",
@@ -441,6 +452,17 @@ export async function showCcstylePanel(
 				return;
 			}
 			switch (id) {
+				case "toolInputNameLength":
+					updateConfig({
+						toolInputNameLength: pickPositiveInt(
+							value,
+							DEFAULT_CONFIG.toolInputNameLength,
+							8,
+							500,
+						),
+					});
+					toolInputNameSetting.currentValue = String(config.toolInputNameLength);
+					break;
 				case "mode": {
 					// 选项值带 Experimental 标记，选择后还原为真实 mode 值。
 					const mode: CompactStyleMode =
@@ -564,6 +586,7 @@ export async function showCcstylePanel(
 					writeDiffCollapsedSetting,
 					diffWordWrapSetting,
 					expandedMaxSetting,
+					toolInputNameSetting,
 				],
 			},
 			{

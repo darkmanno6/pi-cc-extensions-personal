@@ -62,6 +62,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "writeDiffCollapsedLines": 0,            // write 折叠行数，0 仅显示创建摘要
   "diffWordWrap": true,                    // 长 diff 行换行
   "expandedPreviewMaxLines": 40,           // 展开正文最大行数
+  "toolInputNameLength": 100,             // 工具摘要 path/command 折叠字符数
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题

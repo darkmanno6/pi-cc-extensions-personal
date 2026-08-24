@@ -28,6 +28,7 @@ import {
 } from "../extensions/renderer/tool/message-display.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 import { invalidateIoView, isExpandedToolIoView } from "../extensions/renderer/tool/result.ts";
+import { toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 
@@ -180,6 +181,9 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({}).dimThinkingText, false);
 	assert.equal(normalizeConfig({ dimThinkingText: true }).dimThinkingText, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDim=off/);
+	assert.equal(normalizeConfig({}).toolInputNameLength, 100);
+	assert.equal(normalizeConfig({ toolInputNameLength: 40 }).toolInputNameLength, 40);
+	assert.match(formatConfigStatus(normalizeConfig({})), /toolInputName=100/);
 
 	let completions: Array<{ value: string }> = [];
 	const pi: any = {
@@ -198,6 +202,19 @@ test("config normalize keeps compact, defaults to on, command completions order 
 		);
 	} finally {
 		config.mode = previousMode;
+	}
+});
+
+test("tool input name length clips single and grouped summaries", () => {
+	const previous = config.toolInputNameLength;
+	const path = `src/${"a".repeat(80)}.ts`;
+	const clipped = `${path.slice(0, 19)}…`;
+	try {
+		config.toolInputNameLength = 20;
+		assert.equal(toolCallSummary("read", { path }).main, `Read ${clipped}`);
+		assert.equal(toolCallSummary("read", { path }, { variant: "grouping" }).main, `Read ${clipped}`);
+	} finally {
+		config.toolInputNameLength = previous;
 	}
 });
 
@@ -624,22 +641,6 @@ test("compact surfaces abort outside folded tools", () => {
 		};
 		assistant.updateContent(lenMsg as any);
 		assert.ok(renderText(assistant).some((line) => /truncated before completion/.test(line)));
-	} finally {
-		config.mode = previousMode;
-		hooks.shutdown();
-	}
-});
-
-test("queued compact edit/write stays neutral until execution starts", () => {
-	const previousMode = config.mode;
-	config.mode = "compact";
-	const hooks = installCompactMode({ writeMetadata: new WriteExecutionMetadataStore() });
-	try {
-		const edit = tool("edit", "queued-edit", { path: "a.ts" });
-		assert.match(renderText(edit).join("\n"), /● edit a\.ts/);
-
-		edit.markExecutionStarted();
-		assert.match(renderText(edit).join("\n"), /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] edit a\.ts/);
 	} finally {
 		config.mode = previousMode;
 		hooks.shutdown();

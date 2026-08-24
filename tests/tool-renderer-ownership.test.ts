@@ -86,14 +86,6 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			ui as any,
 			process.cwd(),
 		) as any;
-		const queuedCall = component
-			.render(100)
-			.join("\n")
-			.replace(/\x1b\[[0-9;]*m/g, "");
-		assert.match(queuedCall, /● Bash /);
-		assert.doesNotMatch(queuedCall, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/);
-
-		component.markExecutionStarted();
 		assert.match(
 			component
 				.render(100)
@@ -151,7 +143,7 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 			"background card title stays within its full-width row",
 		);
 		const plainCallLine = callLine.replace(/\x1b\[[0-9;]*m/g, "").trimEnd();
-		// input 摘要与多 tool 一致：从头截断（保留开头，省略尾部），上限 96 字符
+		// input 摘要与多 tool 一致：从头截断（保留开头，省略尾部），默认上限 100 字符
 		assert.match(plainCallLine, /✓ Bash .*…$/);
 		assert.doesNotMatch(plainCallLine, /compositor\.ts'$/);
 		assert.doesNotMatch(callLine, /\x1b\[0m/, "tool title must not reset the card background");

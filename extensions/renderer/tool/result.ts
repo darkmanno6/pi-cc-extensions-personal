@@ -149,7 +149,7 @@ export function toolIconColor(context: any): "accent" | "error" | "success" | "m
 	const visualState = getToolVisualState(context);
 	if (context?.isError || visualState === "error") return "error";
 	if (visualState === "success") return "success";
-	if (context?.executionStarted || visualState === "pending") return "accent";
+	if (context?.isPartial || context?.executionStarted || visualState === "pending") return "accent";
 	return "muted";
 }
 

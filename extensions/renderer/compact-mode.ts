@@ -525,11 +525,9 @@ function compactEditWriteLine(
 				: "",
 	);
 	const isError = component.result?.isError === true;
-	const isPending =
-		component.executionStarted && (!component.result || component.isPartial === true);
-	const isSettled = component.result !== undefined;
-	const icon = isError ? "✗" : isPending ? toolLoadingIcon() : isSettled ? "✓" : "●";
-	const iconColor = isError ? "error" : isPending ? "accent" : isSettled ? "success" : "muted";
+	const isPending = !component.result || component.isPartial === true;
+	const icon = isError ? "✗" : isPending ? toolLoadingIcon() : "✓";
+	const iconColor = isError ? "error" : isPending ? "accent" : "success";
 	let statsText = "";
 	let statsStyled = "";
 	if (!isError && !isPending) {

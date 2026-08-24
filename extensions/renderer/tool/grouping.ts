@@ -65,26 +65,18 @@ function previousSibling(
 	return undefined;
 }
 
-type ToolStatus = "queued" | "pending" | "success" | "error";
+type ToolStatus = "pending" | "success" | "error";
 
 function status(tool: any): ToolStatus {
 	if (tool?.result?.isError) return "error";
-	if (tool?.result) return "success";
-	if (tool?.executionStarted) return "pending";
-	return "queued";
+	if (tool?.isPartial === true || (tool?.executionStarted && !tool?.result)) return "pending";
+	return tool?.result ? "success" : "pending";
 }
 
 function statusIcon(value: ToolStatus): string {
 	if (value === "success") return "✓";
 	if (value === "error") return "✗";
-	if (value === "pending") return toolLoadingIcon();
-	return "●";
-}
-
-function statusColor(value: ToolStatus): string {
-	if (value === "pending") return "accent";
-	if (value === "queued") return "muted";
-	return value;
+	return toolLoadingIcon();
 }
 
 function scheduleGroupAnimation(patch: Patch): void {
@@ -93,7 +85,8 @@ function scheduleGroupAnimation(patch: Patch): void {
 		patch.animationTimer = null;
 		if (!patch.active) return;
 		for (const group of patch.groups) {
-			if (group.children.some((tool) => status(tool) === "pending")) group.invalidate();
+			if (group.children.some((tool) => tool?.executionStarted && status(tool) === "pending"))
+				group.invalidate();
 		}
 	}, TOOL_LOADING_INTERVAL_MS);
 	patch.animationTimer.unref?.();
@@ -294,34 +287,25 @@ export class ToolGroupComponent extends Container {
 		if (cached) return cached;
 		const theme = this.patch.theme;
 		const fg = (color: string, text: string) => theme?.fg?.(color, text) ?? text;
-		const counts: Record<ToolStatus, number> = { queued: 0, pending: 0, success: 0, error: 0 };
+		const counts = { pending: 0, success: 0, error: 0 };
 		for (const tool of this.children) counts[status(tool)]++;
-		const countText = (["pending", "queued", "success", "error"] as const)
+		const countText = (["pending", "success", "error"] as const)
 			.filter((key) => counts[key])
 			.map((key) => {
-				const label =
-					key === "pending"
-						? "running"
-						: key === "queued"
-							? "queued"
-							: key === "success"
-								? "done"
-								: "failed";
-				return `${fg(statusColor(key), String(counts[key]))} ${label}`;
+				const label = key === "pending" ? "running" : key === "success" ? "done" : "failed";
+				const color = key === "pending" ? "accent" : key;
+				return `${fg(color, String(counts[key]))} ${label}`;
 			})
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
 		const label =
 			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
-		const overall: ToolStatus = counts.error
-			? "error"
-			: counts.pending
-				? "pending"
-				: counts.success
-					? "success"
-					: "queued";
-		if (overall === "pending") scheduleGroupAnimation(this.patch);
-		const overallColor = statusColor(overall);
+		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
+		if (
+			this.children.some((tool) => tool?.executionStarted && status(tool) === "pending")
+		)
+			scheduleGroupAnimation(this.patch);
+		const overallColor = overall === "pending" ? "accent" : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
 		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
@@ -338,7 +322,7 @@ export class ToolGroupComponent extends Container {
 		for (let index = 0; index < total; index++) {
 			const tool = this.children[index];
 			const toolStatus = status(tool);
-			const color = statusColor(toolStatus);
+			const color = toolStatus === "pending" ? "accent" : toolStatus;
 			const branch = index === total - 1 ? "└" : "├";
 			const continuation = index === total - 1 ? "  " : "│ ";
 			if (!this._expanded) {

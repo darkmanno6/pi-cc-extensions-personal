@@ -6,6 +6,7 @@ import test from "node:test";
 import { AssistantMessageComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
+import { config as ccstyleConfig } from "../extensions/config/config.ts";
 import {
 	animateCompactThinkingText,
 	clearThinkingPreviewCache,
@@ -677,8 +678,9 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 		const hint = firstPlain.find((line: string) => /Thought/.test(line) && /more lines/.test(line));
 		assert.ok(hint, `expected hidden-line hint after Thought, got: ${JSON.stringify(firstPlain)}`);
 		assert.match(hint, /<dim> • \(\d+ more lines/);
+		const bodyToken = ccstyleConfig.dimThinkingText ? "dim" : "thinkingText";
 		assert.ok(
-			!firstPlain.some((line: string) => /^<thinkingText>x+/.test(line) && /more line/.test(line)),
+			!firstPlain.some((line: string) => new RegExp(`^<${bodyToken}>x+`).test(line) && /more line/.test(line)),
 			"preview body must not carry the more-line hint",
 		);
 		const hidden = Number(/\((\d+) more lines/.exec(hint)?.[1]);
@@ -688,7 +690,8 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 			`hidden lines should follow wrap width, not raw newlines, got ${hidden}`,
 		);
 		assert.ok(
-			firstPlain.filter((line: string) => /^<thinkingText>x+/.test(line)).length <= previewLines,
+			firstPlain.filter((line: string) => new RegExp(`^<${bodyToken}>x+`).test(line)).length <=
+				previewLines,
 			"preview body stays capped at previewLines",
 		);
 		assert.ok(
@@ -703,7 +706,7 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 			.map((line: string) => line.trim())
 			.filter(Boolean);
 		assert.ok(
-			secondPlain.some((line: string) => line.includes("[thinkingText]")),
+			secondPlain.some((line: string) => line.includes(`[${bodyToken}]`)),
 			"theme change must restyle preview body, not reuse cached ANSI",
 		);
 		assert.ok(

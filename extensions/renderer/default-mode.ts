@@ -230,9 +230,10 @@ function createCcstyleTool(
 			}
 
 			const visualState = resolveToolVisualState(context);
-			const settled = visualState === "success" || visualState === "error";
-			const isPending = !settled && Boolean(context?.executionStarted);
-			if (isPending) scheduleAnimation(context);
+			const isPending =
+				visualState === "pending" ||
+				(!visualState && (context?.isPartial || context?.executionStarted));
+			if (isPending && context?.executionStarted) scheduleAnimation(context);
 			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
 			const icon =
 				visualState === "success"

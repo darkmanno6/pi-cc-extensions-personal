@@ -21,6 +21,25 @@ function started(name: string, id: string, args: any = {}) {
 	return component;
 }
 
+test("restored tools still render as running with the braille loader", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		parent.addChild(tool("read", "read-stale"));
+		parent.addChild(tool("bash", "bash-stale"));
+		const group = parent.children[0] as ToolGroupComponent;
+		const rendered = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(rendered[0], /2 running/);
+		assert.ok(rendered.some((line: string) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)));
+		assert.doesNotMatch(rendered.join("\n"), /queued/);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
 test("mixed tools group across three empty separators while edit/write and content break groups", () => {
 	let enabled = true;
 	const hooks = installToolGrouping(() => enabled);
@@ -364,60 +383,6 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 		assert.match(grown.join("\n"), /running/);
 		assert.match(grown.join("\n"), /<success>1<\/success> done/);
 		assert.match(grown.join("\n"), /<error>1<\/error> failed/);
-	} finally {
-		hooks.shutdown();
-	}
-});
-
-test("queued live tools stay neutral until execution starts", () => {
-	const hooks = installToolGrouping(() => true);
-	try {
-		const parent = new Container() as any;
-		const read = tool("read", "read-queued");
-		const bash = tool("bash", "bash-queued");
-		parent.addChild(read);
-		parent.addChild(bash);
-		const group = parent.children[0] as ToolGroupComponent;
-		const queued = group
-			.render(100)
-			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-			.filter((line: string) => line.trim());
-		assert.match(queued[0], /2 queued/);
-		for (const line of queued) assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/);
-
-		read.markExecutionStarted();
-		bash.markExecutionStarted();
-		const running = group
-			.render(100)
-			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-			.filter((line: string) => line.trim());
-		assert.match(running[0], /2 running/);
-		assert.ok(running.some((line: string) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)));
-	} finally {
-		hooks.shutdown();
-	}
-});
-
-test("restored tool calls that never started render queued, not running", () => {
-	const parent = new Container() as any;
-	parent.addChild(tool("read", "read-stale"));
-	parent.addChild(tool("bash", "bash-stale"));
-	const hooks = installToolGrouping(() => true);
-	try {
-		hooks.refresh(parent);
-		const group = parent.children[0] as ToolGroupComponent;
-		const rendered = group
-			.render(100)
-			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
-			.filter((line: string) => line.trim());
-		assert.match(rendered[0], /2 queued/);
-		assert.doesNotMatch(rendered[0], /running|done/);
-		for (const line of rendered) {
-			assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/, "restored tools stay neutral");
-		}
-
-		(group.children[0] as any).updateResult({ content: [], isError: false });
-		assert.match(group.render(100).find((line: string) => line.trim())!, /1 queued.*1 done/);
 	} finally {
 		hooks.shutdown();
 	}

@@ -1,4 +1,9 @@
+import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
+
+function clip(value: unknown): string {
+	return oneLine(value, config.toolInputNameLength);
+}
 
 /**
  * 工具名/标签人性化：与 default-mode 的 humanizeToolLabel、grouping 的 humanizeToolName
@@ -45,12 +50,11 @@ export function toolCallSummary(
 	const name = toolName.toLowerCase();
 	const value = (fallback: string, ...keys: string[]) => {
 		const found = keys.map((key) => args[key]).find((item) => typeof item === "string" && item);
-		// 两处对齐：从头截断，上限 96 字符（oneLine 默认值）。
-		return `${title} ${oneLine(found || fallback, 96)}`;
+		return `${title} ${clip(found || fallback)}`;
 	};
 
 	if (variant === "default" && AGENT_FAMILY_TOOL_NAMES.has(toolName) && args.agent_id) {
-		return { main: `${title} ${oneLine(args.agent_id, 96)}`, detail: "" };
+		return { main: `${title} ${clip(args.agent_id)}`, detail: "" };
 	}
 	if (variant === "grouping" && (name === "agent" || name === "agents")) {
 		const displayName = args.subagent_type ?? args.agent_type ?? args.agent;
@@ -104,28 +108,28 @@ export function toolCallSummary(
 		].filter(Boolean);
 		if (variant === "grouping") {
 			return {
-				main: `Read ${oneLine(args.path || "...")}`,
+				main: `Read ${clip(args.path || "...")}`,
 				detail: details.length ? ` (${details.join(", ")})` : "",
 			};
 		}
 		return {
-			main: `${title}${args.path ? ` ${oneLine(args.path, 96)}` : ""}`,
+			main: `${title}${args.path ? ` ${clip(args.path)}` : ""}`,
 			detail: details.length ? ` (${details.join(", ")})` : "",
 		};
 	}
 	if (variant === "grouping") {
-		if (toolName === "bash") return { main: `Bash ${oneLine(args.command || "...")}`, detail: "" };
+		if (toolName === "bash") return { main: `Bash ${clip(args.command || "...")}`, detail: "" };
 		if (toolName === "grep") {
-			const pattern = oneLine(args.pattern || "...");
+			const pattern = clip(args.pattern || "...");
 			return {
-				main: `Grep ${JSON.stringify(pattern)}${args.path ? ` in ${oneLine(args.path)}` : ""}`,
+				main: `Grep ${JSON.stringify(pattern)}${args.path ? ` in ${clip(args.path)}` : ""}`,
 				detail: "",
 			};
 		}
 		if (toolName === "find") {
-			const pattern = oneLine(args.pattern || "...");
+			const pattern = clip(args.pattern || "...");
 			return {
-				main: `Find ${JSON.stringify(pattern)}${args.path ? ` in ${oneLine(args.path)}` : ""}`,
+				main: `Find ${JSON.stringify(pattern)}${args.path ? ` in ${clip(args.path)}` : ""}`,
 				detail: "",
 			};
 		}
@@ -147,7 +151,7 @@ export function toolCallSummary(
 		return {
 			main:
 				preferred !== undefined && preferred !== null && typeof preferred !== "object"
-					? `${title} ${oneLine(preferred, 96)}`
+					? `${title} ${clip(preferred)}`
 					: title,
 			detail: "",
 		};
@@ -162,7 +166,7 @@ export function toolCallSummary(
 		args.name ??
 		args.prompt;
 	return {
-		main: `${title}${preferred === undefined ? "" : ` ${oneLine(preferred)}`}`,
+		main: `${title}${preferred === undefined ? "" : ` ${clip(preferred)}`}`,
 		detail: "",
 	};
 }

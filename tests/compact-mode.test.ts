@@ -212,7 +212,10 @@ test("tool input name length clips single and grouped summaries", () => {
 	try {
 		config.toolInputNameLength = 20;
 		assert.equal(toolCallSummary("read", { path }).main, `Read ${clipped}`);
-		assert.equal(toolCallSummary("read", { path }, { variant: "grouping" }).main, `Read ${clipped}`);
+		assert.equal(
+			toolCallSummary("read", { path }, { variant: "grouping" }).main,
+			`Read ${clipped}`,
+		);
 	} finally {
 		config.toolInputNameLength = previous;
 	}

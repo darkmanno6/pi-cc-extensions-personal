@@ -680,7 +680,9 @@ test("thinking preview counts wrapped hidden lines and does not restyle from cac
 		assert.match(hint, /<dim> • \(\d+ more lines/);
 		const bodyToken = ccstyleConfig.dimThinkingText ? "dim" : "thinkingText";
 		assert.ok(
-			!firstPlain.some((line: string) => new RegExp(`^<${bodyToken}>x+`).test(line) && /more line/.test(line)),
+			!firstPlain.some(
+				(line: string) => new RegExp(`^<${bodyToken}>x+`).test(line) && /more line/.test(line),
+			),
 			"preview body must not carry the more-line hint",
 		);
 		const hidden = Number(/\((\d+) more lines/.exec(hint)?.[1]);

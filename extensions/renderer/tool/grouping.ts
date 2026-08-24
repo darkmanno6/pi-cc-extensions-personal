@@ -85,7 +85,11 @@ function scheduleGroupAnimation(patch: Patch): void {
 		patch.animationTimer = null;
 		if (!patch.active) return;
 		for (const group of patch.groups) {
-			if (group.children.some((tool) => tool?.executionStarted && status(tool) === "pending"))
+			if (
+				(group.children as any[]).some(
+					(tool) => tool?.executionStarted && status(tool) === "pending",
+				)
+			)
 				group.invalidate();
 		}
 	}, TOOL_LOADING_INTERVAL_MS);
@@ -302,7 +306,7 @@ export class ToolGroupComponent extends Container {
 			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if (
-			this.children.some((tool) => tool?.executionStarted && status(tool) === "pending")
+			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")
 		)
 			scheduleGroupAnimation(this.patch);
 		const overallColor = overall === "pending" ? "accent" : overall;

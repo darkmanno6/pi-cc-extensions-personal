@@ -454,12 +454,7 @@ export async function showCcstylePanel(
 			switch (id) {
 				case "toolInputNameLength":
 					updateConfig({
-						toolInputNameLength: pickPositiveInt(
-							value,
-							DEFAULT_CONFIG.toolInputNameLength,
-							8,
-							500,
-						),
+						toolInputNameLength: pickPositiveInt(value, DEFAULT_CONFIG.toolInputNameLength, 8, 500),
 					});
 					toolInputNameSetting.currentValue = String(config.toolInputNameLength);
 					break;

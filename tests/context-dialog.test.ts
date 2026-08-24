@@ -147,10 +147,7 @@ test("context breakdown attributes embedded memory and skills once", () => {
 	const skillsTokens = breakdown.parts.find((part) => part.label === "Skills")?.tokens ?? -1;
 	assert.equal(memoryTokens, Math.ceil(memory.length / 4));
 	assert.equal(skillsTokens, Math.ceil(skillsText.length / 4));
-	assert.equal(
-		systemTokens + memoryTokens + skillsTokens,
-		Math.ceil(systemPrompt.length / 4),
-	);
+	assert.equal(systemTokens + memoryTokens + skillsTokens, Math.ceil(systemPrompt.length / 4));
 	assert.ok(systemTokens < Math.ceil(systemPrompt.length / 4));
 });
 

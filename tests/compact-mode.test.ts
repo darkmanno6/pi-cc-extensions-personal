@@ -497,7 +497,7 @@ test("expanded running round keeps thinking and tools in transcript order", () =
 	}
 });
 
-test("Running duration recomputes on each render via round wall clock", async () => {
+test("Running duration recomputes on each render via round wall clock", () => {
 	const previousMode = config.mode;
 	config.mode = "compact";
 	const hooks = installCompactMode({
@@ -508,6 +508,9 @@ test("Running duration recomputes on each render via round wall clock", async ()
 		},
 		writeMetadata: new WriteExecutionMetadataStore(),
 	});
+	const realNow = Date.now;
+	let now = realNow();
+	Date.now = () => now;
 	try {
 		const msg = {
 			role: "assistant",
@@ -518,10 +521,10 @@ test("Running duration recomputes on each render via round wall clock", async ()
 		assistant.updateContent(msg);
 		assert.match(renderText(assistant).join("\n"), /Running\.\.\./);
 
-		// 不 updateContent：挂钟在 render 时前进
-		await new Promise((r) => setTimeout(r, 1100));
+		now += 1100;
 		assert.match(renderText(assistant).join("\n"), /Running\.\.\. · [1-9]\d*s, bash×1/);
 	} finally {
+		Date.now = realNow;
 		config.mode = previousMode;
 		hooks.shutdown();
 	}

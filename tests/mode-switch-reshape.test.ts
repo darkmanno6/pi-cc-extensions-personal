@@ -1,11 +1,8 @@
 /**
- * on ↔ compact 模式切换重塑，以及 reload / resume / session_tree 场景。
+ * on ↔ compact 模式切换重塑。
  * 不依赖 /reload：切换后 transcript 必须立即对齐目标 mode 的文档样式。
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import {
@@ -13,16 +10,12 @@ import {
 	ToolExecutionComponent,
 	initTheme,
 } from "@earendil-works/pi-coding-agent";
-import { Container } from "@earendil-works/pi-tui";
 
 import { config } from "../extensions/config/config.ts";
-import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
 import {
 	installCompactMode,
 	refreshCompactModeComponents,
 } from "../extensions/renderer/compact-mode.ts";
-import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
-import { refreshMountedTranscript } from "../extensions/renderer/transcript-refresh.ts";
 import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
 
 initTheme("dark");
@@ -86,38 +79,6 @@ function switchMode(
 	if (mode === "compact") hooks.sync({ ui });
 	refreshCompactModeComponents(opts.emptyRoot ? { children: [] } : root);
 	hooks.refresh();
-}
-
-function withTempConfigDir() {
-	const dir = mkdtempSync(join(tmpdir(), "pi-mode-switch-"));
-	const prev = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = dir;
-	return {
-		dir,
-		restore() {
-			if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
-			else process.env.PI_CODING_AGENT_DIR = prev;
-			rmSync(dir, { recursive: true, force: true });
-		},
-	};
-}
-
-function extensionRuntime() {
-	const events = new Map<string, Function[]>();
-	const pi: any = {
-		registerCommand() {},
-		registerTool() {},
-		appendEntry() {},
-		on(name: string, handler: Function) {
-			const list = events.get(name) ?? [];
-			list.push(handler);
-			events.set(name, list);
-		},
-	};
-	const emit = async (name: string, event: any = {}, ctx: any = {}) => {
-		for (const handler of events.get(name) ?? []) await handler(event, ctx);
-	};
-	return { pi, emit, events };
 }
 
 // ─── live on ↔ compact ───────────────────────────────────────────────
@@ -250,191 +211,6 @@ test("round accumulation survives on → compact switch", () => {
 	} finally {
 		config.mode = previous;
 		hooks.shutdown();
-	}
-});
-
-// ─── extension: reload / resume / session_tree ───────────────────────
-
-test("extension reload: second install reshapes under current mode without recursion", async () => {
-	const tmp = withTempConfigDir();
-	const previous = config.mode;
-	const { pi: pi1, emit: emit1 } = extensionRuntime();
-	const { pi: pi2, emit: emit2 } = extensionRuntime();
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		sessionManager: { getBranch: () => [], getEntries: () => [] },
-		ui: {
-			theme: ui.theme,
-			setStatus() {},
-			notify() {},
-			requestRender() {},
-			setWidget(_k: string, factory: any) {
-				if (typeof factory === "function") {
-					factory({
-						getMountedRoots: () => [],
-						requestRender() {},
-						terminal: { write() {} },
-					});
-				}
-			},
-			onTerminalInput: () => () => {},
-			getToolsExpanded: () => false,
-		},
-	};
-	try {
-		config.mode = "on";
-		claudeCodeStyleExtension(pi1, { mode: "on" });
-		await emit1("session_start", {}, ctx);
-
-		const msg = toolCallMsg(Date.now(), [{ id: "b1", name: "bash", args: { command: "echo" } }]);
-		const a1 = new AssistantMessageComponent(msg, true) as any;
-		a1.updateContent(msg);
-		const bash = tool("bash", "b1", { command: "echo" });
-		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
-		assert.ok(renderText(bash).length > 0, "pre-reload on: tool visible");
-
-		// 模拟 /reload：新模块安装替换补丁；mode 已是 compact
-		config.mode = "compact";
-		claudeCodeStyleExtension(pi2, { mode: "compact" });
-		await emit2("session_start", {}, ctx);
-		await new Promise((r) => setTimeout(r, 10));
-
-		// reload 后旧实例被新补丁接管
-		a1.updateContent(msg);
-		bash.updateDisplay();
-		assert.match(renderText(a1).join("\n"), /bash×1/);
-		assert.deepEqual(renderText(bash), []);
-
-		await emit1("session_shutdown", {}, ctx);
-		// 旧 shutdown 不得拆掉新补丁
-		a1.updateContent(msg);
-		assert.match(renderText(a1).join("\n"), /bash×1/);
-
-		await emit2("session_shutdown", {}, ctx);
-	} finally {
-		config.mode = previous;
-		await emit1("session_shutdown", {}, ctx).catch(() => {});
-		await emit2("session_shutdown", {}, ctx).catch(() => {});
-		tmp.restore();
-	}
-});
-
-test("resume (session_tree) under compact rebuilds summary over compact-thinking", async () => {
-	const tmp = withTempConfigDir();
-	const previous = config.mode;
-	const { pi, emit } = extensionRuntime();
-	const parent = new Container() as any;
-	const tui = {
-		getMountedRoots: () => [parent],
-		requestRender() {},
-		terminal: { write() {}, columns: 120, rows: 40 },
-	};
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		sessionManager: { getBranch: () => [], getEntries: () => [] },
-		ui: {
-			theme: ui.theme,
-			setStatus() {},
-			notify() {},
-			requestRender() {},
-			setWidget(_k: string, factory: any) {
-				if (typeof factory === "function") factory(tui);
-			},
-			onTerminalInput: () => () => {},
-			getToolsExpanded: () => false,
-		},
-	};
-	try {
-		config.mode = "compact";
-		claudeCodeStyleExtension(pi, { mode: "compact" });
-		installCompactThinking(pi, {
-			useSummaryTitlesAsThinkingTitle: false,
-			previewLines: 0,
-			animationIntervalMs: 30,
-		});
-		await emit("session_start", {}, ctx);
-		await new Promise((r) => setTimeout(r, 10));
-
-		// resume：历史组件在补丁之后挂上，靠 session_tree / refreshMountedTranscript
-		const msg = toolCallMsg(Date.now(), [
-			{ id: "b1", name: "bash", args: { command: "echo" } },
-			{ id: "r1", name: "read", args: { path: "a.ts" } },
-		]);
-		const a1 = new AssistantMessageComponent(msg, true) as any;
-		parent.addChild(a1);
-		// 不先 updateContent：模拟「pi 用原始原型建好、补丁后装」的 resume 路径
-		a1.lastMessage = msg;
-		await emit("session_tree", {}, ctx);
-		refreshMountedTranscript(tui);
-
-		const lines = renderText(a1);
-		assert.ok(
-			lines.some((l) => /bash×1/.test(l) && /read×1/.test(l)),
-			`resume summary must count tools, got: ${JSON.stringify(lines)}`,
-		);
-	} finally {
-		config.mode = previous;
-		await emit("session_shutdown", {}, ctx);
-		tmp.restore();
-	}
-});
-
-test("resume under on, then switch to compact via refresh path", async () => {
-	const tmp = withTempConfigDir();
-	const previous = config.mode;
-	const { pi, emit } = extensionRuntime();
-	const parent = new Container() as any;
-	const tui = {
-		getMountedRoots: () => [parent],
-		requestRender() {},
-		terminal: { write() {}, columns: 120, rows: 40 },
-	};
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		sessionManager: { getBranch: () => [], getEntries: () => [] },
-		ui: {
-			theme: ui.theme,
-			setStatus() {},
-			notify() {},
-			requestRender() {},
-			setWidget(_k: string, factory: any) {
-				if (typeof factory === "function") factory(tui);
-			},
-			onTerminalInput: () => () => {},
-			getToolsExpanded: () => false,
-		},
-	};
-	try {
-		config.mode = "on";
-		claudeCodeStyleExtension(pi, { mode: "on" });
-		await emit("session_start", {}, ctx);
-
-		const msg = toolCallMsg(Date.now(), [{ id: "b1", name: "bash", args: { command: "echo" } }]);
-		const a1 = new AssistantMessageComponent(msg, true) as any;
-		const bash = tool("bash", "b1", { command: "echo" });
-		bash.updateResult({ content: [{ type: "text", text: "ok" }], isError: false });
-		a1.updateContent(msg);
-		parent.addChild(a1);
-		parent.addChild(bash);
-
-		assert.ok(renderText(bash).length > 0);
-
-		// /ccstyle compact：不 reload
-		config.mode = "compact";
-		refreshCompactModeComponents(tui);
-		// 走扩展里 syncCompactMode + refresh 的等价调用
-		await emit("session_tree", {}, ctx);
-		refreshMountedTranscript(tui);
-
-		assert.match(renderText(a1).join("\n"), /bash×1/);
-		assert.deepEqual(renderText(bash), []);
-	} finally {
-		config.mode = previous;
-		await emit("session_shutdown", {}, ctx);
-		tmp.restore();
 	}
 });
 

@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import agentSummaryFeature, {
+	AGENT_SUMMARY_ENTRY_TYPE,
+} from "../extensions/feature/agent-summary/index.ts";
 import {
 	AgentRunSummary,
 	bindAgentSummary,
@@ -9,6 +13,10 @@ import {
 	summaryMarkdown,
 	type AgentSummaryData,
 } from "../extensions/feature/agent-summary/core.ts";
+
+function stripAnsi(text: string): string {
+	return text.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
 
 test("classifyTool：bash/read/edit/write/other", () => {
 	assert.equal(classifyTool("bash"), "bash");
@@ -155,4 +163,56 @@ test("bindAgentSummary 事件绑定：agent_start 重置、agent_end 回调", as
 		failed: 0,
 		durationMs: calls[1].durationMs,
 	});
+});
+
+test("agent-summary 注册 renderer，agent_end 输出引用块", async () => {
+	initTheme("dark");
+	const renderers = new Map<string, Function>();
+	const appended: unknown[] = [];
+	const events = new Map<string, Function>();
+	const fakePi = {
+		on: (event: string, handler: Function) => events.set(event, handler),
+		registerEntryRenderer: (type: string, renderer: Function) => renderers.set(type, renderer),
+		appendEntry: (type: string, data: unknown) => appended.push({ type, data }),
+	} as any;
+
+	agentSummaryFeature(fakePi);
+	assert.ok(renderers.has(AGENT_SUMMARY_ENTRY_TYPE));
+
+	await events.get("agent_start")!();
+	await events.get("tool_execution_start")!({ toolName: "read", args: { path: "a.ts" } });
+	await events.get("tool_execution_end")!({ isError: false });
+	await events.get("tool_execution_start")!({ toolName: "bash", args: { command: "ls" } });
+	await events.get("tool_execution_end")!({ isError: false });
+	await events.get("agent_end")!();
+
+	assert.equal(appended.length, 1);
+	const renderer = renderers.get(AGENT_SUMMARY_ENTRY_TYPE)!;
+	const component = renderer(
+		{ data: (appended[0] as any).data },
+		{ expanded: false },
+		{ getFgAnsi: (color: string) => (color === "success" ? "\x1b[32m" : "\x1b[31m") },
+	);
+	const plain = stripAnsi((component as any).render(120).map(String).join("\n"));
+	assert.doesNotMatch(plain, /[┌├└]/);
+	assert.doesNotMatch(plain, /TIP/);
+	assert.match(plain, /Ran 1 command, read 1 file/);
+	assert.equal(
+		renderer(
+			{
+				data: {
+					commands: 0,
+					reads: 0,
+					edits: 0,
+					writes: 0,
+					others: 0,
+					failed: 0,
+					durationMs: 0,
+				},
+			},
+			{ expanded: false },
+			{ getFgAnsi: () => "" },
+		),
+		undefined,
+	);
 });

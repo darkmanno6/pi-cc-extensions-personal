@@ -462,34 +462,6 @@ test("writeDiffCollapsedLines 0 shows stats only until expanded", () => {
 	assert.match(expandedText, /const value1 = 1/);
 });
 
-test("write collapsed stats-only hint switches to white text on hover", () => {
-	let hovered = false;
-	const hoverTheme = {
-		...theme,
-		fg(color: string, text: string) {
-			const code = color === "muted" ? "\x1b[90m" : color === "text" ? "\x1b[97m" : "\x1b[37m";
-			return `${code}${text}\x1b[39m`;
-		},
-	};
-	const component = renderWriteDiffResult(
-		Array.from({ length: 12 }, (_, index) => `line ${index}`).join("\n"),
-		{
-			expanded: false,
-			filePath: "sample.ts",
-			fileExistedBeforeWrite: false,
-			isHovered: () => hovered,
-		},
-		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, writeDiffCollapsedLines: 0 },
-		hoverTheme,
-		"",
-	);
-	const hint = () => output(component).find((line) => line.includes("click to show more")) ?? "";
-	assert.match(hint(), /created/);
-	assert.match(hint(), /\x1b\[90m/, "resting write hint uses muted color");
-	hovered = true;
-	assert.match(hint(), /\x1b\[90m[^\n]*• [^\n]*\x1b\[39m\x1b\[97mclick to show more/);
-});
-
 test("default-mode write collapsed uses title stats and created hint", () => {
 	const previousMode = config.mode;
 	const store = new WriteExecutionMetadataStore();

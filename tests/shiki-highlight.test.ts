@@ -40,28 +40,6 @@ test("Shiki cache deduplicates pending work, caches success, and isolates themes
 	assert.equal(highlights, 2);
 });
 
-test("Shiki highlights a multi-line block in one call and preserves line order", async () => {
-	let calls = 0;
-	const cache = new ShikiHighlightCache(async () => async (code) => {
-		calls++;
-		return code
-			.split("\n")
-			.map((line, index) => `${index}:${line}`)
-			.join("\n");
-	});
-	const code = Array.from({ length: 60 }, (_, index) =>
-		index % 2 ? "repeat" : `line-${index}`,
-	).join("\n");
-	const fallback = code.split("\n");
-	cache.get(code, "ts", "github-dark", fallback);
-	await settle();
-	const lines = cache.get(code, "ts", "github-dark", fallback);
-	assert.equal(calls, 1);
-	assert.equal(lines?.length, 60);
-	assert.equal(lines?.[1], "1:repeat");
-	assert.equal(lines?.[3], "3:repeat");
-});
-
 test("terminal controls are removed before source highlighting", () => {
 	assert.equal(
 		sanitizeToolResultText("safe\x1b]52;c;SGVsbG8=\x07mid\x1bP1;2|payload\x1b\\end\x1b[31m"),

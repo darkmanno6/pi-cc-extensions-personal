@@ -1,17 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setHoveredToolCallId } from "../extensions/renderer/mouse/hover.ts";
+import * as interaction from "../extensions/renderer/mouse/interaction.ts";
 import { getToolMouseTui, setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
 
-// 回归：jiti 转译下经 re-export 链读取的模块级 let 绑定是初始值快照（死绑定），
-// 跨模块读取必须走 getToolMouseTui()（globalThis Symbol 槽镜像），否则 resume
-// 后 collectMountedComponents 永远收到 null，compact 摘要不重绘。
+// jiti 转译下经 re-export 链读取的模块级 let 是初始值快照；跨模块必须走 getter。
 test("toolMouseTui getter reads the global slot written by setter", () => {
 	const tui = { mode: "regular" };
 	try {
 		setToolMouseTui(tui);
-		assert.equal(getToolMouseTui(), tui, "getter must return the instance set via setter");
+		assert.equal(getToolMouseTui(), tui);
 	} finally {
 		setToolMouseTui(null);
 	}
-	assert.equal(getToolMouseTui(), null, "cleared state must read back as null");
+	assert.equal(getToolMouseTui(), null);
+});
+
+test("hoveredToolCallId 随 setter 保持 live，且 interaction 仍 re-export 旧符号", () => {
+	assert.equal(typeof interaction.toolMouseTui, "object");
+	assert.equal(typeof interaction.isToolCallHovered, "function");
+	assert.equal(typeof interaction.setHoveredToolGroup, "function");
+	assert.equal(typeof interaction.setHoveredToolIo, "function");
+	try {
+		setHoveredToolCallId("tool-1");
+		assert.equal(interaction.hoveredToolCallId, "tool-1");
+	} finally {
+		setHoveredToolCallId(null);
+	}
+	assert.equal(interaction.hoveredToolCallId, null);
 });

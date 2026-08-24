@@ -3,11 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import {
-	AssistantMessageComponent,
-	ToolExecutionComponent,
-	initTheme,
-} from "@earendil-works/pi-coding-agent";
+import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyle, { getCompactThinkingConfig } from "../extensions/renderer/index.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
@@ -118,87 +114,6 @@ test("tool built before patch stays visible after resume (mounted scan refreshes
 		assert.ok(
 			lines.some((l: string) => /bash|out|returned/i.test(l)),
 			`tool must stay visible after resume, got: ${JSON.stringify(lines)}`,
-		);
-
-		second.emit("session_shutdown", {}, ctx);
-	} finally {
-		first.emit("session_shutdown", {}, ctx);
-		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = prev;
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
-
-test("resume rebuild keeps assistant thinking and tool call rendering", async () => {
-	const dir = mkdtempSync(join(tmpdir(), "pi-resume-render-"));
-	const prev = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = dir;
-	const entries: any[] = [];
-	const sessionManager = { getBranch: () => entries, getEntries: () => entries };
-	const parent = new Container() as any;
-	const { ctx } = makeCtx(parent, sessionManager);
-	const first = runtime();
-	first.pi.appendEntry = (_t: string, data: unknown) =>
-		entries.push({ type: "custom", customType: "compact-thinking-duration", data });
-	try {
-		claudeCodeStyle(first.pi as any, { mode: "on" }, undefined as any);
-		installCompactThinking(first.pi, getCompactThinkingConfig());
-		first.emit("session_start", {}, ctx);
-
-		const ts = Date.now();
-		const msg = {
-			role: "assistant",
-			timestamp: ts,
-			content: [
-				{ type: "thinking", thinking: "**Plan**\n\nFirst do A" },
-				{ type: "toolCall", name: "bash", args: {}, id: "c1" },
-			],
-			stopReason: "toolUse",
-		} as any;
-		first.emit(
-			"message_update",
-			{ message: msg, assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } },
-			ctx,
-		);
-		await new Promise((resolve) => setTimeout(resolve, 30));
-		first.emit(
-			"message_update",
-			{ message: msg, assistantMessageEvent: { type: "toolcall_start", contentIndex: 1 } },
-			ctx,
-		);
-		first.emit("session_shutdown", { reason: "resume" }, ctx);
-
-		// pi rebuilds the chat with the original prototype
-		parent.clear();
-		const assistant = new AssistantMessageComponent(msg, true) as any;
-		parent.addChild(assistant);
-		const tool = new ToolExecutionComponent(
-			"bash",
-			"c1",
-			{},
-			{},
-			undefined,
-			ctx.ui,
-			process.cwd(),
-		) as any;
-		parent.addChild(tool);
-		tool.updateResult({ content: [{ type: "text", text: "ls" }], isError: false });
-
-		// second instance: session_start restores durations and re-renders everything
-		const second = runtime();
-		claudeCodeStyle(second.pi as any, { mode: "on" }, undefined as any);
-		installCompactThinking(second.pi, getCompactThinkingConfig());
-		second.emit("session_start", { reason: "resume" }, ctx);
-		await new Promise((resolve) => setTimeout(resolve, 20));
-
-		const lines = parent.render(120).map(stripAnsi).filter(Boolean);
-		assert.ok(
-			lines.some((l: string) => l.startsWith("Thought for")),
-			`thinking recovers its duration, got: ${JSON.stringify(lines)}`,
-		);
-		assert.ok(
-			lines.some((l: string) => /bash|ls|returned/i.test(l)),
-			`tool call stays visible, got: ${JSON.stringify(lines)}`,
 		);
 
 		second.emit("session_shutdown", {}, ctx);

@@ -27,25 +27,16 @@ const visibleWidth = (line: string) => [...stripAnsi(line)].length;
 
 const HERO_TEXT = "There are many agent harnesses, but this one is yours.";
 
-test("双栏：logo(4 行) 与右侧 tips(5 行) 垂直居中，左右并排无交叉", () => {
+test("双栏：logo 与 tips 并排，右栏从固定列开始", () => {
 	const lines = renderHeaderLines(120, theme);
 	assert.equal(lines.length, 5);
-	// 每行 = logo(8) + gap(2) + 右栏；右栏行不超宽
 	for (const line of lines) {
 		assert.ok(visibleWidth(line) <= 120, "所有行不超宽");
 	}
-	// 版本行与 logo 首行同行
 	assert.ok(lines[0]!.includes(`pi v${VERSION}`));
-	// hero 文案在最后一行（替换原生 "Pi can explain..." 位置）
 	assert.ok(lines[4]!.includes(HERO_TEXT));
 	assert.ok(!lines.some((line) => line.includes("Pi can explain its own features")));
-});
-
-test("双栏：左右栏干净分隔，右栏从固定列开始", () => {
-	const lines = renderHeaderLines(120, theme);
-	// 版本行：logo 行(8) + gap(2) 后紧跟 "pi v..."（ANSI 剥离后）
 	assert.equal(stripAnsi(lines[0]!).indexOf("pi v"), 10);
-	// logo 行不含右栏文本混入（左栏宽度固定 8）
 	assert.equal(visibleWidth(lines[0]!.slice(0, 8)), 8);
 });
 

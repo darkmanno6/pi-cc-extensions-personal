@@ -67,6 +67,7 @@ Run `/reload` after installation.
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
   "previewLines": 3,                       // preview lines; 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
+  "dimThinkingText": false,               // dim thinking body text
 
   // ui
   "showStartupHeader": true,               // startup header (logo + tips) toggle

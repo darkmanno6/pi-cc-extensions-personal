@@ -67,6 +67,7 @@ pi install git:github.com/minuque/pi-cc-extensions
   "useSummaryTitlesAsThinkingTitle": true, // 用最新摘要作思考标题
   "previewLines": 3,                       // 预览行数，0 隐藏
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
+  "dimThinkingText": false,               // thinking 正文用 dim 色
 
   // ui
   "showStartupHeader": true,               // 启动头（logo + tips）开关

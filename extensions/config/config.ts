@@ -55,6 +55,7 @@ export type Config = {
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
+	dimThinkingText: boolean;
 	showStartupHeader: boolean;
 	scrollStepLines: number;
 	enableSessionReference: boolean;
@@ -106,6 +107,7 @@ export const DEFAULT_CONFIG: Config = {
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
+	dimThinkingText: false,
 	showStartupHeader: true,
 	scrollStepLines: 3,
 	enableSessionReference: true,
@@ -199,6 +201,7 @@ export function normalizeConfig(input: unknown): Config {
 			source.animationIntervalMs,
 			DEFAULT_CONFIG.animationIntervalMs,
 		),
+		dimThinkingText: source.dimThinkingText === true,
 		showStartupHeader: source.showStartupHeader !== false,
 		scrollStepLines: pickPositiveInt(source.scrollStepLines, DEFAULT_CONFIG.scrollStepLines, 1, 50),
 		enableSessionReference: source.enableSessionReference !== false,
@@ -248,6 +251,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,
+		`thinkingDim=${source.dimThinkingText ? "on" : "off"}`,
 		`startupHeader=${source.showStartupHeader ? "on" : "off"}`,
 		`scrollStep=${source.scrollStepLines}`,
 		`sessionRef=${source.enableSessionReference ? "on" : "off"}`,

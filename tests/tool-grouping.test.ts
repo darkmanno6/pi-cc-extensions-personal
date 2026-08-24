@@ -15,14 +15,20 @@ function tool(name: string, id: string, args: any = {}) {
 	return new ToolExecutionComponent(name, id, args, {}, undefined, ui, process.cwd()) as any;
 }
 
+function started(name: string, id: string, args: any = {}) {
+	const component = tool(name, id, args);
+	component.markExecutionStarted();
+	return component;
+}
+
 test("mixed tools group across three empty separators while edit/write and content break groups", () => {
 	let enabled = true;
 	const hooks = installToolGrouping(() => enabled);
 	try {
 		const parent = new Container() as any;
-		const read = tool("read", "read");
-		const bash = tool("bash", "bash");
-		const grep = tool("grep", "grep");
+		const read = started("read", "read");
+		const bash = started("bash", "bash");
+		const grep = started("grep", "grep");
 		parent.addChild(read);
 		parent.addChild(new Spacer(1));
 		parent.addChild(new Spacer(1));
@@ -84,8 +90,8 @@ test("expanded native cards align nested trees through interleaved ANSI padding"
 	const hooks = installToolGrouping(() => true);
 	try {
 		const parent = new Container() as any;
-		const read = tool("read", "read");
-		const bash = tool("bash", "bash");
+		const read = started("read", "read");
+		const bash = started("bash", "bash");
 		parent.addChild(read);
 		parent.addChild(bash);
 		const group = parent.children[0] as ToolGroupComponent;
@@ -285,8 +291,8 @@ test("pending and expanded groups bypass settled render caching", () => {
 	const hooks = installToolGrouping(() => true);
 	try {
 		const parent = new Container() as any;
-		const read = tool("read", "live-read");
-		const bash = tool("bash", "live-bash");
+		const read = started("read", "live-read");
+		const bash = started("bash", "live-bash");
 		parent.addChild(read);
 		parent.addChild(bash);
 		const group = parent.children[0] as ToolGroupComponent;
@@ -352,12 +358,66 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 		assert.notStrictEqual(collapsed, failed, "expansion changes clear settled output");
 		assert.strictEqual(group.render(160), collapsed, "collapsed output is memoized again");
 
-		parent.addChild(tool("grep", "cached-grep", { pattern: "todo" }));
+		parent.addChild(started("grep", "cached-grep", { pattern: "todo" }));
 		const grown = group.render(160);
 		assert.notStrictEqual(grown, collapsed);
 		assert.match(grown.join("\n"), /running/);
 		assert.match(grown.join("\n"), /<success>1<\/success> done/);
 		assert.match(grown.join("\n"), /<error>1<\/error> failed/);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("queued live tools stay neutral until execution starts", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const read = tool("read", "read-queued");
+		const bash = tool("bash", "bash-queued");
+		parent.addChild(read);
+		parent.addChild(bash);
+		const group = parent.children[0] as ToolGroupComponent;
+		const queued = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(queued[0], /2 queued/);
+		for (const line of queued) assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/);
+
+		read.markExecutionStarted();
+		bash.markExecutionStarted();
+		const running = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(running[0], /2 running/);
+		assert.ok(running.some((line: string) => /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/.test(line)));
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("restored tool calls that never started render queued, not running", () => {
+	const parent = new Container() as any;
+	parent.addChild(tool("read", "read-stale"));
+	parent.addChild(tool("bash", "bash-stale"));
+	const hooks = installToolGrouping(() => true);
+	try {
+		hooks.refresh(parent);
+		const group = parent.children[0] as ToolGroupComponent;
+		const rendered = group
+			.render(100)
+			.map((line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+			.filter((line: string) => line.trim());
+		assert.match(rendered[0], /2 queued/);
+		assert.doesNotMatch(rendered[0], /running|done/);
+		for (const line of rendered) {
+			assert.doesNotMatch(line, /[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✓]/, "restored tools stay neutral");
+		}
+
+		(group.children[0] as any).updateResult({ content: [], isError: false });
+		assert.match(group.render(100).find((line: string) => line.trim())!, /1 queued.*1 done/);
 	} finally {
 		hooks.shutdown();
 	}

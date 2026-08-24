@@ -4,6 +4,7 @@ import {
 	type ExtensionCommandContext,
 	type ToolInfo,
 	estimateTokens,
+	formatSkillsForPrompt,
 	getMarkdownTheme,
 } from "@earendil-works/pi-coding-agent";
 import { Key, Markdown, matchesKey, visibleWidth } from "@earendil-works/pi-tui";
@@ -16,7 +17,13 @@ export type ContextPart = {
 	color: "accent" | "success" | "warning" | "customMessageLabel" | "muted" | "dim" | "error";
 };
 
-type PreviewKey = "systemPrompt" | "memoryFiles" | "tools" | "toolResults" | "contextFiles";
+type PreviewKey =
+	| "systemPrompt"
+	| "memoryFiles"
+	| "skills"
+	| "tools"
+	| "toolResults"
+	| "contextFiles";
 
 type ContextPreview = {
 	key: PreviewKey;
@@ -265,6 +272,12 @@ const tokenEstimate = (value: unknown): number => {
 	return Math.max(0, Math.ceil(text.length / 4));
 };
 
+/** 只统计确实嵌进 system prompt 的片段，避免源文件预览把占用加两遍。 */
+function embeddedTokens(prompt: string, chunk: string): number {
+	if (!chunk || !prompt.includes(chunk)) return 0;
+	return tokenEstimate(chunk);
+}
+
 export function capParts(parts: ContextPart[], target: number, fixedPrefix = 0): ContextPart[] {
 	const fixed = parts.slice(0, fixedPrefix);
 	const variable = parts.slice(fixedPrefix);
@@ -346,9 +359,12 @@ export function collectContextBreakdown(
 	const memoryPreview: string[] = [];
 	let memoryTokens = 0;
 	for (const file of options.contextFiles ?? []) {
-		memoryTokens += tokenEstimate(file.content);
+		memoryTokens += embeddedTokens(systemPrompt, file.content);
 		memoryPreview.push(`## ${file.path}\n\n${previewValue(file.content)}`);
 	}
+
+	const skillsText = formatSkillsForPrompt(options.skills ?? []).trim();
+	const skillsTokens = embeddedTokens(systemPrompt, skillsText);
 
 	for (const tool of allTools) {
 		if (!selectedTools.has(tool.name)) continue;
@@ -407,17 +423,20 @@ export function collectContextBreakdown(
 		}
 	}
 
+	const systemTokens = Math.max(0, tokenEstimate(systemPrompt) - memoryTokens - skillsTokens);
 	return {
 		parts: [
-			{ label: "System prompt", tokens: tokenEstimate(systemPrompt), color: "accent" },
+			{ label: "System prompt", tokens: systemTokens, color: "accent" },
 			{ label: "Memory", tokens: memoryTokens, color: "error" },
-			{ label: "Tools", tokens: toolDefinitionTokens, color: "success" },
+			{ label: "Skills", tokens: skillsTokens, color: "warning" },
+			{ label: "Tools definition", tokens: toolDefinitionTokens, color: "success" },
 			{ label: "Tool results", tokens: toolResultTokens, color: "customMessageLabel" },
 			{ label: "Context", tokens: contextTokens, color: "warning" },
 		] satisfies ContextPart[],
 		previews: {
 			systemPrompt: systemPrompt || "No system prompt.",
 			memoryFiles: memoryPreview.join("\n\n") || "No memory files in context.",
+			skills: skillsText || "No skills in context.",
 			tools: toolDefinitionPreview.join("\n\n") || "No active tool definitions.",
 			toolResults: toolResultPreview.join("\n\n") || "No tool results in the current context.",
 			contextFiles: contextPreview.join("\n\n") || "No conversation context.",
@@ -434,10 +453,10 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 			const tools = pi.getAllTools();
 			const breakdown = collectContextBreakdown(ctx, tools);
 			const estimated = breakdown.parts.reduce((sum, part) => sum + part.tokens, 0);
-			// System prompt、Memory、Tools 为固定项，capParts 时保持原值不压缩。
-			const fixedTokens = breakdown.parts.slice(0, 3).reduce((sum, part) => sum + part.tokens, 0);
+			// System / Memory / Skills / Tools definition 为固定项，capParts 时保持原值不压缩。
+			const fixedTokens = breakdown.parts.slice(0, 4).reduce((sum, part) => sum + part.tokens, 0);
 			const used = Math.max(resolveUsedTokens(usage, estimated, contextWindow), fixedTokens);
-			const parts = capParts(breakdown.parts, used, 3);
+			const parts = capParts(breakdown.parts, used, 4);
 			const attributed = parts.reduce((sum, part) => sum + part.tokens, 0);
 			const other = Math.max(0, used - attributed);
 			const free = Math.max(0, contextWindow - used);
@@ -467,9 +486,15 @@ export default function contextUsageExtension(pi: ExtensionAPI) {
 					content: breakdown.previews.memoryFiles,
 				},
 				{
+					key: "skills",
+					label: "Skills",
+					title: "Skills",
+					content: breakdown.previews.skills,
+				},
+				{
 					key: "tools",
-					label: "Tools",
-					title: "Tools",
+					label: "Tools definition",
+					title: "Tools definition",
 					content: breakdown.previews.tools,
 				},
 				{

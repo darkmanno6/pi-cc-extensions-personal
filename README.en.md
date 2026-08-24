@@ -41,7 +41,7 @@ Run `/reload` after installation.
 | Markdown enhancements      | Mermaid art, admonitions, URL linking, and more                                           | Automatic                                        |
 | Fullscreen mode             | Tool card/group click to expand, double-click to collapse, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Diff / Thinking / UI / Feature` tabs                                             | `/ccstyle`                                      |
-| Context inspection          | Usage breakdown and previews for the system prompt, tools, skills, and messages           | `/context`                                      |
+| Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
 | Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
 

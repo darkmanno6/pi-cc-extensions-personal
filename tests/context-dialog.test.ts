@@ -3,7 +3,7 @@
 // bounds 为 0-based 的弹框起点（left/top）+ 宽度。
 import assert from "node:assert/strict";
 import test from "node:test";
-import { initTheme } from "@earendil-works/pi-coding-agent";
+import { formatSkillsForPrompt, initTheme } from "@earendil-works/pi-coding-agent";
 import {
 	capParts,
 	collectContextBreakdown,
@@ -77,15 +77,19 @@ test("context breakdown separates tools, results, and conversation without infla
 		[
 			["System prompt", "accent"],
 			["Memory", "error"],
-			["Tools", "success"],
+			["Skills", "warning"],
+			["Tools definition", "success"],
 			["Tool results", "customMessageLabel"],
 			["Context", "warning"],
 		],
 	);
 	assert.equal(parts.find((part) => part.label === "System prompt")?.tokens, 50);
-	assert.equal(parts.find((part) => part.label === "Memory")?.tokens, 1);
+	assert.equal(parts.find((part) => part.label === "Memory")?.tokens, 0);
+	assert.equal(parts.find((part) => part.label === "Skills")?.tokens, 0);
 	assert.match(breakdown.previews.memoryFiles, /## AGENTS\.md/);
 	assert.match(breakdown.previews.memoryFiles, /cccc/);
+	assert.match(breakdown.previews.skills, /<name>ok<\/name>/);
+	assert.doesNotMatch(breakdown.previews.skills, /hidden/);
 	assert.equal(parts.find((part) => part.label === "Tool results")?.tokens, 2);
 	assert.equal(parts.find((part) => part.label === "Context")?.tokens, 8);
 	assert.equal(breakdown.previews.systemPrompt, "s".repeat(200));
@@ -102,12 +106,12 @@ test("context breakdown separates tools, results, and conversation without infla
 
 	const fitted = capParts(parts, parts.reduce((sum, part) => sum + part.tokens, 0) + 10);
 	assert.deepEqual(fitted, parts, "estimates are not inflated to fill provider usage");
-	const fixedTokens = parts.slice(0, 3).reduce((sum, part) => sum + part.tokens, 0);
-	const capped = capParts(parts, fixedTokens + 5, 3);
+	const fixedTokens = parts.slice(0, 4).reduce((sum, part) => sum + part.tokens, 0);
+	const capped = capParts(parts, fixedTokens + 5, 4);
 	assert.deepEqual(
-		capped.slice(0, 3),
-		parts.slice(0, 3),
-		"system prompt, memory and tools stay stable",
+		capped.slice(0, 4),
+		parts.slice(0, 4),
+		"system prompt, memory, skills and tools definition stay stable",
 	);
 	assert.equal(
 		capped.reduce((sum, part) => sum + part.tokens, 0),
@@ -119,6 +123,35 @@ test("context breakdown separates tools, results, and conversation without infla
 		{ label: "Free space", tokens: 100, color: "dim" },
 	];
 	assert.equal(new Set(finalParts.map((part) => part.color)).size, 7);
+});
+
+test("context breakdown attributes embedded memory and skills once", () => {
+	const memory = "cccc";
+	const skills = [{ name: "ok", description: "desc", filePath: "/v" }];
+	const skillsText = formatSkillsForPrompt(skills as any).trim();
+	const systemPrompt = `base\n<project_instructions>\n${memory}\n</project_instructions>\n${skillsText}`;
+	const ctx = {
+		getSystemPromptOptions: () => ({
+			cwd: "/repo",
+			selectedTools: [],
+			contextFiles: [{ path: "AGENTS.md", content: memory }],
+			skills,
+		}),
+		getSystemPrompt: () => systemPrompt,
+		sessionManager: { buildContextEntries: () => [] },
+	} as any;
+
+	const breakdown = collectContextBreakdown(ctx, []);
+	const systemTokens = breakdown.parts.find((part) => part.label === "System prompt")?.tokens ?? -1;
+	const memoryTokens = breakdown.parts.find((part) => part.label === "Memory")?.tokens ?? -1;
+	const skillsTokens = breakdown.parts.find((part) => part.label === "Skills")?.tokens ?? -1;
+	assert.equal(memoryTokens, Math.ceil(memory.length / 4));
+	assert.equal(skillsTokens, Math.ceil(skillsText.length / 4));
+	assert.equal(
+		systemTokens + memoryTokens + skillsTokens,
+		Math.ceil(systemPrompt.length / 4),
+	);
+	assert.ok(systemTokens < Math.ceil(systemPrompt.length / 4));
 });
 
 test("resolveUsedTokens rejects inconsistent or implausibly small provider usage", () => {

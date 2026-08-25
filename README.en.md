@@ -62,13 +62,13 @@ Run `/reload` after installation.
   "writeDiffCollapsedLines": 0,            // write collapse lines; 0 = creation summary only
   "diffWordWrap": true,                    // wrap long diff lines
   "expandedPreviewMaxLines": 40,           // max lines for expanded bodies
-  "toolInputNameLength": 100,             // tool summary path/command clip length
+  "toolInputNameLength": 100,              // tool summary path/command clip length
 
   // thinking
   "useSummaryTitlesAsThinkingTitle": true, // use latest summary as thinking title
   "previewLines": 3,                       // preview lines; 0 hides
   "animationIntervalMs": 90,               // title animation interval (ms)
-  "dimThinkingText": false,               // dim thinking body text
+  "dimThinkingText": false,                // dim thinking body text
 
   // ui
   "showStartupHeader": true,               // startup header (logo + tips) toggle

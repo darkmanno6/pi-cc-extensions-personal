@@ -3,6 +3,7 @@ import { config } from "./config/config.ts";
 
 // shell
 import piAliases from "./feature/shell/aliases.ts";
+import { installFlushDockedBash } from "./feature/shell/flush-docked-bash.ts";
 import piStartupHeader from "./feature/shell/startup-header.ts";
 import workingMessage from "./feature/shell/working-message.ts";
 
@@ -20,6 +21,7 @@ import markdownEnhance from "./renderer/markdown-enhance.ts";
 export default function (pi: ExtensionAPI): void {
 	// shell chrome
 	if (config.enableAliases) piAliases(pi);
+	installFlushDockedBash();
 	piStartupHeader(pi);
 	if (config.enableWorkingMessage) workingMessage(pi);
 

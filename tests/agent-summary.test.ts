@@ -20,6 +20,7 @@ function stripAnsi(text: string): string {
 
 test("classifyTool：bash/read/edit/write/other", () => {
 	assert.equal(classifyTool("bash"), "bash");
+	assert.equal(classifyTool("powershell"), "bash");
 	assert.equal(classifyTool("read"), "read");
 	assert.equal(classifyTool("edit"), "edit");
 	assert.equal(classifyTool("write"), "write");
@@ -28,9 +29,10 @@ test("classifyTool：bash/read/edit/write/other", () => {
 	assert.equal(classifyTool("mcp__server__read"), "other");
 });
 
-test("AgentRunSummary：bash 计数；read/edit/write 按路径去重；other 计数", () => {
+test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重；other 计数", () => {
 	const summary = new AgentRunSummary(1_000);
 	summary.recordToolStart("bash", { command: "npm test" });
+	summary.recordToolStart("powershell", { command: "Get-ChildItem" });
 	summary.recordToolStart("bash", { command: "ls" });
 	summary.recordToolStart("read", { path: "a.ts" });
 	summary.recordToolStart("read", { path: "a.ts" }); // 去重
@@ -42,10 +44,10 @@ test("AgentRunSummary：bash 计数；read/edit/write 按路径去重；other �
 	summary.recordToolResult(true);
 	summary.recordToolResult(false);
 
-	assert.equal(summary.toolCount, 9);
+	assert.equal(summary.toolCount, 10);
 	const data = summary.snapshot(61_000);
 	assert.deepEqual(data, {
-		commands: 2,
+		commands: 3,
 		reads: 2,
 		edits: 1,
 		writes: 1,

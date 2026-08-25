@@ -2,7 +2,7 @@
  * Agent 回合摘要：统计一次 agent 运行的工具使用并格式化成摘要文本。
  *
  * 分类：bash / read / edit / write / other（精确工具名；MCP 风格名归 other）。
- * 计数：bash 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
+ * 计数：bash/powershell 按调用次数；read/edit/write 按非空 path/file_path 去重；other 按调用次数。
  * 失败单独累计；另记回合耗时。
  *
  * 呈现：`summaryLine` 纯文本，`summaryMarkdown` Markdown（可 box 引用块）。
@@ -28,7 +28,7 @@ export type AgentSummaryData = {
 
 export function classifyTool(toolName: string): AgentToolCategory {
 	const base = toolName.split(".").pop() ?? toolName;
-	if (base === "bash") return "bash";
+	if (base === "bash" || base === "powershell") return "bash";
 	if (base === "read") return "read";
 	if (base === "edit") return "edit";
 	if (base === "write") return "write";

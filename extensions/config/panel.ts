@@ -25,7 +25,7 @@ import {
 	SCROLL_STEP_LINES_VALUES,
 	THINKING_ANIMATION_INTERVAL_VALUES,
 	THINKING_PREVIEW_LINES_VALUES,
-	TOOL_INPUT_NAME_LENGTH_VALUES,
+	INPUT_CLIP_VALUES,
 	WRITE_DIFF_COLLAPSED_LINES_VALUES,
 	updateConfig,
 	type CompactStyleMode,
@@ -264,15 +264,15 @@ export async function showCcstylePanel(
 				);
 			},
 		};
-		const toolInputNameSetting = {
-			id: "toolInputNameLength",
+		const inputClipSetting = {
+			id: "inputClip",
 			label: "Input clip",
 			description:
 				"Max characters for path/command/name in single and grouped tool summaries. Enter to type a custom value.",
-			currentValue: String(config.toolInputNameLength),
-			values: [...TOOL_INPUT_NAME_LENGTH_VALUES],
+			currentValue: String(config.inputClip),
+			values: [...INPUT_CLIP_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
-				buildNumberInputSubmenu(theme, toolInputNameSetting, closeSubmenu),
+				buildNumberInputSubmenu(theme, inputClipSetting, closeSubmenu),
 		};
 		const diffViewSetting = {
 			id: "diffViewMode",
@@ -452,11 +452,11 @@ export async function showCcstylePanel(
 				return;
 			}
 			switch (id) {
-				case "toolInputNameLength":
+				case "inputClip":
 					updateConfig({
-						toolInputNameLength: pickPositiveInt(value, DEFAULT_CONFIG.toolInputNameLength, 8, 500),
+						inputClip: pickPositiveInt(value, DEFAULT_CONFIG.inputClip, 8, 500),
 					});
-					toolInputNameSetting.currentValue = String(config.toolInputNameLength);
+					inputClipSetting.currentValue = String(config.inputClip);
 					break;
 				case "mode": {
 					// 选项值带 Experimental 标记，选择后还原为真实 mode 值。
@@ -581,7 +581,7 @@ export async function showCcstylePanel(
 					writeDiffCollapsedSetting,
 					diffWordWrapSetting,
 					expandedMaxSetting,
-					toolInputNameSetting,
+					inputClipSetting,
 				],
 			},
 			{

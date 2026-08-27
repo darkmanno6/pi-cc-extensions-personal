@@ -181,9 +181,9 @@ test("config normalize keeps compact, defaults to on, command completions order 
 	assert.equal(normalizeConfig({}).dimThinkingText, false);
 	assert.equal(normalizeConfig({ dimThinkingText: true }).dimThinkingText, true);
 	assert.match(formatConfigStatus(normalizeConfig({})), /thinkingDim=off/);
-	assert.equal(normalizeConfig({}).toolInputNameLength, 100);
-	assert.equal(normalizeConfig({ toolInputNameLength: 40 }).toolInputNameLength, 40);
-	assert.match(formatConfigStatus(normalizeConfig({})), /toolInputName=100/);
+	assert.equal(normalizeConfig({}).inputClip, 100);
+	assert.equal(normalizeConfig({ inputClip: 40 }).inputClip, 40);
+	assert.match(formatConfigStatus(normalizeConfig({})), /inputClip=100/);
 
 	let completions: Array<{ value: string }> = [];
 	const pi: any = {
@@ -206,18 +206,18 @@ test("config normalize keeps compact, defaults to on, command completions order 
 });
 
 test("tool input name length clips single and grouped summaries", () => {
-	const previous = config.toolInputNameLength;
+	const previous = config.inputClip;
 	const path = `src/${"a".repeat(80)}.ts`;
 	const clipped = `${path.slice(0, 19)}…`;
 	try {
-		config.toolInputNameLength = 20;
+		config.inputClip = 20;
 		assert.equal(toolCallSummary("read", { path }).main, `Read ${clipped}`);
 		assert.equal(
 			toolCallSummary("read", { path }, { variant: "grouping" }).main,
 			`Read ${clipped}`,
 		);
 	} finally {
-		config.toolInputNameLength = previous;
+		config.inputClip = previous;
 	}
 });
 

@@ -52,7 +52,7 @@ export type Config = {
 	writeDiffCollapsedLines: number;
 	diffWordWrap: boolean;
 	expandedPreviewMaxLines: number;
-	toolInputNameLength: number;
+	inputClip: number;
 	useSummaryTitlesAsThinkingTitle: boolean;
 	previewLines: number;
 	animationIntervalMs: number;
@@ -79,7 +79,7 @@ export const WRITE_DIFF_COLLAPSED_LINES_VALUES = ["0", "4", "8", "12", "24", "36
 /** Presets for expanded body height — keep low options first so cycling stays TUI-friendly. */
 export const EXPANDED_PREVIEW_MAX_LINES_VALUES = ["40", "60", "80", "120", "200", "500", "2000"];
 /** 工具摘要里 path/command 等输入的折叠字符数。 */
-export const TOOL_INPUT_NAME_LENGTH_VALUES = ["40", "60", "80", "100", "120", "160"];
+export const INPUT_CLIP_VALUES = ["40", "60", "80", "100", "120", "160"];
 export const THINKING_PREVIEW_LINES_VALUES = ["0", "1", "3", "5", "10"];
 export const THINKING_ANIMATION_INTERVAL_VALUES = ["40", "60", "90", "120", "180"];
 /** fullscreen 滚轮步进行数预设。 */
@@ -107,7 +107,7 @@ export const DEFAULT_CONFIG: Config = {
 	writeDiffCollapsedLines: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines,
 	diffWordWrap: DEFAULT_TOOL_DISPLAY_CONFIG.diffWordWrap,
 	expandedPreviewMaxLines: DEFAULT_TOOL_DISPLAY_CONFIG.expandedPreviewMaxLines,
-	toolInputNameLength: 100,
+	inputClip: 100,
 	useSummaryTitlesAsThinkingTitle: true,
 	previewLines: 3,
 	animationIntervalMs: 90,
@@ -194,9 +194,9 @@ export function normalizeConfig(input: unknown): Config {
 			10,
 			50_000,
 		),
-		toolInputNameLength: pickPositiveInt(
-			source.toolInputNameLength,
-			DEFAULT_CONFIG.toolInputNameLength,
+		inputClip: pickPositiveInt(
+			source.inputClip ?? source.toolInputNameLength,
+			DEFAULT_CONFIG.inputClip,
 			8,
 			500,
 		),
@@ -258,7 +258,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`writeCollapsed=${source.writeDiffCollapsedLines}`,
 		`diffWordWrap=${source.diffWordWrap ? "on" : "off"}`,
 		`expandedMax=${source.expandedPreviewMaxLines}`,
-		`toolInputName=${source.toolInputNameLength}`,
+		`inputClip=${source.inputClip}`,
 		`thinkingTitle=${source.useSummaryTitlesAsThinkingTitle ? "summary" : "default"}`,
 		`thinkingPreview=${source.previewLines}`,
 		`thinkingAnimation=${source.animationIntervalMs}ms`,

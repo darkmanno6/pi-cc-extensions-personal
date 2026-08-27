@@ -2,7 +2,7 @@ import { config } from "../../config/config.ts";
 import { oneLine } from "../../utils/format.ts";
 
 function clip(value: unknown): string {
-	return oneLine(value, config.toolInputNameLength);
+	return oneLine(value, config.inputClip);
 }
 
 /**

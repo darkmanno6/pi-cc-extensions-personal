@@ -33,7 +33,10 @@ test("singleton storage is globalThis", () => {
 	const key = Symbol.for("pi.ccstyle.test.patch-registry");
 	try {
 		patchRegistry.install(key, { tag: "via-registry" });
-		assert.equal((globalThis as Record<PropertyKey, { tag: string }>)[key].tag, "via-registry");
+		assert.equal(
+			(globalThis as unknown as Record<PropertyKey, { tag: string }>)[key].tag,
+			"via-registry",
+		);
 		(globalThis as Record<PropertyKey, unknown>)[key] = { tag: "via-globalThis" };
 		assert.equal(patchRegistry.get<{ tag: string }>(key)?.tag, "via-globalThis");
 	} finally {

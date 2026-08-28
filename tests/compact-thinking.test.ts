@@ -8,11 +8,11 @@ import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import { config as ccstyleConfig } from "../extensions/config/config.ts";
 import {
-	animateCompactThinkingText,
 	clearThinkingPreviewCache,
 	installCompactThinking,
 	ThinkingPreviewBlock,
 } from "../extensions/feature/compact-thinking.ts";
+import { animateCompactThinkingText } from "../extensions/renderer/compact-mode.ts";
 
 const config = {
 	useSummaryTitlesAsThinkingTitle: false,

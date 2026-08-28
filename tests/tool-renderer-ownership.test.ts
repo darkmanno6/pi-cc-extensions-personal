@@ -463,7 +463,6 @@ test("global renderer reload chains external wrappers and shutdown restores them
 		claudeCodeStyleExtension(makePi(secondEvents) as any, { excludeRenderers: ["custom"] });
 		await secondEvents.get("session_start")?.({}, ctx);
 		assert.equal(firstPatch.active, false);
-		assert.equal(firstPatch.mode(), "off", "reload disconnects the old config callback");
 		for (const name of methodNames) assert.notEqual(prototype[name], external[name]);
 
 		const renderCall = () => new Text("call", 0, 0);
@@ -494,76 +493,6 @@ test("global renderer reload chains external wrappers and shutdown restores them
 	} finally {
 		await firstEvents.get("session_shutdown")?.({}, ctx);
 		await secondEvents.get("session_shutdown")?.({}, ctx);
-		for (const name of methodNames) prototype[name] = originals[name];
-		delete (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
-	}
-});
-
-test("global renderer migrates legacy Symbol state without retaining old wrappers", async () => {
-	const prototype = ToolExecutionComponent.prototype as any;
-	const methodNames = [
-		"hasRendererDefinition",
-		"getRenderShell",
-		"getCallRenderer",
-		"getResultRenderer",
-	] as const;
-	const originals = Object.fromEntries(
-		methodNames.map((name) => [name, prototype[name]]),
-	) as Record<string, Function>;
-	const events = new Map<string, Function>();
-	const legacy: any = {
-		prototype,
-		owner: {},
-		enabled: () => true,
-		wrap: (tool: any) => tool,
-		byDefinition: new WeakMap(),
-		byName: new Map(),
-		originalHasRendererDefinition: originals.hasRendererDefinition,
-		originalGetRenderShell: originals.getRenderShell,
-		originalGetCallRenderer: originals.getCallRenderer,
-		originalGetResultRenderer: originals.getResultRenderer,
-	};
-	const shouldGloballyStyleTool = () => false;
-	const shouldUseSelfShell = () => false;
-	prototype.hasRendererDefinition = function (this: any, ...args: any[]) {
-		if (shouldGloballyStyleTool()) return true;
-		return legacy.originalHasRendererDefinition.apply(this, args);
-	};
-	prototype.getRenderShell = function (this: any, ...args: any[]) {
-		if (shouldUseSelfShell() || shouldGloballyStyleTool()) return "self";
-		return legacy.originalGetRenderShell.apply(this, args);
-	};
-	prototype.getCallRenderer = function (this: any, ...args: any[]) {
-		if (shouldGloballyStyleTool()) return undefined;
-		return legacy.originalGetCallRenderer.apply(this, args);
-	};
-	prototype.getResultRenderer = function (this: any, ...args: any[]) {
-		if (shouldGloballyStyleTool()) return undefined;
-		return legacy.originalGetResultRenderer.apply(this, args);
-	};
-	(globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")] = legacy;
-	const ctx = {
-		mode: "tui",
-		hasUI: true,
-		ui: { theme: {}, setStatus() {}, requestRender() {} },
-	} as any;
-
-	try {
-		claudeCodeStyleExtension({
-			registerCommand() {},
-			registerShortcut() {},
-			on(name: string, handler: Function) {
-				events.set(name, handler);
-			},
-		} as any);
-		await events.get("session_start")?.({}, ctx);
-		const migrated = (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
-		for (const name of methodNames) assert.equal(migrated.downstream[name], originals[name]);
-		assert.equal(legacy.enabled(), false, "legacy callbacks are disconnected");
-		await events.get("session_shutdown")?.({}, ctx);
-		for (const name of methodNames) assert.equal(prototype[name], originals[name]);
-	} finally {
-		await events.get("session_shutdown")?.({}, ctx);
 		for (const name of methodNames) prototype[name] = originals[name];
 		delete (globalThis as any)[Symbol.for("pi.ccstyle.global-tool-render-patch")];
 	}

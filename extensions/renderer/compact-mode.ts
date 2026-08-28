@@ -41,11 +41,8 @@ import { paddedBackgroundRow } from "./tool/grouping.ts";
 import { hasVisibleText, stripBackgroundAnsi } from "../utils/ansi-text.ts";
 import { walkComponentTree } from "../utils/component-tree.ts";
 import {
-	ASSISTANT_REENTRY_DESCRIPTION,
 	ASSISTANT_REENTRY_KEY,
-	ASSISTANT_SET_EXPANDED_DESCRIPTION,
 	ASSISTANT_SET_EXPANDED_KEY,
-	ASSISTANT_TOGGLE_ROUND_DESCRIPTION,
 	ASSISTANT_TOGGLE_ROUND_KEY,
 	COMPACT_MODE_PATCH_KEY,
 	COMPACT_THINKING_PATCH_KEY,
@@ -433,28 +430,16 @@ function isToolComponent(value: any): boolean {
 }
 
 function detachAssistantExpansion(component: any): void {
-	let owned =
-		typeof component?.[ASSISTANT_SET_EXPANDED_KEY] === "function" &&
-		component.setExpanded === component[ASSISTANT_SET_EXPANDED_KEY];
-	if (!owned && component && typeof component === "object") {
-		// 首次升级时清理旧模块使用 Symbol() 留下的实例方法。
-		owned = Object.getOwnPropertySymbols(component).some(
-			(symbol) =>
-				symbol.description === ASSISTANT_SET_EXPANDED_DESCRIPTION && component[symbol] === true,
-		);
+	if (
+		typeof component?.[ASSISTANT_SET_EXPANDED_KEY] !== "function" ||
+		component.setExpanded !== component[ASSISTANT_SET_EXPANDED_KEY]
+	) {
+		return;
 	}
-	if (!owned) return;
-
 	delete component.setExpanded;
-	for (const symbol of Object.getOwnPropertySymbols(component)) {
-		if (
-			symbol.description === ASSISTANT_SET_EXPANDED_DESCRIPTION ||
-			symbol.description === ASSISTANT_TOGGLE_ROUND_DESCRIPTION ||
-			symbol.description === ASSISTANT_REENTRY_DESCRIPTION
-		) {
-			delete component[symbol];
-		}
-	}
+	delete component[ASSISTANT_SET_EXPANDED_KEY];
+	delete component[ASSISTANT_TOGGLE_ROUND_KEY];
+	delete component[ASSISTANT_REENTRY_KEY];
 }
 
 /** 供 mouse-interaction 识别可点击的 compact assistant 行（仅 compact 模式下生效）。 */

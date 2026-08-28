@@ -31,9 +31,6 @@ import {
 	patchRegistry,
 	PROTOTYPE_ORIGINAL_KEY,
 } from "../utils/patch-keys.ts";
-// 保持导出兼容：渲染函数已并入 renderer/compact-mode.ts，这里 re-export。
-export { animateCompactThinkingText, formatThoughtDuration, styleCompactThinkingText };
-
 // pi-tui 类型声明中 TUI 的 re-export 解析失败，本地用最小结构化类型（只用到 requestRender）。
 type RenderTui = { requestRender(force?: boolean): void };
 

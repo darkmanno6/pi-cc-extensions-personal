@@ -3,6 +3,7 @@ import { getKeybindings } from "@earendil-works/pi-tui";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { config } from "../../config/config.ts";
 import { ansi16ToRgb, ansi256ToRgb } from "../../utils/ansi-color.ts";
+import { stripAnsi } from "../../utils/ansi-text.ts";
 type Rgb = [number, number, number];
 type StyledPart = {
 	raw: string;
@@ -10,8 +11,6 @@ type StyledPart = {
 };
 
 const ANSI_RESET = "\x1b[0m";
-const ANSI_PATTERN =
-	/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g;
 
 // 官方 install.sh 静态 logo（4 行原样，短行补尾随空格统一到 8 列）+ 底部空行补到 5 行，
 // 与右侧 tips 行数等高；着色保持现状（accent 渐变）
@@ -39,10 +38,6 @@ const PALETTE_MAX_LIGHTEN = 0.18;
 const PALETTE_SPAN = 0.25;
 // 行间相位偏移：小步累加 → 整体左上暗→右下亮的对角渐变
 const LOGO_ROW_PHASE_STEP = 0.08;
-
-function stripAnsi(text: string): string {
-	return text.replace(ANSI_PATTERN, "");
-}
 
 function getVisibleLength(text: string): number {
 	return [...stripAnsi(text)].length;

@@ -62,20 +62,13 @@ type ToolRenderMethods = {
 type GlobalToolRenderPatch = {
 	version: 2;
 	prototype: any;
-	owner: object;
 	active: boolean;
-	enabled: () => boolean;
 	mode: () => CompactStyleMode;
 	wrap: (tool: any) => any;
 	byDefinition: WeakMap<object, any>;
 	byName: Map<string, any>;
 	downstream: ToolRenderMethods;
 	installed: ToolRenderMethods;
-	// 兼容旧扩展读取 Symbol 上的 legacy 字段。
-	originalHasRendererDefinition: ToolRenderMethods["hasRendererDefinition"];
-	originalGetRenderShell: ToolRenderMethods["getRenderShell"];
-	originalGetCallRenderer: ToolRenderMethods["getCallRenderer"];
-	originalGetResultRenderer: ToolRenderMethods["getResultRenderer"];
 };
 
 type ToolExpandedBackgroundPatch = {
@@ -450,63 +443,39 @@ function isOwnershipAwarePatch(value: any): value is GlobalToolRenderPatch {
 	);
 }
 
-function downstreamForGlobalToolInstall(prototype: any, previous: any): ToolRenderMethods {
+function downstreamForGlobalToolInstall(
+	prototype: any,
+	previous: GlobalToolRenderPatch | undefined,
+): ToolRenderMethods {
 	const current = prototypeToolRenderMethods(prototype);
-	if (!previous || previous.prototype !== prototype) return current;
-	if (isOwnershipAwarePatch(previous)) {
-		return {
-			hasRendererDefinition:
-				current.hasRendererDefinition === previous.installed.hasRendererDefinition
-					? previous.downstream.hasRendererDefinition
-					: current.hasRendererDefinition,
-			getRenderShell:
-				current.getRenderShell === previous.installed.getRenderShell
-					? previous.downstream.getRenderShell
-					: current.getRenderShell,
-			getCallRenderer:
-				current.getCallRenderer === previous.installed.getCallRenderer
-					? previous.downstream.getCallRenderer
-					: current.getCallRenderer,
-			getResultRenderer:
-				current.getResultRenderer === previous.installed.getResultRenderer
-					? previous.downstream.getResultRenderer
-					: current.getResultRenderer,
-		};
+	if (!previous || previous.prototype !== prototype || !isOwnershipAwarePatch(previous)) {
+		return current;
 	}
-
-	// pre-v2 Symbol：originalX 显式记录真实下游（native 原型方法），无需源码嗅探。
-	// 缺失字段回退到当前原型方法（视作 external）。
-	const originalOrCurrent = (field: string, method: Function): Function =>
-		typeof previous[field] === "function" ? previous[field] : method;
 	return {
-		hasRendererDefinition: originalOrCurrent(
-			"originalHasRendererDefinition",
-			current.hasRendererDefinition,
-		) as ToolRenderMethods["hasRendererDefinition"],
-		getRenderShell: originalOrCurrent(
-			"originalGetRenderShell",
-			current.getRenderShell,
-		) as ToolRenderMethods["getRenderShell"],
-		getCallRenderer: originalOrCurrent(
-			"originalGetCallRenderer",
-			current.getCallRenderer,
-		) as ToolRenderMethods["getCallRenderer"],
-		getResultRenderer: originalOrCurrent(
-			"originalGetResultRenderer",
-			current.getResultRenderer,
-		) as ToolRenderMethods["getResultRenderer"],
+		hasRendererDefinition:
+			current.hasRendererDefinition === previous.installed.hasRendererDefinition
+				? previous.downstream.hasRendererDefinition
+				: current.hasRendererDefinition,
+		getRenderShell:
+			current.getRenderShell === previous.installed.getRenderShell
+				? previous.downstream.getRenderShell
+				: current.getRenderShell,
+		getCallRenderer:
+			current.getCallRenderer === previous.installed.getCallRenderer
+				? previous.downstream.getCallRenderer
+				: current.getCallRenderer,
+		getResultRenderer:
+			current.getResultRenderer === previous.installed.getResultRenderer
+				? previous.downstream.getResultRenderer
+				: current.getResultRenderer,
 	};
 }
 
-function disconnectGlobalToolRenderPatch(patch: any): void {
-	if (!patch || typeof patch !== "object") return;
+function disconnectGlobalToolRenderPatch(patch: GlobalToolRenderPatch | undefined): void {
+	if (!patch) return;
 	patch.active = false;
-	patch.enabled = () => false;
-	patch.mode = () => "off";
-	patch.wrap = (tool: any) => tool;
 	patch.byDefinition = new WeakMap();
-	if (patch.byName && typeof patch.byName.clear === "function") patch.byName.clear();
-	else patch.byName = new Map();
+	patch.byName.clear();
 }
 
 function installGlobalToolRendering(
@@ -515,25 +484,18 @@ function installGlobalToolRendering(
 	const prototype = (ToolExecutionComponent as any).prototype;
 	const previous = patchRegistry.get<GlobalToolRenderPatch>(GLOBAL_TOOL_RENDER_PATCH);
 	const downstream = downstreamForGlobalToolInstall(prototype, previous);
-	// 外部仍持有的旧 wrapper 先变为无回调 pass-through，再挂新安装。
-	disconnectGlobalToolRenderPatch(previous);
+	if (isOwnershipAwarePatch(previous)) disconnectGlobalToolRenderPatch(previous);
 
 	const patch: GlobalToolRenderPatch = {
 		version: 2,
 		prototype,
-		owner: {},
 		active: true,
-		enabled: () => config.mode === "on",
 		mode: () => config.mode,
 		wrap: (tool: any) => createCcstyleTool(tool, writeExecutionMetadata),
 		byDefinition: new WeakMap(),
 		byName: new Map(),
 		downstream,
 		installed: undefined as any,
-		originalHasRendererDefinition: downstream.hasRendererDefinition,
-		originalGetRenderShell: downstream.getRenderShell,
-		originalGetCallRenderer: downstream.getCallRenderer,
-		originalGetResultRenderer: downstream.getResultRenderer,
 	};
 
 	patch.installed = {

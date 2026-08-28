@@ -924,13 +924,3 @@ export function scheduleSessionRender(refresh?: () => void): void {
 		tui.requestRender(true);
 	}, 0);
 }
-
-// toolMouseTui 跨模块读取一律走 getToolMouseTui()（jiti 转译下 let 绑定可能是快照）；
-// 此 re-export 仅保留兼容旧导入，新代码请用 getToolMouseTui。
-export { toolMouseTui } from "./scroll.ts";
-export {
-	hoveredToolCallId,
-	isToolCallHovered,
-	setHoveredToolGroup,
-	setHoveredToolIo,
-} from "./hover.ts";

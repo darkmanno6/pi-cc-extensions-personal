@@ -173,9 +173,7 @@ test("buildMessageSummary: duration first, read dedup by path, counts, first-see
 test("config normalize keeps compact, defaults to on, command completions order on,compact,off", () => {
 	assert.equal(normalizeConfig({ mode: "compact" }).mode, "compact");
 	assert.equal(normalizeConfig({}).mode, "on");
-	assert.equal(normalizeConfig({ enabled: false }).mode, "off");
-	assert.equal(normalizeConfig({ enabled: true }).mode, "on");
-	assert.equal(normalizeConfig({ mode: "legacy" }).mode, "on");
+	assert.equal(normalizeConfig({ mode: "invalid" }).mode, "on");
 	assert.equal(normalizeConfig({}).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({}).dimThinkingText, false);

@@ -26,8 +26,6 @@ const MAX_SESSION_SUGGESTIONS = 3;
 const MAX_FILE_SUGGESTIONS = 7;
 const MAX_REFERENCED_SESSIONS = 5;
 const MENTION_PATTERN = /(?:^|[\t ])@([^\s@]*)$/;
-const SUBAGENT_MANAGER_KEY = Symbol.for("pi-subagents:manager");
-
 // ── In-process subagent record tracker ──────────────────────────────
 // pi-subagents does not expose a global manager; we track records
 // ourselves by listening to the events it emits.
@@ -51,17 +49,6 @@ type SessionReference = {
 	info: ReferenceSessionInfo;
 	path?: string;
 	messages?: unknown[];
-};
-
-type SubagentRecord = {
-	id: string;
-	description?: string;
-	startedAt?: number;
-	completedAt?: number;
-};
-
-type SubagentManager = {
-	getRecord(id: string): SubagentRecord | undefined;
 };
 
 // Local subagent record tracking (pi-subagents does not expose a global manager).
@@ -118,28 +105,6 @@ function trackSubagentFromEvent(data: unknown): void {
 		startedAt,
 	});
 	pruneLiveSubagentRecords();
-}
-
-function getSubagentManager(): SubagentManager | undefined {
-	// Try the global manager first (future-proof), fall back to local records.
-	const manager = (globalThis as Record<PropertyKey, unknown>)[SUBAGENT_MANAGER_KEY] as
-		| SubagentManager
-		| undefined;
-	if (manager && typeof manager.getRecord === "function") return manager;
-	// If no global manager, use our local tracking.
-	if (liveSubagentRecords.size === 0) return undefined;
-	return {
-		getRecord(id: string): SubagentRecord | undefined {
-			const record = liveSubagentRecords.get(id);
-			if (!record) return undefined;
-			return {
-				id: record.runId,
-				description: record.agent || undefined,
-				startedAt: record.startedAt,
-				completedAt: record.completedAt,
-			};
-		},
-	};
 }
 
 function extractMentionQuery(textBeforeCursor: string): string | undefined {
@@ -281,31 +246,20 @@ function liveSubagentReferences(
 	agentIds: Set<string>,
 	currentSessionId: string,
 ): SessionReference[] {
-	const manager = getSubagentManager();
-	if (!manager) return [];
-
 	const references: SessionReference[] = [];
 	for (const agentId of agentIds) {
-		const record = manager.getRecord(agentId);
-		if (!record) continue;
-
-		// Try the global manager's live session first (future-proof).
-		const liveRecord = liveSubagentRecords.get(agentId);
-		const sessionId = liveRecord?.sessionId ?? record.id;
-		if (!sessionId || sessionId === currentSessionId) continue;
-
-		const name = record.description?.trim() || liveRecord?.agent || undefined;
-		const modifiedAt = record.completedAt ?? record.startedAt ?? Date.now();
+		const record = liveSubagentRecords.get(agentId);
+		if (!record || record.sessionId === currentSessionId) continue;
 		references.push({
 			kind: "subagent",
-			referenceIds: [sessionId, agentId],
+			referenceIds: [record.sessionId, agentId],
 			info: {
-				id: sessionId,
-				name,
-				cwd: liveRecord?.cwd ?? "",
+				id: record.sessionId,
+				name: record.agent || undefined,
+				cwd: record.cwd,
 				firstMessage: "",
 				messageCount: 0,
-				modified: new Date(modifiedAt),
+				modified: new Date(record.completedAt ?? record.startedAt),
 			},
 		});
 	}

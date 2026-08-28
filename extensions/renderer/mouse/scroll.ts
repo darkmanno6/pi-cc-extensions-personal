@@ -18,26 +18,14 @@ const ZENTUI_PAGE_UP_INPUT = /^\x1b\[5;9(?::[12])?~$|^\x1b\[57421;9(?::[12])?u$|
 const ZENTUI_PAGE_DOWN_INPUT = /^\x1b\[6;9(?::[12])?~$|^\x1b\[57422;9(?::[12])?u$|^\x1b\[1;6B$/;
 const SCROLL_BOTTOM_SHORTCUT = "ctrl+end";
 
-/**
- * 当前安装的 tui 宿主。宿主放本模块（滚动按钮/调度依赖它），
- * 由 mouse-interaction 经 setToolMouseTui 维护；跨模块一律经绑定/setter 访问。
- *
- * 状态镜像到 globalThis（Symbol 槽）：jiti 转译下经 re-export 链读取的
- * 模块级 let 绑定是初始值快照（死绑定，实测恒 null），函数调用才是活引用。
- * 跨模块读取一律用 getToolMouseTui()，避免拿到加载时的快照。
- */
 patchRegistry.ensure(TOOL_MOUSE_TUI_SLOT, () => null);
-export let toolMouseTui: any = null;
 export function getToolMouseTui(): any {
 	return patchRegistry.get(TOOL_MOUSE_TUI_SLOT);
 }
 export function setToolMouseTui(tui: any): void {
-	toolMouseTui = tui;
 	patchRegistry.install(TOOL_MOUSE_TUI_SLOT, tui);
 }
 
-// 滚动按钮状态同 toolMouseTui：镜像到 globalThis（Symbol 槽），跨模块读取
-// 一律用 getter（jiti 转译下模块级 let 绑定是初始值快照）。
 type ScrollButtonState = { visible: boolean; hovered: boolean; widget: any };
 function scrollButtonState(): ScrollButtonState {
 	return patchRegistry.ensure(SCROLL_BUTTON_STATE_SLOT, () => ({
@@ -164,7 +152,7 @@ export function scheduleScrollButtonSync(tui: any, data: string): void {
 	const previousLines = tui.previousLines;
 	const check = (attempt: number) => {
 		scrollButtonSyncScheduled = false;
-		if (toolMouseTui !== tui) return;
+		if (getToolMouseTui() !== tui) return;
 		// Pi renders on its own frame timer. Inspect the resulting viewport before
 		// showing the button so empty or non-scrollable transcripts never flash it.
 		const rendered = tui.previousLines !== previousLines;
@@ -192,7 +180,7 @@ export function updateScrollButtonFromInput(tui: any, data: string): void {
 }
 
 export function renderScrollButton(width: number, theme: any): string[] {
-	if (!getScrollButtonVisible() || !fullscreenLazyTui(toolMouseTui)) return [];
+	if (!getScrollButtonVisible() || !fullscreenLazyTui(getToolMouseTui())) return [];
 	const shortcut = formatShortcut(SCROLL_BOTTOM_SHORTCUT);
 	const label = theme.fg(
 		getScrollButtonHovered() ? "text" : "accent",

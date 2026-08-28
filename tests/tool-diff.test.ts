@@ -496,7 +496,6 @@ test("normalizeConfig defaults writeDiffCollapsedLines to 0 and allows explicit 
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 0 }).writeDiffCollapsedLines, 0);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: 12 }).writeDiffCollapsedLines, 12);
 	assert.equal(normalizeConfig({ editDiffCollapsedLines: 48 }).writeDiffCollapsedLines, 0);
-	assert.equal(normalizeConfig({ diffCollapsedLines: 48 }).editDiffCollapsedLines, 48);
 	assert.equal(normalizeConfig({ writeDiffCollapsedLines: -3 }).writeDiffCollapsedLines, 0);
 });
 

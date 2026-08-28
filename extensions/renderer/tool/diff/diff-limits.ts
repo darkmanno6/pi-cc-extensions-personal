@@ -45,18 +45,10 @@ export function resolveDiffDisplayLimit(
 	return expanded ? Math.max(0, expandedLimit) : Math.max(1, collapsedLimit);
 }
 
-/** Write collapsed body limit. Missing/NaN falls back to edit's `editDiffCollapsedLines`. */
 export function resolveWriteCollapsedLimit(
-	config: Pick<ToolDisplayConfig, "writeDiffCollapsedLines" | "editDiffCollapsedLines">,
+	config: Pick<ToolDisplayConfig, "writeDiffCollapsedLines">,
 ): number {
-	const value = config.writeDiffCollapsedLines;
-	if (Number.isFinite(value)) {
-		return Math.max(0, value);
-	}
-	const fallback = Number.isFinite(config.editDiffCollapsedLines)
-		? config.editDiffCollapsedLines
-		: DEFAULT_TOOL_DISPLAY_CONFIG.writeDiffCollapsedLines;
-	return Math.max(0, fallback);
+	return Math.max(0, config.writeDiffCollapsedLines);
 }
 
 /**

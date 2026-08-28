@@ -10,7 +10,6 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { formatDuration } from "../../utils/format.ts";
-export { formatDuration };
 
 /** 工具分类。 */
 export type AgentToolCategory = "bash" | "read" | "edit" | "write" | "other";
@@ -114,24 +113,8 @@ function summaryParts(data: AgentSummaryData): string[] {
 	return parts;
 }
 
-/** 纯文本摘要行：句首大写 + 可选耗时。 */
-export function summaryLine(data: AgentSummaryData): string {
-	const parts = summaryParts(data);
-	if (parts.length === 0) return "";
-	const text = parts.join(", ");
-	const capitalized = text[0].toUpperCase() + text.slice(1);
-	const duration = formatDuration(data.durationMs);
-	return duration ? `${capitalized} · ${duration}` : capitalized;
-}
-
-/**
- * Markdown 摘要行。
- * `box` 为 true：引用块 `> *斜体*`；false：整体加粗。
- * `colors`：仅数字染色（success / failed）。
- */
 export function summaryMarkdown(
 	data: AgentSummaryData,
-	box = false,
 	colors: { success: string; failed: string } = { success: "", failed: "" },
 ): string {
 	const parts = summaryParts(data);
@@ -148,7 +131,7 @@ export function summaryMarkdown(
 		.join(", ");
 	const duration = formatDuration(data.durationMs);
 	const line = duration ? `${text} · ${duration}` : text;
-	return box ? `> *${line}*` : `**${line}**`;
+	return `> *${line}*`;
 }
 
 /**
@@ -160,8 +143,7 @@ export function summaryMarkdown(
 export function bindAgentSummary(
 	pi: ExtensionAPI,
 	onSummary: (data: AgentSummaryData) => void,
-	minToolCount = 2,
-): () => void {
+): void {
 	let summary = new AgentRunSummary();
 	pi.on("agent_start", async () => {
 		summary = new AgentRunSummary();
@@ -173,9 +155,6 @@ export function bindAgentSummary(
 		summary.recordToolResult(event.isError === true);
 	});
 	pi.on("agent_end", async () => {
-		if (summary.toolCount >= minToolCount) onSummary(summary.snapshot());
+		if (summary.toolCount >= 2) onSummary(summary.snapshot());
 	});
-	return () => {
-		summary = new AgentRunSummary();
-	};
 }

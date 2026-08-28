@@ -3,7 +3,8 @@ import test from "node:test";
 import { Buffer } from "node:buffer";
 import {
 	SESSION_REFERENCE_CUSTOM_TYPE,
-	buildReferenceContent,
+	buildReferenceContentFromSections,
+	formatReferenceSession,
 	extractSessionReferenceIds,
 	sessionTitle,
 	truncateUtf8,
@@ -17,21 +18,12 @@ const info = {
 	modified: new Date("2025-01-02T03:04:05.000Z"),
 };
 
-test("extractSessionReferenceIds finds boundary-delimited references and deduplicates them", () => {
+test("extractSessionReferenceIds finds bracketed references and deduplicates them", () => {
 	assert.deepEqual(
 		extractSessionReferenceIds(
-			"Use @session:abc-123 and\n@session:def_456.v2, then @session:abc-123. Ignore x@session:nope.",
+			"Review @session:[Release plan] and @session:[T-42], then @session:[Release plan]",
 		),
-		["abc-123", "def_456.v2"],
-	);
-});
-
-test("extractSessionReferenceIds accepts bracketed names and keeps legacy ids working", () => {
-	assert.deepEqual(
-		extractSessionReferenceIds(
-			"Review @session:[Release plan] and @session:[T-42] plus legacy @session:abc-123",
-		),
-		["Release plan", "T-42", "abc-123"],
+		["Release plan", "T-42"],
 	);
 });
 
@@ -48,20 +40,19 @@ test("truncateUtf8 enforces byte limits for multibyte content", () => {
 });
 
 test("buildReferenceContent formats active context and drops nested references", () => {
-	const content = buildReferenceContent([
-		{
-			info,
-			messages: [
-				{ role: "user", content: "Implement it" },
-				{ role: "assistant", content: [{ type: "text", text: "Done" }] },
-				{
-					role: "custom",
-					customType: SESSION_REFERENCE_CUSTOM_TYPE,
-					content: "nested prior reference",
-				},
-			],
-		},
-	]);
+	const section = formatReferenceSession({
+		info,
+		messages: [
+			{ role: "user", content: "Implement it" },
+			{ role: "assistant", content: [{ type: "text", text: "Done" }] },
+			{
+				role: "custom",
+				customType: SESSION_REFERENCE_CUSTOM_TYPE,
+				content: "nested prior reference",
+			},
+		],
+	});
+	const content = buildReferenceContentFromSections([section]);
 
 	assert.match(content, /Referenced Pi sessions/);
 	assert.match(content, /User: Implement it/);
@@ -74,11 +65,15 @@ test("buildReferenceContent enforces incremental session and total byte limits",
 		role: "user",
 		content: `${index}: ${"x".repeat(1_000)}`,
 	}));
-	const content = buildReferenceContent([{ info, messages }], {
+	const limits = {
 		maxMessageBytes: 400,
 		maxSessionBytes: 2_000,
 		maxTotalBytes: 1_000,
-	});
+	};
+	const content = buildReferenceContentFromSections(
+		[formatReferenceSession({ info, messages }, limits)],
+		limits.maxTotalBytes,
+	);
 	assert.ok(Buffer.byteLength(content, "utf8") <= 1_000);
 	assert.match(content, /truncated/);
 });

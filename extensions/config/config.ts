@@ -5,9 +5,6 @@ import { join } from "node:path";
 
 export type CompactStyleMode = "on" | "compact" | "off";
 
-// ── diff 显示配置：作为配置 schema 的一部分由 config 层拥有 ──
-// renderer（diff）从 config 导入并 re-export，避免 config → renderer 的反向依赖。
-
 export type DiffViewMode = "auto" | "split" | "unified";
 export type DiffIndicatorMode = "bars" | "classic" | "none";
 
@@ -141,16 +138,7 @@ export function pickPositiveNumber(value: unknown, fallback: number, min = 1): n
 
 export function normalizeConfig(input: unknown): Config {
 	const source = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
-	const mode = source.mode;
-	// 旧 `enabled: boolean` 配置迁移；compact 已恢复为受支持模式，不再回退 on。
-	const migratedMode: CompactStyleMode =
-		mode === "on" || mode === "compact" || mode === "off"
-			? mode
-			: typeof source.enabled === "boolean"
-				? source.enabled
-					? "on"
-					: "off"
-				: "on";
+	const mode = pickEnum(source.mode, ["on", "compact", "off"], DEFAULT_CONFIG.mode);
 	const excludeRenderers = Array.isArray(source.excludeRenderers)
 		? [
 				...new Set(
@@ -161,7 +149,7 @@ export function normalizeConfig(input: unknown): Config {
 			]
 		: [];
 	return {
-		mode: migratedMode,
+		mode,
 		excludeRenderers,
 		diffViewMode: pickEnum(source.diffViewMode, DIFF_VIEW_MODES, DEFAULT_CONFIG.diffViewMode),
 		diffIndicatorMode: pickEnum(
@@ -176,7 +164,7 @@ export function normalizeConfig(input: unknown): Config {
 			300,
 		),
 		editDiffCollapsedLines: pickPositiveInt(
-			source.editDiffCollapsedLines ?? source.diffCollapsedLines,
+			source.editDiffCollapsedLines,
 			DEFAULT_CONFIG.editDiffCollapsedLines,
 			1,
 			500,
@@ -194,12 +182,7 @@ export function normalizeConfig(input: unknown): Config {
 			10,
 			50_000,
 		),
-		inputClip: pickPositiveInt(
-			source.inputClip ?? source.toolInputNameLength,
-			DEFAULT_CONFIG.inputClip,
-			8,
-			500,
-		),
+		inputClip: pickPositiveInt(source.inputClip, DEFAULT_CONFIG.inputClip, 8, 500),
 		useSummaryTitlesAsThinkingTitle: source.useSummaryTitlesAsThinkingTitle !== false,
 		previewLines: pickPositiveInt(
 			source.previewLines,
@@ -282,20 +265,7 @@ function loadConfig(): Config {
 		const source = existsSync(CONFIG_PATH)
 			? (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>)
 			: {};
-		const normalized = normalizeConfig(source);
-		if (
-			typeof source.enabled === "boolean" &&
-			source.mode !== "on" &&
-			source.mode !== "compact" &&
-			source.mode !== "off"
-		) {
-			try {
-				writeFileSync(CONFIG_PATH, JSON.stringify(normalized, null, 2));
-			} catch {
-				// A read-only config still uses the migrated in-memory value.
-			}
-		}
-		return normalized;
+		return normalizeConfig(source);
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}

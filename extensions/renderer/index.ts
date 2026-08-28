@@ -14,7 +14,6 @@ import {
 } from "./default-mode.ts";
 import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { showCcstylePanel } from "../config/panel.ts";
-import { GLOBAL_COMPACTION_RENDER_PATCH, patchRegistry } from "../utils/patch-keys.ts";
 import {
 	config,
 	formatConfigStatus,
@@ -93,16 +92,6 @@ function applyStyleMode(mode: CompactStyleMode, ctx: any, toolGrouping?: ToolGro
 	ctx.ui.notify(`Claude Code style: ${mode}`, "info");
 }
 
-type LegacyCompactionRenderPatch = {
-	enabled?: () => boolean;
-};
-
-/** Disable the pre-native compaction monkey patch left alive by /reload. */
-function deactivateLegacyCompactionRendering() {
-	const patch = patchRegistry.get<LegacyCompactionRenderPatch>(GLOBAL_COMPACTION_RENDER_PATCH);
-	if (patch) patch.enabled = () => false;
-}
-
 export default function (
 	pi: ExtensionAPI,
 	configOverride?: Partial<Config>,
@@ -137,7 +126,6 @@ export default function (
 		const disposeMessageDisplay = installMessageDisplayRendering();
 		// 展开背景必须在 compact-mode 之后装，shutdown 时先于 compact 释放。
 		const disposeToolExpandedBackground = installToolExpandedBackground();
-		deactivateLegacyCompactionRendering();
 		installation = {
 			defaultMode,
 			toolGrouping,
@@ -270,7 +258,6 @@ export default function (
 		current.compactMode.shutdown();
 		compactModeHooks = undefined;
 		current.disposeMessageDisplay();
-		deactivateLegacyCompactionRendering();
 		clearAllAnimations();
 		installation = undefined;
 	});

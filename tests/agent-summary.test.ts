@@ -8,8 +8,6 @@ import {
 	AgentRunSummary,
 	bindAgentSummary,
 	classifyTool,
-	formatDuration,
-	summaryLine,
 	summaryMarkdown,
 	type AgentSummaryData,
 } from "../extensions/feature/agent-summary/core.ts";
@@ -57,55 +55,7 @@ test("AgentRunSummary：bash/powershell 计数；read/edit/write 按路径去重
 	} satisfies AgentSummaryData);
 });
 
-test("formatDuration 边界", () => {
-	assert.equal(formatDuration(0), "");
-	assert.equal(formatDuration(999), "");
-	assert.equal(formatDuration(1_000), "1s");
-	assert.equal(formatDuration(62_000), "1m 2s");
-	assert.equal(formatDuration(3_721_000), "1h 2m 1s");
-});
-
-test("summaryLine：bash→read→edit→write→other 顺序", () => {
-	const data: AgentSummaryData = {
-		commands: 4,
-		reads: 3,
-		edits: 2,
-		writes: 1,
-		others: 1,
-		failed: 1,
-		durationMs: 61_000,
-	};
-	assert.equal(
-		summaryLine(data),
-		"Ran 4 commands, read 3 files, edited 2 files, wrote 1 file, 1 other tool, 1 failed · 1m 1s",
-	);
-	assert.equal(
-		summaryLine({
-			commands: 0,
-			reads: 1,
-			edits: 0,
-			writes: 0,
-			others: 0,
-			failed: 0,
-			durationMs: 500,
-		}),
-		"Read 1 file",
-	);
-	assert.equal(
-		summaryLine({
-			commands: 0,
-			reads: 0,
-			edits: 0,
-			writes: 0,
-			others: 0,
-			failed: 0,
-			durationMs: 10_000,
-		}),
-		"",
-	);
-});
-
-test("summaryMarkdown 整体加粗 / box 引用块", () => {
+test("summaryMarkdown renders the agent summary entry", () => {
 	const data: AgentSummaryData = {
 		commands: 3,
 		reads: 2,
@@ -117,10 +67,6 @@ test("summaryMarkdown 整体加粗 / box 引用块", () => {
 	};
 	assert.equal(
 		summaryMarkdown(data),
-		"**Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s**",
-	);
-	assert.equal(
-		summaryMarkdown(data, true),
 		"> *Ran 3 commands, read 2 files, edited 1 file, wrote 1 file · 42s*",
 	);
 	assert.equal(summaryMarkdown({ ...data, commands: 0, reads: 0, edits: 0, writes: 0 }), "");

@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { oneLine } from "../extensions/utils/format.ts";
+import { formatDuration, oneLine } from "../extensions/utils/format.ts";
+
+test("formatDuration formats elapsed seconds", () => {
+	assert.equal(formatDuration(999), "");
+	assert.equal(formatDuration(1_000), "1s");
+	assert.equal(formatDuration(62_000), "1m 2s");
+	assert.equal(formatDuration(3_721_000), "1h 2m 1s");
+});
 
 test("oneLine: 默认 max=96，超长截断加省略号", () => {
 	const long = "x".repeat(120);

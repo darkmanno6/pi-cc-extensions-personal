@@ -21,13 +21,8 @@ export function sharedToolHoverState(): SharedToolHoverState {
 	return patchRegistry.ensure(TOOL_HOVER_STATE_KEY, () => ({ toolCallId: null }));
 }
 
-// 状态单源在 globalThis 槽；hoveredToolCallId 变量仅为兼容旧 deep import 保留
-// （外部扩展可能直接从 interaction.ts re-export 读取），内部读取一律走槽。
-export let hoveredToolCallId: string | null = sharedToolHoverState().toolCallId;
-
 export function setHoveredToolCallId(toolCallId: string | null): void {
 	sharedToolHoverState().toolCallId = toolCallId;
-	hoveredToolCallId = toolCallId;
 }
 
 export function isToolCallHovered(toolCallId: string | null | undefined): boolean {

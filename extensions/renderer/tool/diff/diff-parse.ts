@@ -40,7 +40,6 @@ export interface DiffStats {
 
 const CANONICAL_LINE_PATTERN = /^([+\- ])(\s*\d+)\|(.*)$/;
 const HASHLINE_ANCHOR_LINE_PATTERN = /^([+\- ])(\s*\d+)#([A-Za-z0-9]+| {2}):(.*)$/;
-const LEGACY_LINE_PATTERN = /^([+\- ])(\s*\d+)\s(.*)$/;
 const HUNK_HEADER_PATTERN = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@(.*)$/;
 const MIN_LINE_NUMBER_WIDTH = 2;
 
@@ -81,14 +80,8 @@ function parseCanonicalDiffLine(line: string): {
 		};
 	}
 
-	const canonicalMatch = line.match(CANONICAL_LINE_PATTERN);
-	const legacyMatch = canonicalMatch ? null : line.match(LEGACY_LINE_PATTERN);
-	const matched = canonicalMatch ?? legacyMatch;
-	if (!matched) {
-		return null;
-	}
-
-	return toParsedDiffLine(matched[1] ?? " ", matched[2] ?? "", matched[3] ?? "");
+	const match = line.match(CANONICAL_LINE_PATTERN);
+	return match ? toParsedDiffLine(match[1] ?? " ", match[2] ?? "", match[3] ?? "") : null;
 }
 
 function toNumber(value: string | undefined): number | null {

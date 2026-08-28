@@ -39,10 +39,10 @@
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.ts",
-		"typecheck": "node scripts/typecheck.mjs",
+		"typecheck": "tsc --noEmit",
 		"format": "biome format --write .",
 		"format:check": "biome format .",
-		"docs:tool-render": "node scripts/generate-tool-render-examples.mjs",
+		"docs:tool-render": "node --experimental-strip-types scripts/generate-tool-render-examples.ts",
 		"lint": "biome check .",
 		"preversion": "npm run format && npm run lint && npm run typecheck && npm test && npm run docs:tool-render",
 		"release": "npm version patch && npm publish",

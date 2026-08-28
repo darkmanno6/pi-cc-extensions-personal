@@ -18,13 +18,10 @@ export const COMPACT_THINKING_PATCH_KEY = Symbol.for("pi.ccstyle.compact-thinkin
 export const PROTOTYPE_ORIGINAL_KEY = Symbol.for("pi.ccstyle.prototype-original");
 export const COMPACT_THINKING_OWNER = Symbol.for("pi.ccstyle.compact-thinking-owner");
 
-// ── assistant 展开状态（实例标记；description 供旧模块按 symbol.description 清理） ──
-export const ASSISTANT_SET_EXPANDED_DESCRIPTION = "pi.ccstyle.compact-assistant-set-expanded";
-export const ASSISTANT_TOGGLE_ROUND_DESCRIPTION = "pi.ccstyle.compact-assistant-toggle-round";
-export const ASSISTANT_REENTRY_DESCRIPTION = "pi.ccstyle.compact-assistant-reentry";
-export const ASSISTANT_SET_EXPANDED_KEY = Symbol.for(ASSISTANT_SET_EXPANDED_DESCRIPTION);
-export const ASSISTANT_TOGGLE_ROUND_KEY = Symbol.for(ASSISTANT_TOGGLE_ROUND_DESCRIPTION);
-export const ASSISTANT_REENTRY_KEY = Symbol.for(ASSISTANT_REENTRY_DESCRIPTION);
+// ── assistant 展开状态（实例标记） ──
+export const ASSISTANT_SET_EXPANDED_KEY = Symbol.for("pi.ccstyle.compact-assistant-set-expanded");
+export const ASSISTANT_TOGGLE_ROUND_KEY = Symbol.for("pi.ccstyle.compact-assistant-toggle-round");
+export const ASSISTANT_REENTRY_KEY = Symbol.for("pi.ccstyle.compact-assistant-reentry");
 
 // ── 工具渲染补丁 ──
 export const GLOBAL_TOOL_RENDER_PATCH = Symbol.for("pi.ccstyle.global-tool-render-patch");
@@ -35,9 +32,6 @@ export const TOOL_EXPANDED_BACKGROUND_PATCH = Symbol.for(
 
 // ── 消息组件补丁 ──
 export const MESSAGE_DISPLAY_PATCH = Symbol.for("pi.ccstyle.message-display-patch");
-
-// ── 压缩渲染补丁（/reload 残留 deactivate 用） ──
-export const GLOBAL_COMPACTION_RENDER_PATCH = Symbol.for("pi.ccstyle.compaction-render-patch");
 
 // ── 工具分组 ──
 export const TOOL_GROUPING_PATCH_KEY = Symbol.for("pi.ccstyle.tool-grouping-patch");

@@ -40,6 +40,18 @@ test("双栏：logo 与 tips 并排，右栏从固定列开始", () => {
 	assert.equal(visibleWidth(lines[0]!.slice(0, 8)), 8);
 });
 
+test("logo 使用单一 accent 颜色", () => {
+	const logoColors: string[] = [];
+	renderHeaderLines(120, {
+		...theme,
+		fg: (name, text) => {
+			if (text.includes("█")) logoColors.push(name);
+			return text;
+		},
+	});
+	assert.deepEqual(logoColors, ["accent", "accent", "accent", "accent"]);
+});
+
 test("窄屏回退：垂直堆叠 logo + hero 单行", () => {
 	const lines = renderHeaderLines(40, theme);
 	assert.equal(lines.length, 9); // 空+5 logo(官方 4 行+空行)+空+hero+空

@@ -2,8 +2,8 @@
 	"$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
 	"name": "claude-warm-dark",
 	"vars": {
-		"clay": "#D97757",
-		"clayBright": "#E58A6B",
+		"clay": "#7FA6B8",
+		"clayBright": "#9ABCCC",
 		"cream": "#E8E3DC",
 		"warmGray": "#A8A099",
 		"dimGray": "#746D67",

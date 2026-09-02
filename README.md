@@ -43,7 +43,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 配置面板              | `Style / Diff / Thinking / UI / Feature` 五页签                                 | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
-| 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
+| 主题                  | 随包提供 CC Dark、CC Light、Claude Warm Dark 主题                               | `/theme`                                        |
 
 ## 配置
 

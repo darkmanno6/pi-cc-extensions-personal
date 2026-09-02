@@ -5,6 +5,10 @@ import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-age
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyleExtension from "../extensions/renderer/index.ts";
 import { ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	RENDER_MANAGES_THINKING_KEY,
+	SESSION_HANDOFF_KEY,
+} from "../extensions/utils/patch-keys.ts";
 
 initTheme("dark");
 
@@ -101,6 +105,8 @@ test("stale TUI shutdown leaves the replacement runtime active", async () => {
 });
 
 test("reload regroups the mounted transcript instead of leaving single tools", async () => {
+	const originalContainerAdd = Container.prototype.addChild;
+	const originalToolUpdate = (ToolExecutionComponent.prototype as any).updateDisplay;
 	const first = runtime();
 	const second = runtime();
 	const theme = {
@@ -159,7 +165,8 @@ test("reload regroups the mounted transcript instead of leaving single tools", a
 		assert.ok(parent.children[0] instanceof ToolGroupComponent);
 
 		await first.events.get("session_shutdown")?.({ reason: "reload" }, ctx);
-		assert.equal(parent.children.length, 2, "old patch releases its group");
+		assert.ok(parent.children[0] instanceof ToolGroupComponent, "group survives reload rebuild");
+		assert.equal(parent.children[0].children.length, 2);
 
 		claudeCodeStyleExtension(second.pi as any, { mode: "on" });
 		await second.events.get("session_start")?.({ reason: "reload" }, ctx);
@@ -172,10 +179,26 @@ test("reload regroups the mounted transcript instead of leaving single tools", a
 		await first.events.get("session_shutdown")?.({ reason: "stale" }, ctx);
 		assert.equal(inputHandlers.size, 1, "stale shutdown keeps replacement mouse listener");
 		assert.ok(widget, "stale shutdown keeps replacement mouse widget");
+
+		await second.events.get("session_shutdown")?.({ reason: "quit" }, ctx);
+		assert.equal(Container.prototype.addChild, originalContainerAdd);
+		assert.equal((ToolExecutionComponent.prototype as any).updateDisplay, originalToolUpdate);
+		assert.equal((globalThis as any)[RENDER_MANAGES_THINKING_KEY], undefined);
+		assert.equal((globalThis as any)[SESSION_HANDOFF_KEY], undefined);
 	} finally {
 		await first.events.get("session_shutdown")?.({}, ctx);
 		await second.events.get("session_shutdown")?.({}, ctx);
 	}
+});
+
+test("headless runtime does not claim TUI lifecycle slots", async () => {
+	const headless = runtime();
+	const ctx = { mode: "print", hasUI: false, ui: {} };
+	claudeCodeStyleExtension(headless.pi as any, { mode: "on" });
+	await headless.events.get("session_start")?.({}, ctx);
+	await headless.events.get("session_shutdown")?.({ reason: "reload" }, ctx);
+	assert.equal((globalThis as any)[RENDER_MANAGES_THINKING_KEY], undefined);
+	assert.equal((globalThis as any)[SESSION_HANDOFF_KEY], undefined);
 });
 
 test("headless runtimes do not replace or shut down main TUI patches", async () => {

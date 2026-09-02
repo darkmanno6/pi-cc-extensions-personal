@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
+import {
+	AssistantMessageComponent,
+	ToolExecutionComponent,
+	initTheme,
+} from "@earendil-works/pi-coding-agent";
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyle, { getCompactThinkingConfig } from "../extensions/renderer/index.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
@@ -65,11 +69,11 @@ function makeCtx(parent: Container, sessionManager: any) {
 	};
 }
 
-// 真实 bash 工具定义的形状：自定义 renderCall/renderResult，无 renderShell。
-// resume 时组件用原始原型构造 → 内容进 contentBox；补丁装上后 getRenderShell
-// 返回 "self"，若 updateDisplay 未被重新触发，render() 读空的
-// selfRenderContainer → 组件整体消失（回归：mounted 扫描强制 updateDisplay）。
-test("tool built before patch stays visible after resume (mounted scan refreshes it)", async () => {
+// Replacement-session shutdown keeps the renderer patch alive while Pi rebuilds
+// history, preventing a native first frame. The next runtime then takes ownership.
+test("restored tool keeps Claude rendering across resume ownership transfer", async () => {
+	const originalAssistantUpdate = AssistantMessageComponent.prototype.updateContent;
+	const originalToolUpdate = (ToolExecutionComponent.prototype as any).updateDisplay;
 	const dir = mkdtempSync(join(tmpdir(), "pi-tool-resume-"));
 	const prev = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -83,12 +87,13 @@ test("tool built before patch stays visible after resume (mounted scan refreshes
 
 	const first = runtime();
 	try {
-		claudeCodeStyle(first.pi as any, { mode: "on" }, undefined as any);
-		installCompactThinking(first.pi, getCompactThinkingConfig());
+		const firstThinking = installCompactThinking(first.pi, getCompactThinkingConfig());
+		claudeCodeStyle(first.pi as any, { mode: "on" }, firstThinking);
 		first.emit("session_start", {}, ctx);
 		first.emit("session_shutdown", { reason: "resume" }, ctx);
 
-		// pi renderCurrentSessionState: original prototype, real tool definition
+		// Pi rebuilds history before the next session_start; the old patch still owns
+		// the prototype, so this component is Claude-styled on its first frame.
 		const tool = new ToolExecutionComponent(
 			"bash",
 			"c1",
@@ -100,13 +105,12 @@ test("tool built before patch stays visible after resume (mounted scan refreshes
 		) as any;
 		tool.updateResult({ content: [{ type: "text", text: "out" }], isError: false });
 		parent.addChild(tool);
-		assert.equal(tool.getRenderShell(), "default", "native shell before patch");
+		assert.equal(tool.getRenderShell(), "self", "Claude shell survives resume rebuild");
 
-		// new extension instance: session_start installs patches; mounted scan must
-		// re-trigger updateDisplay so content lands in the self-render container
+		// The new extension instance takes ownership without exposing a native frame.
 		const second = runtime();
-		claudeCodeStyle(second.pi as any, { mode: "on" }, undefined as any);
-		installCompactThinking(second.pi, getCompactThinkingConfig());
+		const secondThinking = installCompactThinking(second.pi, getCompactThinkingConfig());
+		claudeCodeStyle(second.pi as any, { mode: "on" }, secondThinking);
 		second.emit("session_start", { reason: "resume" }, ctx);
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
@@ -116,7 +120,9 @@ test("tool built before patch stays visible after resume (mounted scan refreshes
 			`tool must stay visible after resume, got: ${JSON.stringify(lines)}`,
 		);
 
-		second.emit("session_shutdown", {}, ctx);
+		second.emit("session_shutdown", { reason: "quit" }, ctx);
+		assert.equal(AssistantMessageComponent.prototype.updateContent, originalAssistantUpdate);
+		assert.equal((ToolExecutionComponent.prototype as any).updateDisplay, originalToolUpdate);
 	} finally {
 		first.emit("session_shutdown", {}, ctx);
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;

@@ -30,6 +30,8 @@ import {
 	COMPACT_THINKING_PATCH_KEY,
 	patchRegistry,
 	PROTOTYPE_ORIGINAL_KEY,
+	RENDER_MANAGES_THINKING_KEY,
+	SESSION_HANDOFF_KEY,
 } from "../utils/patch-keys.ts";
 // pi-tui 类型声明中 TUI 的 re-export 解析失败，本地用最小结构化类型（只用到 requestRender）。
 type RenderTui = { requestRender(force?: boolean): void };
@@ -1094,6 +1096,7 @@ export function installCompactThinking(
 		// TUI prototype patch or kill its thinking ticker.
 		if (ctx?.mode !== "tui") return;
 
+		(globalThis as any)[SESSION_HANDOFF_KEY]?.dispose(event, ctx);
 		patchRegistry.get<CompactThinkingOwner>(COMPACT_THINKING_OWNER)?.stop(event, ctx);
 		session = { event, ctx };
 
@@ -1127,6 +1130,10 @@ export function installCompactThinking(
 		activate(event, ctx);
 	});
 	pi.on("session_shutdown", (event, ctx) => {
+		// The renderer owns teardown order so compact-mode can be removed before
+		// this inner prototype wrapper. Standalone usage keeps the original path.
+		if ((globalThis as any)[RENDER_MANAGES_THINKING_KEY]) return;
+		if (["reload", "new", "resume", "fork"].includes(event.reason)) return;
 		if (patchRegistry.get<CompactThinkingOwner>(COMPACT_THINKING_OWNER)?.owner === owner)
 			stop(event, ctx);
 		session = undefined;

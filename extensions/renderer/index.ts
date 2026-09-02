@@ -33,6 +33,12 @@ import {
 import { getToolMouseTui } from "./mouse/scroll.ts";
 import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import { clearAllAnimations } from "./tool/result.ts";
+import {
+	COMPACT_THINKING_OWNER,
+	patchRegistry,
+	RENDER_MANAGES_THINKING_KEY,
+	SESSION_HANDOFF_KEY,
+} from "../utils/patch-keys.ts";
 import { installWriteOverride, WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import {
 	installMessageDisplayRendering,
@@ -111,8 +117,38 @@ export default function (
 		  }
 		| undefined;
 
+	const disposeInstallation = (event?: any, ctx?: any) => {
+		const current = installation;
+		if (current?.defaultMode.isOwner()) {
+			// Unwind nested prototype wrappers from outermost to innermost.
+			current.disposeToolExpandedBackground();
+			current.compactMode.shutdown();
+			patchRegistry
+				.get<{ stop(event?: any, ctx?: any): void }>(COMPACT_THINKING_OWNER)
+				?.stop(event, ctx);
+			current.defaultMode.shutdown();
+			current.toolGrouping.shutdown();
+			current.disposeMessageDisplay();
+			compactModeHooks = undefined;
+			clearAllAnimations();
+			installation = undefined;
+		}
+		const handoff = (globalThis as any)[SESSION_HANDOFF_KEY];
+		if (handoff?.owner === mouseOwner) delete (globalThis as any)[SESSION_HANDOFF_KEY];
+		if ((globalThis as any)[RENDER_MANAGES_THINKING_KEY] === mouseOwner) {
+			delete (globalThis as any)[RENDER_MANAGES_THINKING_KEY];
+		}
+	};
+
+	const takeSessionHandoff = (event?: any, ctx?: any) => {
+		const handoff = (globalThis as any)[SESSION_HANDOFF_KEY];
+		if (handoff?.owner !== mouseOwner) handoff?.dispose(event, ctx);
+	};
+
 	const ensureTuiInstallation = (ctx: any) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
+		takeSessionHandoff({ reason: "handoff" }, ctx);
+		(globalThis as any)[RENDER_MANAGES_THINKING_KEY] = mouseOwner;
 		// 渲染层（工具样式/分组）是原型与组件级 patch，fullscreen 官方布局
 		// 同样渲染这些组件，因此两种模式都安装。
 		if (installation) return installation;
@@ -245,21 +281,27 @@ export default function (
 		installation?.toolGrouping.setTheme(ctx.ui.theme);
 	});
 
-	pi.on("session_shutdown", async () => {
+	pi.on("session_shutdown", async (event, ctx) => {
 		writeExecutionMetadata.clear();
 		// 鼠标交互独立于渲染层：fullscreen 下 installation 为 undefined，
 		// 但 onTerminalInput 监听与 handleViewportInput 包装仍需释放。
 		teardownToolMouseInteraction(mouseOwner);
-		const current = installation;
-		if (!current || !current.defaultMode.isOwner()) return;
-		current.defaultMode.shutdown();
-		current.toolGrouping.shutdown();
-		current.disposeToolExpandedBackground();
-		current.compactMode.shutdown();
-		compactModeHooks = undefined;
-		current.disposeMessageDisplay();
 		clearAllAnimations();
-		installation = undefined;
+		if (
+			installation?.defaultMode.isOwner() &&
+			["reload", "new", "resume", "fork"].includes(event.reason)
+		) {
+			// Preserve the fully-styled stack through Pi's synchronous history rebuild.
+			// The next runtime disposes it immediately before installing its own stack.
+			takeSessionHandoff(event, ctx);
+			(globalThis as any)[SESSION_HANDOFF_KEY] = {
+				owner: mouseOwner,
+				dispose: disposeInstallation,
+			};
+			return;
+		}
+		takeSessionHandoff(event, ctx);
+		disposeInstallation(event, ctx);
 	});
 }
 

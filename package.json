@@ -1,6 +1,6 @@
 {
 	"name": "pi-cc-extensions",
-	"version": "0.8.68",
+	"version": "0.8.68-personal.1",
 	"license": "MIT",
 	"description": "A Pi productivity suite with Claude Code-style UI, context inspection, and agent/session references",
 	"type": "module",
@@ -32,7 +32,8 @@
 		],
 		"themes": [
 			"./themes/cc-dark.json",
-			"./themes/cc-light.json"
+			"./themes/cc-light.json",
+			"./themes/claude-warm-dark.json"
 		],
 		"image": "https://raw.githubusercontent.com/minuque/pi-cc-extensions/main/assets/readme/preview.png",
 		"video": "https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"

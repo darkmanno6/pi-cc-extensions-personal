@@ -461,16 +461,17 @@ test("reload/resume rebuild: mounted-tree scan re-renders rebuilt components", a
 
 		first.emit("session_shutdown", { reason: "reload" }, ctx);
 
-		// pi rebuildChatFromMessages: fresh components with the restored ORIGINAL prototype
+		// Pi rebuilds before the next session_start. Keeping the old prototype patch
+		// avoids a native Thinking... frame during that handoff.
 		parent.clear();
 		const rebuilt = new AssistantMessageComponent(msg, true) as any;
 		parent.addChild(rebuilt);
 		assert.ok(
-			renderText(rebuilt).some((line) => line.startsWith("Thinking...")),
-			"native rebuild shows the bare Thinking... label",
+			!renderText(rebuilt).some((line) => line.includes("Thinking...")),
+			"replacement rebuild never exposes the native loading label",
 		);
 
-		// new extension instance: session_start scans the mounted tree and re-renders
+		// The new extension instance takes ownership and restores persisted duration.
 		const second = runtime();
 		installCompactThinking(second.pi, config);
 		second.emit("session_start", { reason: "reload" }, ctx);

@@ -17,6 +17,8 @@ export const COMPACT_MODE_PATCH_KEY = Symbol.for("pi.ccstyle.compact-mode-patch"
 export const COMPACT_THINKING_PATCH_KEY = Symbol.for("pi.ccstyle.compact-thinking-update");
 export const PROTOTYPE_ORIGINAL_KEY = Symbol.for("pi.ccstyle.prototype-original");
 export const COMPACT_THINKING_OWNER = Symbol.for("pi.ccstyle.compact-thinking-owner");
+export const SESSION_HANDOFF_KEY = Symbol.for("pi.ccstyle.session-handoff");
+export const RENDER_MANAGES_THINKING_KEY = Symbol.for("pi.ccstyle.renderer-manages-thinking");
 
 // ── assistant 展开状态（实例标记） ──
 export const ASSISTANT_SET_EXPANDED_KEY = Symbol.for("pi.ccstyle.compact-assistant-set-expanded");

@@ -8,8 +8,8 @@
 		"warmGray": "#A8A099",
 		"dimGray": "#746D67",
 		"border": "#514943",
-		"surface": "#2A2522",
-		"surfaceRaised": "#352E2A",
+		"surface": "#1F1F1F",
+		"surfaceRaised": "#2F2F2F",
 		"green": "#8AA878",
 		"red": "#D66C72",
 		"yellow": "#D2A45F",
@@ -32,7 +32,7 @@
 		"scrollbarThumb": "border",
 		"searchMatchBg": "clay",
 		"searchMatchText": "#201C1A",
-		"userMessageBg": "#303A49",
+		"userMessageBg": "#2F2F2F",
 		"userMessageText": "cream",
 		"customMessageBg": "surface",
 		"customMessageText": "cream",
@@ -74,8 +74,8 @@
 		"bashMode": "yellow"
 	},
 	"export": {
-		"pageBg": "#201C1A",
-		"cardBg": "surface",
-		"infoBg": "surfaceRaised"
+		"pageBg": "#191919",
+		"cardBg": "#2F2F2F",
+		"infoBg": "surface"
 	}
 }

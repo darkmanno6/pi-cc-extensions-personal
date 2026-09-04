@@ -17,7 +17,12 @@ import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/
 
 initTheme("dark");
 
-test("tool groups expand from their hint and collapse from any expanded group row", () => {
+/** 与 interaction 里松开后 50ms 武装双击对齐。 */
+function armExpandDoubleClick() {
+	return new Promise((resolve) => setTimeout(resolve, 60));
+}
+
+test("tool groups expand from their hint and collapse from any expanded group row", async () => {
 	const grouping = installToolGrouping(() => true);
 	grouping.setTheme({
 		fg: (color: string, text: string) => (color === "text" ? `\x1b[37m${text}\x1b[39m` : text),
@@ -82,8 +87,10 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		tui.doRender();
 		const bottomPaddingRow = tui.previousLines.length - 1;
 		assert.equal(tui.previousLines[bottomPaddingRow].trim(), "");
-		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`), undefined);
+		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, true, "single click on expanded group does not collapse");
+		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}m`);
+		await armExpandDoubleClick();
 		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, false);
 	} finally {
@@ -282,17 +289,26 @@ test("show-more hover targets the view rendered in the current frame after compa
 	installToolMouseInteraction(interactionCtx);
 	try {
 		tui.doRender();
-		const inputHeader = tui.previousLines[1];
-		const col = inputHeader.indexOf("to show more") + 1;
-		tui.handleInput(`\x1b[<35;${col};2M`);
-		assert.match(currentView.render(78)[0], /\x1b\[97m/);
-		assert.doesNotMatch(staleView.render(78)[0], /\x1b\[97m/);
+		const footerRow = tui.previousLines.findIndex(
+			(line: string) => line.includes("more lines") && line.includes("to show more"),
+		);
+		assert.ok(footerRow >= 0, "truncated body paints a show-more footer");
+		const col = tui.previousLines[footerRow].indexOf("to show more") + 1;
+		tui.handleInput(`\x1b[<35;${col};${footerRow + 1}M`);
+		assert.match(
+			currentView.render(78).find((line) => line.includes("more lines")) ?? "",
+			/\x1b\[97m/,
+		);
+		assert.doesNotMatch(
+			staleView.render(78).find((line) => line.includes("more lines")) ?? "",
+			/\x1b\[97m/,
+		);
 	} finally {
 		installToolMouseInteraction({});
 	}
 });
 
-test("expanded tool group show-more opens preview instead of collapsing the group", () => {
+test("expanded tool group show-more opens preview instead of collapsing the group", async () => {
 	const grouping = installToolGrouping(() => true);
 	grouping.setTheme({
 		fg: (color: string, text: string) => text,
@@ -383,9 +399,16 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 		});
 		tui.doRender();
 		const showMoreRow = tui.previousLines.findIndex(
-			(line: string) => line.includes("Output") && line.includes("to show more"),
+			(line: string) => line.includes("more lines") && line.includes("to show more"),
 		);
 		assert.ok(showMoreRow >= 0, "expanded group must paint a show-more affordance");
+		assert.equal(
+			inputHandler?.(`\x1b[<0;1;${showMoreRow + 1}M`)?.consume,
+			true,
+			"expanded-card clicks stay consumed by double-click handling",
+		);
+		assert.equal(previewOpened, false);
+		await new Promise((resolve) => setTimeout(resolve, 350));
 		const col = tui.previousLines[showMoreRow].indexOf("to show more") + 1;
 		inputHandler?.(`\x1b[<35;${col};${showMoreRow + 1}M`);
 		const beforeExpanded = group.expanded;
@@ -629,9 +652,11 @@ test("expanded group identical show-more labels open their own content", () => {
 			"markers must not leak into previousLines",
 		);
 		const showMoreRows = tui.previousLines
-			.map((line, index) => (line.includes("Output") && line.includes("to show more") ? index : -1))
+			.map((line, index) =>
+				line.includes("more lines") && line.includes("to show more") ? index : -1,
+			)
 			.filter((index) => index >= 0);
-		assert.ok(showMoreRows.length >= 2, "need two identical show-more headers");
+		assert.ok(showMoreRows.length >= 2, "need two identical show-more footers");
 		const plainLabels = showMoreRows.map((row) =>
 			tui.previousLines[row]
 				.replace(/\x1b\[[0-9;]*m/g, "")
@@ -763,6 +788,8 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 			tui.doRender();
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, "tool-1", "single click on expanded card does not collapse");
+			tui.handleInput(`\x1b[<0;${col};${row}m`);
+			await armExpandDoubleClick();
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, null);
 			tui.doRender();

@@ -47,6 +47,7 @@ export type CompactThinkingConfig = {
 
 export type CompactThinkingController = {
 	updateConfig(next: CompactThinkingConfig): void;
+	manageLifecycle?(rendererOwner: object): void;
 	/**
 	 * 只读查询：某条 assistant message 的可见思考总时长（ms）。
 	 * 供 compact 渲染层生成 `Thought for 8s` 摘要，不建立第二套计时器。
@@ -1087,6 +1088,7 @@ export function installCompactThinking(
 		const shutdown = delegates.get("session_shutdown");
 		delegates.clear();
 		shutdown?.(event ?? session?.event ?? {}, ctx ?? session?.ctx ?? { mode: "rpc", ui: {} });
+		session = undefined;
 		if (patchRegistry.get<CompactThinkingOwner>(COMPACT_THINKING_OWNER)?.owner === owner)
 			patchRegistry.delete(COMPACT_THINKING_OWNER);
 	};
@@ -1132,14 +1134,21 @@ export function installCompactThinking(
 	pi.on("session_shutdown", (event, ctx) => {
 		// The renderer owns teardown order so compact-mode can be removed before
 		// this inner prototype wrapper. Standalone usage keeps the original path.
-		if ((globalThis as any)[RENDER_MANAGES_THINKING_KEY]) return;
-		if (["reload", "new", "resume", "fork"].includes(event.reason)) return;
+		const manager = (globalThis as any)[RENDER_MANAGES_THINKING_KEY];
+		if (manager?.thinkingOwner === owner) return;
+		if (["reload", "new", "resume", "fork"].includes(event?.reason)) return;
 		if (patchRegistry.get<CompactThinkingOwner>(COMPACT_THINKING_OWNER)?.owner === owner)
 			stop(event, ctx);
 		session = undefined;
 	});
 
 	return {
+		manageLifecycle(rendererOwner) {
+			(globalThis as any)[RENDER_MANAGES_THINKING_KEY] = {
+				rendererOwner,
+				thinkingOwner: owner,
+			};
+		},
 		updateConfig(next) {
 			Object.assign(initialConfig, next);
 			Object.assign(config, next);

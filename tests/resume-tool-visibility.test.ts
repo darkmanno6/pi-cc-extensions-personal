@@ -11,6 +11,7 @@ import {
 import { Container } from "@earendil-works/pi-tui";
 import claudeCodeStyle, { getCompactThinkingConfig } from "../extensions/renderer/index.ts";
 import { installCompactThinking } from "../extensions/feature/compact-thinking.ts";
+import { RENDER_MANAGES_THINKING_KEY } from "../extensions/utils/patch-keys.ts";
 
 initTheme("dark");
 
@@ -114,6 +115,10 @@ test("restored tool keeps Claude rendering across resume ownership transfer", as
 		second.emit("session_start", { reason: "resume" }, ctx);
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
+		const manager = (globalThis as any)[RENDER_MANAGES_THINKING_KEY];
+		assert.ok(manager?.rendererOwner);
+		assert.ok(manager?.thinkingOwner);
+
 		const lines = parent.render(120).map(stripAnsi).filter(Boolean);
 		assert.ok(
 			lines.some((l: string) => /bash|out|returned/i.test(l)),
@@ -123,6 +128,7 @@ test("restored tool keeps Claude rendering across resume ownership transfer", as
 		second.emit("session_shutdown", { reason: "quit" }, ctx);
 		assert.equal(AssistantMessageComponent.prototype.updateContent, originalAssistantUpdate);
 		assert.equal((ToolExecutionComponent.prototype as any).updateDisplay, originalToolUpdate);
+		assert.equal((globalThis as any)[RENDER_MANAGES_THINKING_KEY], undefined);
 	} finally {
 		first.emit("session_shutdown", {}, ctx);
 		if (prev === undefined) delete process.env.PI_CODING_AGENT_DIR;

@@ -191,6 +191,61 @@ test("reload regroups the mounted transcript instead of leaving single tools", a
 	}
 });
 
+test("abandoned replacement handoff restores prototypes after its grace period", async (t) => {
+	(t.mock.timers as any).enable({ apis: ["setTimeout"] });
+	const originalContainerAdd = Container.prototype.addChild;
+	const current = runtime();
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			theme: { fg: (_color: string, text: string) => text },
+			setStatus() {},
+			requestRender() {},
+		},
+	} as any;
+	try {
+		claudeCodeStyleExtension(current.pi as any, { mode: "on" });
+		await current.events.get("session_start")?.({}, ctx);
+		assert.notEqual(Container.prototype.addChild, originalContainerAdd);
+		await current.events.get("session_shutdown")?.({ reason: "resume" }, ctx);
+		assert.notEqual(Container.prototype.addChild, originalContainerAdd);
+		(t.mock.timers as any).tick(1500);
+		assert.equal(Container.prototype.addChild, originalContainerAdd);
+		assert.equal((globalThis as any)[RENDER_MANAGES_THINKING_KEY], undefined);
+		assert.equal((globalThis as any)[SESSION_HANDOFF_KEY], undefined);
+	} finally {
+		await current.events.get("session_shutdown")?.({ reason: "quit" }, ctx);
+	}
+});
+
+test("same runtime cancels its parked cleanup when it starts again", async (t) => {
+	(t.mock.timers as any).enable({ apis: ["setTimeout"] });
+	const originalContainerAdd = Container.prototype.addChild;
+	const current = runtime();
+	const ctx = {
+		mode: "tui",
+		hasUI: true,
+		ui: {
+			theme: { fg: (_color: string, text: string) => text },
+			setStatus() {},
+			requestRender() {},
+		},
+	} as any;
+	try {
+		claudeCodeStyleExtension(current.pi as any, { mode: "on" });
+		await current.events.get("session_start")?.({}, ctx);
+		await current.events.get("session_shutdown")?.({ reason: "reload" }, ctx);
+		await current.events.get("session_start")?.({ reason: "reload" }, ctx);
+		(t.mock.timers as any).tick(1500);
+		assert.notEqual(Container.prototype.addChild, originalContainerAdd);
+		assert.equal((globalThis as any)[SESSION_HANDOFF_KEY], undefined);
+	} finally {
+		await current.events.get("session_shutdown")?.({ reason: "quit" }, ctx);
+		assert.equal(Container.prototype.addChild, originalContainerAdd);
+	}
+});
+
 test("headless runtime does not claim TUI lifecycle slots", async () => {
 	const headless = runtime();
 	const ctx = { mode: "print", hasUI: false, ui: {} };

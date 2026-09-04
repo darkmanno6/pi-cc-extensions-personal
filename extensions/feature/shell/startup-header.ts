@@ -21,6 +21,9 @@ const HERO_SUFFIX = ".";
 const TWO_COL_GAP = 2;
 // 窄于该宽度回退为垂直堆叠（logo + hero）
 const TWO_COL_MIN_WIDTH = 48;
+const HEADER_HANDOFF_TIMEOUT_MS = 1500;
+const HEADER_HANDOFF_TIMER = Symbol.for("pi.ccstyle.startup-header-handoff-timer");
+const HEADER_OWNER = Symbol.for("pi.ccstyle.startup-header-owner");
 
 const LOGO_BLOCK_WIDTH = Math.max(...LOGO_LINES.map((line) => [...line].length));
 // 左栏宽度 = logo 宽，右侧栏从该宽度后开始
@@ -174,13 +177,38 @@ export function applyStartupHeader(ctx: any): void {
 }
 
 export default function piStartupHeader(pi: ExtensionAPI) {
+	const owner = {};
+	const clearHandoffTimer = () => {
+		const handoff = (globalThis as any)[HEADER_HANDOFF_TIMER];
+		if (handoff?.timer) clearTimeout(handoff.timer);
+		delete (globalThis as any)[HEADER_HANDOFF_TIMER];
+	};
+
 	pi.on("session_start", async (_event, ctx) => {
+		if (!ctx?.hasUI) return;
+		clearHandoffTimer();
+		(globalThis as any)[HEADER_OWNER] = owner;
 		applyStartupHeader(ctx);
 	});
 
-	pi.on("session_shutdown", async (_event, ctx) => {
-		if (!ctx.hasUI) return;
-
+	pi.on("session_shutdown", async (event, ctx) => {
+		if (!ctx.hasUI || (globalThis as any)[HEADER_OWNER] !== owner) return;
+		clearHandoffTimer();
+		if (["reload", "new", "resume", "fork"].includes(event?.reason)) {
+			// Keep the custom header while the replacement session is constructed.
+			const handoff: { owner: object; timer?: ReturnType<typeof setTimeout> } = { owner };
+			handoff.timer = setTimeout(() => {
+				if ((globalThis as any)[HEADER_HANDOFF_TIMER] !== handoff) return;
+				delete (globalThis as any)[HEADER_HANDOFF_TIMER];
+				if ((globalThis as any)[HEADER_OWNER] !== owner) return;
+				delete (globalThis as any)[HEADER_OWNER];
+				ctx.ui.setHeader(undefined);
+			}, HEADER_HANDOFF_TIMEOUT_MS);
+			handoff.timer.unref?.();
+			(globalThis as any)[HEADER_HANDOFF_TIMER] = handoff;
+			return;
+		}
+		delete (globalThis as any)[HEADER_OWNER];
 		ctx.ui.setHeader(undefined);
 	});
 }

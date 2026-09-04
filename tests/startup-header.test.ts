@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
-import { renderHeaderLines } from "../extensions/feature/shell/startup-header.ts";
+import piStartupHeader, { renderHeaderLines } from "../extensions/feature/shell/startup-header.ts";
 
 // 模拟 pi 运行时：注册 app.* 键绑定（默认与 pi 内置一致）
 setKeybindings(
@@ -64,4 +64,36 @@ test("右栏按键文本来自 keybinding 动态渲染", () => {
 	assert.ok(lines.some((line) => line.includes("escape interrupt")));
 	assert.ok(lines.some((line) => line.includes("ctrl+o more")));
 	assert.ok(lines.some((line) => line.includes("Press ctrl+o to show full startup help")));
+});
+
+test("replacement session keeps the custom header until its successor starts", async () => {
+	const makeRuntime = () => {
+		const handlers = new Map<string, Function>();
+		const pi = { on: (name: string, handler: Function) => handlers.set(name, handler) };
+		piStartupHeader(pi as any);
+		return handlers;
+	};
+	let header: unknown;
+	const ctx = {
+		hasUI: true,
+		ui: { setHeader: (next: unknown) => (header = next) },
+	};
+	const first = makeRuntime();
+	await first.get("session_start")?.({}, ctx);
+	assert.equal(typeof header, "function");
+	await first.get("session_shutdown")?.({ reason: "reload" }, ctx);
+	assert.equal(typeof header, "function");
+
+	const headless = makeRuntime();
+	await headless.get("session_start")?.({}, { hasUI: false, ui: {} });
+	await headless.get("session_shutdown")?.({ reason: "quit" }, { hasUI: false, ui: {} });
+	assert.equal(typeof header, "function", "headless runtime does not steal header ownership");
+
+	const second = makeRuntime();
+	await second.get("session_start")?.({}, ctx);
+	assert.equal(typeof header, "function");
+	await first.get("session_shutdown")?.({ reason: "quit" }, ctx);
+	assert.equal(typeof header, "function", "stale shutdown preserves the successor header");
+	await second.get("session_shutdown")?.({ reason: "quit" }, ctx);
+	assert.equal(header, undefined);
 });

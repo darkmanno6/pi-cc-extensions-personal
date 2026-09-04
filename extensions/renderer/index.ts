@@ -46,6 +46,8 @@ import {
 	setMessageDisplayTheme,
 } from "./tool/message-display.ts";
 
+const SESSION_HANDOFF_TIMEOUT_MS = 1500;
+
 /**
  * Claude Code Style for pi — 装配入口。
  *
@@ -119,13 +121,23 @@ export default function (
 
 	const disposeInstallation = (event?: any, ctx?: any) => {
 		const current = installation;
-		if (current?.defaultMode.isOwner()) {
-			// Unwind nested prototype wrappers from outermost to innermost.
+		if (current) {
+			// Every disposer is ownership-aware; always unwind this generation so a
+			// superseding renderer cannot leave its inner thinking/timers alive.
 			current.disposeToolExpandedBackground();
 			current.compactMode.shutdown();
-			patchRegistry
-				.get<{ stop(event?: any, ctx?: any): void }>(COMPACT_THINKING_OWNER)
-				?.stop(event, ctx);
+			const manager = (globalThis as any)[RENDER_MANAGES_THINKING_KEY];
+			const thinking = patchRegistry.get<{
+				owner: object;
+				stop(event?: any, ctx?: any): void;
+			}>(COMPACT_THINKING_OWNER);
+			if (
+				thinking &&
+				manager?.rendererOwner === mouseOwner &&
+				thinking.owner === manager.thinkingOwner
+			) {
+				thinking.stop(event, ctx);
+			}
 			current.defaultMode.shutdown();
 			current.toolGrouping.shutdown();
 			current.disposeMessageDisplay();
@@ -135,20 +147,25 @@ export default function (
 		}
 		const handoff = (globalThis as any)[SESSION_HANDOFF_KEY];
 		if (handoff?.owner === mouseOwner) delete (globalThis as any)[SESSION_HANDOFF_KEY];
-		if ((globalThis as any)[RENDER_MANAGES_THINKING_KEY] === mouseOwner) {
+		if ((globalThis as any)[RENDER_MANAGES_THINKING_KEY]?.rendererOwner === mouseOwner) {
 			delete (globalThis as any)[RENDER_MANAGES_THINKING_KEY];
 		}
 	};
 
 	const takeSessionHandoff = (event?: any, ctx?: any) => {
 		const handoff = (globalThis as any)[SESSION_HANDOFF_KEY];
-		if (handoff?.owner !== mouseOwner) handoff?.dispose(event, ctx);
+		if (!handoff) return;
+		if (handoff.owner === mouseOwner) {
+			handoff.cancel?.();
+			return;
+		}
+		handoff.dispose(event, ctx);
 	};
 
 	const ensureTuiInstallation = (ctx: any) => {
 		if (ctx?.mode !== "tui" || !ctx?.hasUI) return undefined;
 		takeSessionHandoff({ reason: "handoff" }, ctx);
-		(globalThis as any)[RENDER_MANAGES_THINKING_KEY] = mouseOwner;
+		compactThinking?.manageLifecycle?.(mouseOwner);
 		// 渲染层（工具样式/分组）是原型与组件级 patch，fullscreen 官方布局
 		// 同样渲染这些组件，因此两种模式都安装。
 		if (installation) return installation;
@@ -289,15 +306,32 @@ export default function (
 		clearAllAnimations();
 		if (
 			installation?.defaultMode.isOwner() &&
-			["reload", "new", "resume", "fork"].includes(event.reason)
+			["reload", "new", "resume", "fork"].includes(event?.reason)
 		) {
 			// Preserve the fully-styled stack through Pi's synchronous history rebuild.
 			// The next runtime disposes it immediately before installing its own stack.
 			takeSessionHandoff(event, ctx);
-			(globalThis as any)[SESSION_HANDOFF_KEY] = {
+			let timeout: ReturnType<typeof setTimeout> | undefined;
+			const handoff = {
 				owner: mouseOwner,
-				dispose: disposeInstallation,
+				cancel() {
+					if (timeout) clearTimeout(timeout);
+					if ((globalThis as any)[SESSION_HANDOFF_KEY] === handoff) {
+						delete (globalThis as any)[SESSION_HANDOFF_KEY];
+					}
+				},
+				dispose(nextEvent = event, nextCtx = ctx) {
+					handoff.cancel();
+					disposeInstallation(nextEvent, nextCtx);
+				},
 			};
+			(globalThis as any)[SESSION_HANDOFF_KEY] = handoff;
+			// ponytail: bounded global handoff; successor start normally clears this immediately.
+			timeout = setTimeout(() => {
+				if ((globalThis as any)[SESSION_HANDOFF_KEY] !== handoff) return;
+				handoff.dispose({ ...event, reason: "quit" }, ctx);
+			}, SESSION_HANDOFF_TIMEOUT_MS);
+			timeout.unref?.();
 			return;
 		}
 		takeSessionHandoff(event, ctx);

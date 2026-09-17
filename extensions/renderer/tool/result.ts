@@ -15,9 +15,9 @@ export function toolViewportWidth(width: number): number {
 export function insetComponent(component: any): any {
 	return {
 		render: (width: number) =>
-			component.render(Math.max(1, width - 1)).map((line: string) => {
+			component.render(Math.max(1, width - 3)).map((line: string) => {
 				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
-				return ` ${nestedMarker}`;
+				return truncateToWidth(` ${nestedMarker}`, Math.max(0, width), "");
 			}),
 		invalidate: () => component.invalidate?.(),
 	};

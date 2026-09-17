@@ -28,6 +28,7 @@ import {
 	WriteExecutionMetadataStore,
 	type ToolDisplayConfig,
 } from "../extensions/renderer/tool/diff/index.ts";
+import { insetComponent } from "../extensions/renderer/tool/result.ts";
 import {
 	executeWriteWithMetadata,
 	MAX_COMPARABLE_WRITE_BYTES,
@@ -604,4 +605,27 @@ test("third-party write ownership prevents registration", () => {
 		},
 	} as any);
 	assert.deepEqual(registered, []);
+});
+
+test("insetComponent strictly clamps lines within given width even with arrow markers", () => {
+	const dummyComponent = {
+		render(width: number) {
+			return [
+				"↳ diff unavailable: execution metadata is unavailable".slice(0, width),
+				"normal content line that fills available space".slice(0, width),
+			];
+		},
+	};
+
+	const wrapped = insetComponent(dummyComponent);
+
+	for (const width of [10, 20, 41, 60, 80]) {
+		const lines = wrapped.render(width);
+		for (const line of lines) {
+			assert.ok(
+				visibleWidth(line) <= width,
+				`Rendered line exceeds terminal width: ${visibleWidth(line)} > ${width} (line: "${line}")`,
+			);
+		}
+	}
 });

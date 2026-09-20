@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatConfigStatus, normalizeConfig } from "../extensions/config/config.ts";
 import {
+	config,
+	formatConfigStatus,
+	normalizeConfig,
+	setConfig,
+} from "../extensions/config/config.ts";
+import {
+	applyCustomFooter,
 	classifyStatus,
+	clearCustomFooter,
 	formatXaiFooterChip,
 	parseGitStats,
 	pickFooterUsageText,
@@ -13,6 +20,28 @@ test("normalizeConfig defaults enableCustomFooter on and honors explicit off", (
 	assert.equal(normalizeConfig({ enableCustomFooter: false }).enableCustomFooter, false);
 	assert.match(formatConfigStatus(normalizeConfig({})), /footer=on/);
 	assert.match(formatConfigStatus(normalizeConfig({ enableCustomFooter: false })), /footer=off/);
+});
+
+test("disabled custom footer leaves another extension's footer untouched", () => {
+	const previous = { ...config };
+	const calls: unknown[] = [];
+	const ctx = {
+		hasUI: true,
+		ui: {
+			setFooter: (factory: unknown) => calls.push(factory),
+		},
+	};
+
+	try {
+		setConfig(normalizeConfig({ enableCustomFooter: false }));
+		applyCustomFooter(ctx as never);
+		assert.deepEqual(calls, []);
+
+		clearCustomFooter(ctx as never);
+		assert.deepEqual(calls, [undefined]);
+	} finally {
+		setConfig(previous);
+	}
 });
 
 test("classifyStatus skips model, buckets usage-like keys, keeps other statuses", () => {

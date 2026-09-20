@@ -395,21 +395,20 @@ const createCustomFooterFactory =
 		};
 	};
 
-/**
- * 按配置应用底栏：on → 自定义 footer；off → 恢复官方默认 footer。
- * 导出供 /ccstyle 面板在切换开关时实时重应用。
- */
+/** Apply the configured custom footer without disturbing another extension's footer when disabled. */
 export function applyCustomFooter(ctx: ExtensionContext): void {
-	if (!ctx?.hasUI || typeof ctx.ui?.setFooter !== "function") return;
-	if (!config.enableCustomFooter) {
-		ctx.ui.setFooter(undefined);
-		return;
-	}
+	if (!ctx?.hasUI || typeof ctx.ui?.setFooter !== "function" || !config.enableCustomFooter) return;
 	try {
 		ctx.ui.setFooter(createCustomFooterFactory(ctx));
 	} catch (err) {
 		ctx.ui.notify(`footer error: ${err instanceof Error ? err.message : String(err)}`, "error");
 	}
+}
+
+/** Restore Pi's native footer when the user explicitly disables this extension's active footer. */
+export function clearCustomFooter(ctx: ExtensionContext): void {
+	if (!ctx?.hasUI || typeof ctx.ui?.setFooter !== "function") return;
+	ctx.ui.setFooter(undefined);
 }
 
 export default function (pi: ExtensionAPI) {

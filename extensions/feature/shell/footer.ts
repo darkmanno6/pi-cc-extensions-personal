@@ -14,6 +14,10 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
 
@@ -95,14 +99,26 @@ export function pickFooterUsageText(
 
 let piUsageMod: any | null | undefined;
 
+function piUsageImportSpecs(): string[] {
+	const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+	const dist = join(agentDir, "npm", "node_modules", "@narumitw", "pi-usage", "dist", "index.ts");
+	const specs: string[] = [];
+	if (existsSync(dist)) specs.push(pathToFileURL(dist).href);
+	specs.push("@narumitw/pi-usage");
+	return specs;
+}
+
 async function getPiUsage(): Promise<any | null> {
 	if (piUsageMod !== undefined) return piUsageMod;
-	try {
-		const spec = "@narumitw/pi-usage";
-		piUsageMod = await import(spec);
-	} catch {
-		piUsageMod = null;
+	for (const spec of piUsageImportSpecs()) {
+		try {
+			piUsageMod = await import(spec);
+			return piUsageMod;
+		} catch {
+			// 下一候选：本机 Pi npm 目录，或包名（与本包同 node_modules 时）
+		}
 	}
+	piUsageMod = null;
 	return piUsageMod;
 }
 

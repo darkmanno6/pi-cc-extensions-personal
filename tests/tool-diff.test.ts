@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 import {
 	ToolExecutionComponent,
@@ -608,11 +608,20 @@ test("third-party write ownership prevents registration", () => {
 });
 
 test("insetComponent strictly clamps lines within given width even with arrow markers", () => {
+	const warningTheme = {
+		fg(_color: string, text: string) {
+			return `\x1b[33m${text}\x1b[39m`;
+		},
+	};
 	const dummyComponent = {
 		render(width: number) {
 			return [
-				"↳ diff unavailable: execution metadata is unavailable".slice(0, width),
-				"normal content line that fills available space".slice(0, width),
+				truncateToWidth(
+					warningTheme.fg("warning", "↳ diff unavailable: execution metadata is unavailable"),
+					Math.max(0, width),
+					"",
+				),
+				"x".repeat(width),
 			];
 		},
 	};
@@ -627,5 +636,6 @@ test("insetComponent strictly clamps lines within given width even with arrow ma
 				`Rendered line exceeds terminal width: ${visibleWidth(line)} > ${width} (line: "${line}")`,
 			);
 		}
+		assert.equal(visibleWidth(lines[1]), width, "non-arrow body keeps the full width after indent");
 	}
 });

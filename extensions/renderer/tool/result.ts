@@ -11,11 +11,11 @@ export function toolViewportWidth(width: number): number {
 	return Math.max(1, Math.floor(width * TOOL_VIEWPORT_WIDTH_RATIO));
 }
 
-/** 与默认工具结果相同的一级缩进包装。 */
+/** 与默认工具结果相同的一级缩进包装。子组件只扣始终加上的 1 列；↳ 行多出的 2 列由 truncateToWidth 吃掉。 */
 export function insetComponent(component: any): any {
 	return {
 		render: (width: number) =>
-			component.render(Math.max(1, width - 3)).map((line: string) => {
+			component.render(Math.max(1, width - 1)).map((line: string) => {
 				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
 				return truncateToWidth(` ${nestedMarker}`, Math.max(0, width), "");
 			}),

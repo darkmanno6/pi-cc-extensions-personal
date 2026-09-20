@@ -43,6 +43,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 | 配置面板              | `Style / Diff / Thinking / UI / Feature` 五页签                                 | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
+| 状态栏                | 两行 chips：模型、上下文、缓存、费用、git；需要 Nerd Font                       | `/ccstyle` Feature                              |
 | 主题                  | 随包提供内置 CC Dark、CC Light 主题                                             | `/theme`                                        |
 
 ## 配置
@@ -82,7 +83,8 @@ pi install git:github.com/minuque/pi-cc-extensions
   "enableContextCommand": true,            // /context 上下文检查
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
-  "enableAliases": true                    // /clear、/exit 别名
+  "enableAliases": true,                   // /clear、/exit 别名
+  "enableCustomFooter": true               // 两行 chips 状态栏（需 Nerd Font）
 }
 ```
 

@@ -58,6 +58,17 @@ type ToolRenderMethods = {
 	getResultRenderer: (...args: any[]) => any;
 };
 
+type ToolPaintHit = {
+	width: number;
+	expanded: boolean;
+	isPartial: boolean;
+	result: unknown;
+	args: unknown;
+	callHover: boolean;
+	ioHover: string | null;
+	lines: string[];
+};
+
 type GlobalToolRenderPatch = {
 	version: 2;
 	prototype: any;
@@ -68,6 +79,11 @@ type GlobalToolRenderPatch = {
 	byName: Map<string, any>;
 	downstream: ToolRenderMethods;
 	installed: ToolRenderMethods;
+	originalRender?: (width: number) => string[];
+	originalInvalidate?: () => void;
+	renderPaint?: (width: number) => string[];
+	invalidatePaint?: () => void;
+	paintCache?: WeakMap<object, ToolPaintHit>;
 };
 
 type ToolExpandedBackgroundPatch = {
@@ -478,12 +494,38 @@ function disconnectGlobalToolRenderPatch(patch: GlobalToolRenderPatch | undefine
 	patch.byName.clear();
 }
 
+function ioHoverOf(tool: any): string | null {
+	const view = tool?.resultRendererComponent;
+	if (!view || typeof view.getHoveredSection !== "function") return null;
+	return view.getHoveredSection();
+}
+
+function toolPaintMatches(hit: ToolPaintHit, tool: any, width: number): boolean {
+	return (
+		hit.width === width &&
+		hit.expanded === Boolean(tool.expanded) &&
+		hit.isPartial === Boolean(tool.isPartial) &&
+		hit.result === tool.result &&
+		hit.args === tool.args &&
+		hit.callHover === isToolCallHovered(tool.toolCallId) &&
+		hit.ioHover === ioHoverOf(tool)
+	);
+}
+
 function installGlobalToolRendering(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
 ): GlobalToolRenderPatch {
 	const prototype = (ToolExecutionComponent as any).prototype;
 	const previous = patchRegistry.get<GlobalToolRenderPatch>(GLOBAL_TOOL_RENDER_PATCH);
 	const downstream = downstreamForGlobalToolInstall(prototype, previous);
+	const originalRender =
+		previous?.originalRender && prototype.render === previous.renderPaint
+			? previous.originalRender
+			: prototype.render;
+	const originalInvalidate =
+		previous?.originalInvalidate && prototype.invalidate === previous.invalidatePaint
+			? previous.originalInvalidate
+			: prototype.invalidate;
 	if (isOwnershipAwarePatch(previous)) disconnectGlobalToolRenderPatch(previous);
 
 	const patch: GlobalToolRenderPatch = {
@@ -496,6 +538,9 @@ function installGlobalToolRendering(
 		byName: new Map(),
 		downstream,
 		installed: undefined as any,
+		originalRender,
+		originalInvalidate,
+		paintCache: new WeakMap(),
 	};
 
 	patch.installed = {
@@ -532,6 +577,33 @@ function installGlobalToolRendering(
 	prototype.getRenderShell = patch.installed.getRenderShell;
 	prototype.getCallRenderer = patch.installed.getCallRenderer;
 	prototype.getResultRenderer = patch.installed.getResultRenderer;
+	// fullscreen 滚动/选区每帧整树 render；内容未变时复用上一帧行，避免重做 diff/Box。
+	patch.renderPaint = function (this: any, width: number): string[] {
+		if (!patch.active || patch.mode() === "off") {
+			return originalRender.call(this, width);
+		}
+		const cache = patch.paintCache;
+		const hit = cache?.get(this);
+		if (hit && toolPaintMatches(hit, this, width)) return hit.lines;
+		const lines = originalRender.call(this, width);
+		cache?.set(this, {
+			width,
+			expanded: Boolean(this.expanded),
+			isPartial: Boolean(this.isPartial),
+			result: this.result,
+			args: this.args,
+			callHover: isToolCallHovered(this.toolCallId),
+			ioHover: ioHoverOf(this),
+			lines,
+		});
+		return lines;
+	};
+	patch.invalidatePaint = function (this: any): void {
+		patch.paintCache?.delete(this);
+		originalInvalidate.call(this);
+	};
+	prototype.render = patch.renderPaint;
+	prototype.invalidate = patch.invalidatePaint;
 	patchRegistry.install(GLOBAL_TOOL_RENDER_PATCH, patch);
 	return patch;
 }
@@ -551,6 +623,16 @@ function deactivateGlobalToolRendering(patch: GlobalToolRenderPatch): void {
 	}
 	if (prototype.getResultRenderer === patch.installed.getResultRenderer) {
 		prototype.getResultRenderer = patch.downstream.getResultRenderer;
+	}
+	if (patch.renderPaint && prototype.render === patch.renderPaint && patch.originalRender) {
+		prototype.render = patch.originalRender;
+	}
+	if (
+		patch.invalidatePaint &&
+		prototype.invalidate === patch.invalidatePaint &&
+		patch.originalInvalidate
+	) {
+		prototype.invalidate = patch.originalInvalidate;
 	}
 }
 

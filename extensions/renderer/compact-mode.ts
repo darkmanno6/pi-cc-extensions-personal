@@ -327,6 +327,7 @@ function layoutExpandedToolCard(
 	theme: any,
 	children: any[],
 	width: number,
+	paints?: string[][],
 ): { lines: string[]; hits: Array<{ child: any; start: number; end: number }> } {
 	const slot = "userMessageBg";
 	const toolBgAnsi = darkenBgAnsi(theme, slot);
@@ -337,8 +338,10 @@ function layoutExpandedToolCard(
 	lines.push(paddedBackgroundRow(theme, slot, "", width));
 	// 展开不再显示摘要行：跳过第一个 child 的首行空白，避免白占一行
 	let skipLeadingBlank = true;
-	for (const child of children) {
-		const childLines = child.render(innerWidth);
+	for (let childIndex = 0; childIndex < children.length; childIndex++) {
+		const child = children[childIndex];
+		const painted = paints?.[childIndex];
+		const childLines = Array.isArray(painted) ? painted : child.render(innerWidth);
 		// 展开的 thinking 与 tool 一样走嵌套深色卡，避免贴在外卡同色底上看不见。
 		const nest = child.__ccToolCard || (isThinkingPreview(child) && child.expanded === true);
 		if (!nest) {
@@ -401,21 +404,56 @@ function compactRoundCard(
 			});
 		}
 	}
+	let paint:
+		| {
+				width: number;
+				theme: unknown;
+				paints: unknown[];
+				lines: string[];
+				hits: Array<{ child: any; start: number; end: number }>;
+		  }
+		| undefined;
+	const layout = (width: number) => {
+		const theme = themeOf();
+		const innerWidth = Math.max(0, width - 2);
+		const paints = children.map((child) => {
+			const lines = child.render?.(innerWidth);
+			return Array.isArray(lines) ? lines : [];
+		});
+		if (
+			paint &&
+			paint.width === width &&
+			paint.theme === theme &&
+			paint.paints.length === paints.length &&
+			paint.paints.every((item, index) => item === paints[index])
+		) {
+			return paint;
+		}
+		const laid = layoutExpandedToolCard(theme, children, width, paints);
+		paint = {
+			width,
+			theme,
+			paints,
+			lines: ["", ...laid.lines],
+			hits: laid.hits,
+		};
+		return paint;
+	};
 	return {
 		children,
 		render(width: number): string[] {
-			return ["", ...layoutExpandedToolCard(themeOf(), children, width).lines];
+			return layout(width).lines;
 		},
 		childAtRow(localRow: number, width: number) {
 			if (localRow < 1) return null;
 			const row = localRow - 1;
-			const { hits } = layoutExpandedToolCard(themeOf(), children, width);
-			for (const hit of hits) {
+			for (const hit of layout(width).hits) {
 				if (row >= hit.start && row < hit.end) return hit.child;
 			}
 			return null;
 		},
 		invalidate() {
+			paint = undefined;
 			for (const child of children) child.invalidate?.();
 		},
 	};
@@ -553,11 +591,74 @@ const compactRichDiffCache = new WeakMap<
 	{ result: unknown; collapsed?: unknown; expanded?: unknown }
 >();
 
+type CompactEditPaintHit = {
+	width: number;
+	theme: unknown;
+	expanded: boolean;
+	result: unknown;
+	isPartial: boolean;
+	args: unknown;
+	hover: boolean;
+	ioHover: unknown;
+	lines: string[];
+};
+const compactEditPaintCache = new WeakMap<object, CompactEditPaintHit>();
+
+function compactEditIoHover(component: any): unknown {
+	const view = component?.resultRendererComponent;
+	return typeof view?.getHoveredSection === "function" ? view.getHoveredSection() : null;
+}
+
 /**
  * compact edit/write：标题行 + mode=on 同一套 rich diff。
  * 折叠/展开都走 `renderRichToolResult`，limits 不另开一套。
+ * 已完成的结果跨帧复用行；pending 不缓存，避免 loader 动画冻住。
  */
 function compactEditWriteLines(
+	component: any,
+	width: number,
+	writeMetadata?: WriteExecutionMetadataStore,
+): string[] {
+	const expanded = component.expanded === true;
+	const isPartial = component.isPartial === true;
+	const pending = !component.result || isPartial;
+	const hover = isToolCallHovered(component.toolCallId);
+	const ioHover = compactEditIoHover(component);
+	const theme = themeOf();
+	if (!pending) {
+		const hit = compactEditPaintCache.get(component);
+		if (
+			hit &&
+			hit.width === width &&
+			hit.theme === theme &&
+			hit.expanded === expanded &&
+			hit.result === component.result &&
+			hit.isPartial === isPartial &&
+			hit.args === component.args &&
+			hit.hover === hover &&
+			hit.ioHover === ioHover
+		) {
+			return hit.lines;
+		}
+	}
+	const lines = paintCompactEditWrite(component, width, writeMetadata);
+	if (!pending) {
+		compactEditPaintCache.set(component, {
+			width,
+			theme,
+			expanded,
+			result: component.result,
+			isPartial,
+			args: component.args,
+			hover,
+			ioHover: compactEditIoHover(component),
+			lines,
+		});
+	}
+	return lines;
+}
+
+function paintCompactEditWrite(
 	component: any,
 	width: number,
 	writeMetadata?: WriteExecutionMetadataStore,
@@ -656,15 +757,45 @@ function compactAssistantLineComponent(
 	options: { hint?: boolean; leadingBlank?: boolean; pad?: number } = {},
 ): any {
 	const self = component as any;
+	let paint:
+		| {
+				width: number;
+				theme: unknown;
+				resolved: string;
+				hover: boolean;
+				hint: boolean;
+				pad: number;
+				frame: number;
+				leadingBlank: boolean;
+				lines: string[];
+		  }
+		| undefined;
 	return {
 		render(width: number): string[] {
 			const theme = themeOf();
 			const pad = Math.max(0, options.pad ?? (Number(self.outputPad) || 0));
 			const available = Math.max(0, width - pad);
-			const hintText = options.hint === false ? "" : ` • ${showMoreHintText()}`;
+			const hint = options.hint !== false;
+			const hintText = hint ? ` • ${showMoreHintText()}` : "";
 			const summaryWidth = Math.max(0, available - visibleWidth(hintText));
 			const resolved = typeof summary === "function" ? summary() : summary;
 			const runningActive = resolved.startsWith("Running...");
+			const hover = hoveredAssistantComponent === component;
+			const frame = runningActive ? (query?.getThinkingAnimationFrame?.() ?? 0) : 0;
+			const leadingBlank = options.leadingBlank !== false;
+			if (
+				paint &&
+				paint.width === width &&
+				paint.theme === theme &&
+				paint.resolved === resolved &&
+				paint.hover === hover &&
+				paint.hint === hint &&
+				paint.pad === pad &&
+				paint.frame === frame &&
+				paint.leadingBlank === leadingBlank
+			) {
+				return paint.lines;
+			}
 			const plainText = truncateToWidth(resolved, summaryWidth, "…");
 			let text = theme.fg("muted", plainText);
 			if (runningActive || plainText.startsWith("Ran for ")) {
@@ -684,12 +815,26 @@ function compactAssistantLineComponent(
 					text = `${styleCompactThinkingText(heading, theme)}${theme.fg("muted", tools)}`;
 				}
 			}
-			const hintColor = hoveredAssistantComponent === component ? "text" : "dim";
+			const hintColor = hover ? "text" : "dim";
 			const line = `${text}${hintText ? theme.fg(hintColor, hintText) : ""}`;
 			const rendered = `${" ".repeat(pad)}${truncateToWidth(line, available, "")}`;
-			return options.leadingBlank === false ? [rendered] : ["", rendered];
+			const lines = leadingBlank ? ["", rendered] : [rendered];
+			paint = {
+				width,
+				theme,
+				resolved,
+				hover,
+				hint,
+				pad,
+				frame,
+				leadingBlank,
+				lines,
+			};
+			return lines;
 		},
-		invalidate() {},
+		invalidate() {
+			paint = undefined;
+		},
 	};
 }
 

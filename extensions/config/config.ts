@@ -64,6 +64,7 @@ export type Config = {
 	enableAgentSummary: boolean;
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
+	enableCustomFooter: boolean;
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -125,6 +126,7 @@ export const DEFAULT_CONFIG: Config = {
 	enableAgentSummary: true,
 	enableWorkingMessage: true,
 	enableAliases: true,
+	enableCustomFooter: true,
 };
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -223,6 +225,7 @@ export function normalizeConfig(input: unknown): Config {
 		enableAgentSummary: source.enableAgentSummary !== false,
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
+		enableCustomFooter: source.enableCustomFooter !== false,
 	};
 }
 
@@ -276,6 +279,7 @@ export function formatConfigStatus(source: Config = config): string {
 		`agentSummary=${source.enableAgentSummary ? "on" : "off"}`,
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
+		`footer=${source.enableCustomFooter ? "on" : "off"}`,
 	].join(" · ");
 }
 

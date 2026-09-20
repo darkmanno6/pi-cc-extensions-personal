@@ -43,6 +43,7 @@ Run `/reload` after installation.
 | Settings panel              | `Style / Diff / Thinking / UI / Feature` tabs                                             | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
+| Status bar                  | Two-line chips: model, context, cache, cost, git; requires a Nerd Font                    | `/ccstyle` Feature                              |
 | Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
 
 ## Configuration
@@ -82,7 +83,8 @@ Run `/reload` after installation.
   "enableContextCommand": true,            // /context usage check
   "enableAgentSummary": true,              // per-turn tool summary
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
-  "enableAliases": true                    // /clear, /exit aliases
+  "enableAliases": true,                   // /clear, /exit aliases
+  "enableCustomFooter": true               // two-line chips status bar (needs a Nerd Font)
 }
 ```
 

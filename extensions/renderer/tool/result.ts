@@ -309,6 +309,10 @@ export class ExpandedToolIoView {
 		this.invalidate();
 	}
 
+	getHoveredSection(): ToolIoSection | null {
+		return this.hoveredSection;
+	}
+
 	/** True when the plain truncation footer carries show-more. Input 续行带 │，Output 不带。 */
 	matchShowMoreLine(plainLine: string): ToolIoSection | null {
 		const line = plainLine.replace(/\x1b\[[0-9;]*m/g, "");

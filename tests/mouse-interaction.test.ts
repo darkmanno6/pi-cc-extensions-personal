@@ -77,7 +77,7 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		const headerRow = tui.previousLines.findIndex((line: string) => line.includes("to show more"));
 		assert.ok(headerRow >= 0);
 		const hintColumn = tui.previousLines[headerRow].indexOf("to show more") + 1;
-		inputHandler?.(`\x1b[<32;${hintColumn};${headerRow + 1}M`);
+		inputHandler?.(`\x1b[<35;${hintColumn};${headerRow + 1}M`);
 		const hoveredHeader = group.render(100)[headerRow];
 		assert.match(hoveredHeader, /• \x1b\[37m[^\x1b]*to show more\x1b\[39m/);
 		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);

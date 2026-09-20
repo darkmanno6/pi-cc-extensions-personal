@@ -173,6 +173,15 @@ type SettledGroupCache = {
 	lines: string[];
 };
 
+type ExpandedGroupCache = {
+	width: number;
+	hover: boolean;
+	theme: unknown;
+	fullscreen: boolean;
+	paints: readonly unknown[];
+	lines: string[];
+};
+
 export class ToolGroupComponent extends Container {
 	readonly toolCallId = `ccstyle-tool-group-${nextGroupId++}`;
 	readonly toolName = "Tool group";
@@ -183,8 +192,10 @@ export class ToolGroupComponent extends Container {
 	}
 	private hintHovered = false;
 	private readonly patch: Patch;
-	/** 仅缓存已完成且折叠的分组；pending / expanded 每帧现算。 */
+	/** 仅缓存已完成且折叠的分组；pending 每帧现算。 */
 	private settledCache: SettledGroupCache | undefined;
+	/** 展开分组：子工具 paint 引用未变则复用整卡行。 */
+	private expandedPaintCache: ExpandedGroupCache | undefined;
 
 	constructor(patch: Patch) {
 		super();
@@ -192,14 +203,19 @@ export class ToolGroupComponent extends Container {
 		patch.groups.add(this);
 	}
 
-	addTool(tool: any): void {
+	private clearPaintCache(): void {
 		this.settledCache = undefined;
+		this.expandedPaintCache = undefined;
+	}
+
+	addTool(tool: any): void {
+		this.clearPaintCache();
 		this.children.push(tool);
 		tool[PARENT_KEY] = this;
 	}
 
 	releaseTools(): any[] {
-		this.settledCache = undefined;
+		this.clearPaintCache();
 		const tools = [...this.children];
 		this.children.length = 0;
 		this.patch.groups.delete(this);
@@ -207,21 +223,21 @@ export class ToolGroupComponent extends Container {
 	}
 
 	removeTool(tool: any): void {
-		this.settledCache = undefined;
+		this.clearPaintCache();
 		const index = this.children.indexOf(tool);
 		if (index >= 0) this.children.splice(index, 1);
 		if (tool?.[PARENT_KEY] === this) delete tool[PARENT_KEY];
 	}
 
 	setExpanded(expanded: boolean): void {
-		if (this._expanded !== expanded) this.settledCache = undefined;
+		if (this._expanded !== expanded) this.clearPaintCache();
 		this._expanded = expanded;
 		for (const tool of this.children)
 			(tool as Component & { setExpanded?: (expanded: boolean) => void }).setExpanded?.(expanded);
 	}
 
 	setHintHovered(hovered: boolean): void {
-		if (this.hintHovered !== hovered) this.settledCache = undefined;
+		if (this.hintHovered !== hovered) this.clearPaintCache();
 		this.hintHovered = hovered;
 	}
 
@@ -250,7 +266,7 @@ export class ToolGroupComponent extends Container {
 	}
 
 	invalidate(): void {
-		this.settledCache = undefined;
+		this.clearPaintCache();
 		for (const tool of this.children) tool.invalidate?.();
 	}
 
@@ -330,6 +346,23 @@ export class ToolGroupComponent extends Container {
 			),
 		];
 		const total = this.children.length;
+		const childPaints = this._expanded
+			? (this.children as any[]).map((tool) => tool.render?.(Math.max(1, width - 2)))
+			: undefined;
+		if (this._expanded && childPaints) {
+			const expandedHit = this.expandedPaintCache;
+			if (
+				expandedHit &&
+				expandedHit.width === width &&
+				expandedHit.hover === this.hintHovered &&
+				expandedHit.theme === this.patch.theme &&
+				expandedHit.fullscreen === isToolTuiFullscreen() &&
+				expandedHit.paints.length === childPaints.length &&
+				expandedHit.paints.every((paint, index) => paint === childPaints[index])
+			) {
+				return expandedHit.lines;
+			}
+		}
 		const expandedLines: string[] = [];
 		for (let index = 0; index < total; index++) {
 			const tool = this.children[index];
@@ -351,7 +384,7 @@ export class ToolGroupComponent extends Container {
 				);
 				continue;
 			}
-			const rendered = visibleLines(tool.render(Math.max(1, width - 2)));
+			const rendered = visibleLines(Array.isArray(childPaints?.[index]) ? childPaints[index] : []);
 			if (rendered.length) {
 				rendered[0] = stripLeadingStatusIcon(rendered[0])
 					.replace(/^ +/, "")
@@ -376,6 +409,14 @@ export class ToolGroupComponent extends Container {
 				lines.push(paddedBackgroundRow(theme, backgroundSlot, line, width));
 			}
 			lines.push(paddedBackgroundRow(theme, backgroundSlot, "", width));
+			this.expandedPaintCache = {
+				width,
+				hover: this.hintHovered,
+				theme: this.patch.theme,
+				fullscreen: isToolTuiFullscreen(),
+				paints: childPaints ?? [],
+				lines,
+			};
 		} else if (counts.pending === 0) {
 			this.storeSettledCache(width, lines);
 		}

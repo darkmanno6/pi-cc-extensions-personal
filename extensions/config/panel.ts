@@ -7,6 +7,7 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
+import { applyCustomFooter } from "../feature/shell/footer.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
@@ -455,6 +456,13 @@ export async function showCcstylePanel(
 			"Aliases disabled.",
 			config.enableAliases,
 		);
+		const customFooterToggle = featureToggleSetting(
+			"enableCustomFooter",
+			"Status bar",
+			"Two-line chips status bar with model, context, git, and usage. Applies immediately. Needs a Nerd Font.",
+			"Pi native footer restored.",
+			config.enableCustomFooter,
+		);
 		const featureToggles: Record<string, { apply: (on: boolean) => void }> = {
 			enableSessionReference: sessionReferenceToggle,
 			enableSubagentAutocomplete: subagentAutocompleteToggle,
@@ -465,6 +473,13 @@ export async function showCcstylePanel(
 		};
 
 		const onSettingChange = (id: string, value: string) => {
+			if (id === "enableCustomFooter") {
+				updateConfig({ enableCustomFooter: value === "on" });
+				customFooterToggle.apply(value === "on");
+				applyCustomFooter(ctx);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
 			// 额外功能开关：字段名与配置布尔字段一一对应，切换后重启生效。
 			const featureToggle = featureToggles[id];
 			if (featureToggle) {
@@ -658,6 +673,7 @@ export async function showCcstylePanel(
 					agentSummaryToggle.setting,
 					workingMessageToggle.setting,
 					aliasesToggle.setting,
+					customFooterToggle.setting,
 				],
 			},
 		];

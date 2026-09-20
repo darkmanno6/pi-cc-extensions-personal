@@ -7,7 +7,7 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { applyCustomFooter } from "../feature/shell/footer.ts";
+import { applyCustomFooter, clearCustomFooter } from "../feature/shell/footer.ts";
 import { applyStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
@@ -474,9 +474,11 @@ export async function showCcstylePanel(
 
 		const onSettingChange = (id: string, value: string) => {
 			if (id === "enableCustomFooter") {
-				updateConfig({ enableCustomFooter: value === "on" });
-				customFooterToggle.apply(value === "on");
-				applyCustomFooter(ctx);
+				const enabled = value === "on";
+				updateConfig({ enableCustomFooter: enabled });
+				customFooterToggle.apply(enabled);
+				if (enabled) applyCustomFooter(ctx);
+				else clearCustomFooter(ctx);
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}

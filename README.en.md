@@ -48,7 +48,7 @@ Run `/reload` after installation.
 
 ## Configuration
 
-`/ccstyle` behavior is configured through `~/.pi/agent/claude-code-style.json`:
+`/ccstyle` behavior is configured through `~/.pi/agent/pi-cc-extensions.json`:
 
 ```js
 {

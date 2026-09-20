@@ -1,5 +1,5 @@
 import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -68,7 +68,8 @@ export type Config = {
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
-const CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
+export const CONFIG_PATH = join(AGENT_DIR, "pi-cc-extensions.json");
+const LEGACY_CONFIG_PATH = join(AGENT_DIR, "claude-code-style.json");
 
 export const DIFF_VIEW_MODES: DiffViewMode[] = ["auto", "split", "unified"];
 export const DIFF_INDICATOR_MODES: DiffIndicatorMode[] = ["bars", "classic", "none"];
@@ -288,10 +289,21 @@ export const config: Config = loadConfig();
 
 function loadConfig(): Config {
 	try {
-		const source = existsSync(CONFIG_PATH)
-			? (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Record<string, unknown>)
+		const fromLegacy = !existsSync(CONFIG_PATH) && existsSync(LEGACY_CONFIG_PATH);
+		const rawPath = existsSync(CONFIG_PATH) ? CONFIG_PATH : fromLegacy ? LEGACY_CONFIG_PATH : null;
+		const source = rawPath
+			? (JSON.parse(readFileSync(rawPath, "utf8")) as Record<string, unknown>)
 			: {};
-		return normalizeConfig(source);
+		const next = normalizeConfig(source);
+		if (fromLegacy) {
+			try {
+				writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2));
+				rmSync(LEGACY_CONFIG_PATH, { force: true });
+			} catch {
+				// 新路径写失败时仍使用已读到的旧配置，旧文件保留。
+			}
+		}
+		return next;
 	} catch {
 		// Ignore bad config and fall back to defaults.
 	}

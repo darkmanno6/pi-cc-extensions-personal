@@ -48,7 +48,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
 ## 配置
 
-`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置：
+`/ccstyle` 的行为由 `~/.pi/agent/pi-cc-extensions.json` 配置：
 
 ```js
 {

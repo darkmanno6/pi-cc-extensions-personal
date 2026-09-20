@@ -395,7 +395,7 @@ test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
 });
 
 test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async () => {
-	// 步进数来自用户配置，测试固定为默认 3（避免受本机 claude-code-style.json 影响）。
+	// 步进数来自用户配置，测试固定为默认 3（避免受本机 pi-cc-extensions.json 影响）。
 	const previousStep = config.scrollStepLines;
 	config.scrollStepLines = 3;
 	const tool = createTool("tool-fullscreen");

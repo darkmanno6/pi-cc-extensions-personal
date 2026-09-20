@@ -279,15 +279,9 @@ export function renderHeaderLines(
 	);
 }
 
-/**
- * 按配置应用启动头：on → 自定义 header；off → 恢复官方默认 header。
- * 导出供 /ccstyle 面板在切换开关时实时重应用。
- */
+/** 按配置安装启动头。禁用时不碰槽位，避免清掉其他扩展的 header。 */
 export function applyStartupHeader(ctx: any): void {
-	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
-	if (!config.showStartupHeader) {
-		// 恢复官方内置 header（logo + 快捷键提示 + onboarding）。
-		ctx.ui.setHeader(undefined);
+	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function" || !config.showStartupHeader) {
 		return;
 	}
 	ctx.ui.setHeader((_tui: unknown, theme: any) => ({
@@ -296,6 +290,12 @@ export function applyStartupHeader(ctx: any): void {
 		},
 		invalidate() {},
 	}));
+}
+
+/** 用户从 /ccstyle 关掉本扩展启动头时，恢复官方 header。 */
+export function clearStartupHeader(ctx: any): void {
+	if (!ctx?.hasUI || typeof ctx.ui?.setHeader !== "function") return;
+	ctx.ui.setHeader(undefined);
 }
 
 export default function piStartupHeader(pi: ExtensionAPI) {

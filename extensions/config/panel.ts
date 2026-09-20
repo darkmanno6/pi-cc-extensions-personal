@@ -8,7 +8,7 @@ import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { applyCustomFooter, clearCustomFooter } from "../feature/shell/footer.ts";
-import { applyStartupHeader } from "../feature/shell/startup-header.ts";
+import { applyStartupHeader, clearStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
 	config,
@@ -603,14 +603,16 @@ export async function showCcstylePanel(
 						? "Thinking text uses the theme's dim color."
 						: "Keep the default thinking text color.";
 					break;
-				case "showStartupHeader":
-					updateConfig({ showStartupHeader: value === "on" });
+				case "showStartupHeader": {
+					const enabled = value === "on";
+					updateConfig({ showStartupHeader: enabled });
 					startupHeaderSetting.description = config.showStartupHeader
 						? "Show the custom startup header (logo + tips) on new sessions."
 						: "Use Pi's native startup header instead.";
-					// 实时切换：on → 自定义 header；off → 官方默认 header。
-					applyStartupHeader(ctx);
+					if (enabled) applyStartupHeader(ctx);
+					else clearStartupHeader(ctx);
 					break;
+				}
 				case "scrollStepLines":
 					updateConfig({
 						scrollStepLines: pickPositiveInt(value, DEFAULT_CONFIG.scrollStepLines, 1, 50),

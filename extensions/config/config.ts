@@ -1,4 +1,9 @@
 import type { CompactThinkingConfig } from "../feature/compact-thinking.ts";
+import {
+	DEFAULT_FOOTER_CHIP_LAYOUT,
+	formatFooterChipSummary,
+	normalizeFooterChipLayout,
+} from "../feature/shell/footer-layout.ts";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -65,6 +70,11 @@ export type Config = {
 	enableWorkingMessage: boolean;
 	enableAliases: boolean;
 	enableCustomFooter: boolean;
+	footerNerdIcons: boolean;
+	footerHiddenKeys: string[];
+	footerLine1Keys: string[];
+	footerLine2Keys: string[];
+	footerLine3Keys: string[];
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -128,6 +138,8 @@ export const DEFAULT_CONFIG: Config = {
 	enableWorkingMessage: true,
 	enableAliases: true,
 	enableCustomFooter: true,
+	footerNerdIcons: true,
+	...DEFAULT_FOOTER_CHIP_LAYOUT,
 };
 
 function pickEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -227,6 +239,8 @@ export function normalizeConfig(input: unknown): Config {
 		enableWorkingMessage: source.enableWorkingMessage !== false,
 		enableAliases: source.enableAliases !== false,
 		enableCustomFooter: source.enableCustomFooter !== false,
+		footerNerdIcons: source.footerNerdIcons !== false,
+		...normalizeFooterChipLayout(source),
 	};
 }
 
@@ -281,6 +295,8 @@ export function formatConfigStatus(source: Config = config): string {
 		`workingMsg=${source.enableWorkingMessage ? "on" : "off"}`,
 		`aliases=${source.enableAliases ? "on" : "off"}`,
 		`footer=${source.enableCustomFooter ? "on" : "off"}`,
+		`footerIcons=${source.footerNerdIcons ? "nerd" : "plain"}`,
+		formatFooterChipSummary(source),
 	].join(" · ");
 }
 

@@ -1,8 +1,9 @@
 /**
  * 自定义底栏：chips + zentui 图标/句子
  *
- * 第一行：model  thinking · ██████░░░░ 45%/200k · 󰆼 42% · $0.01 · 用量
- * 第二行：cwd in session on  branch (+16 −1) · 其他扩展状态
+ * 第一行：model  thinking · ██████░░░░ 45%/200k · 󰆼 42% · $0.01 · 用户排到 line1 的插件芯片
+ * 第二行：cwd in session on  branch (+16 −1) · 用户排到 line2 的插件芯片
+ * 第三行：仅当 line3 有可见插件芯片时出现
  *
  *  - line1 短芯片，· 分隔；缓存用 zentui 󰆼，费用 success
  *  - line2 用 zentui 句式 in / on + 
@@ -20,13 +21,26 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { config } from "../../config/config.ts";
 import { stripAnsi } from "../../utils/ansi-text.ts";
+import {
+	PI_USAGE_KEY,
+	isSkippedFooterStatusKey,
+	resolveFooterChipLayout,
+	visibleFooterPluginTexts,
+	type FooterChipLayout,
+} from "./footer-layout.ts";
 
 const GIT_REFRESH_INTERVAL_MS = 10_000;
 const USAGE_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 const USAGE_TIMEOUT_MS = 15_000;
-// zentui NERD_DEFAULT_ICONS：git / cacheHit
-const ICON_GIT = "";
-const ICON_CACHE = "󰆼";
+// zentui NERD_DEFAULT_ICONS：git / cacheHit。无 Nerd Font 时留空，只保留文字。
+export const FOOTER_NERD_ICON_GIT = "";
+export const FOOTER_NERD_ICON_CACHE = "󰆼";
+
+export function footerGlyphs(nerdIcons: boolean): { git: string; cache: string } {
+	return nerdIcons
+		? { git: FOOTER_NERD_ICON_GIT, cache: FOOTER_NERD_ICON_CACHE }
+		: { git: "", cache: "" };
+}
 
 type GitStats = { add: number; del: number };
 
@@ -52,12 +66,6 @@ export function parseGitStats(stdout: string): GitStats {
 		}
 	}
 	return { add, del };
-}
-
-export function classifyStatus(key: string): "usage" | "skip" | "other" {
-	if (key === "model") return "skip"; // line1 已有供应商/模型
-	if (/usage|quota|balance/i.test(key)) return "usage";
-	return "other";
 }
 
 export function formatXaiFooterChip(report: XaiFooterReport): string | undefined {
@@ -87,14 +95,44 @@ export function formatXaiFooterChip(report: XaiFooterReport): string | undefined
 	return undefined;
 }
 
-export function pickFooterUsageText(
-	pluginUsage: string | undefined,
-	localChip: string | undefined,
-): string | undefined {
-	const plugin = pluginUsage?.trim();
-	if (plugin && !/^checking$/i.test(plugin)) return plugin;
-	const local = localChip?.trim();
-	return local || undefined;
+const cachedExtensionStatuses = new Map<string, string>();
+let cachedLocalUsageText = "";
+
+/** 面板用：当前 setStatus 文案 + 本包 pi-usage（无文案时为空字符串）。 */
+export function getFooterStatusSnapshot(): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const [key, text] of cachedExtensionStatuses) {
+		if (isSkippedFooterStatusKey(key)) continue;
+		out.set(key, text);
+	}
+	out.set(PI_USAGE_KEY, cachedLocalUsageText);
+	return out;
+}
+
+function rememberExtensionStatuses(entries: Iterable<[string, string]>): void {
+	cachedExtensionStatuses.clear();
+	for (const [key, raw] of entries) {
+		if (isSkippedFooterStatusKey(key)) continue;
+		const text = stripAnsi(raw.replace(/[\r\n\t]+/g, " ").trim());
+		if (text) cachedExtensionStatuses.set(key, text);
+	}
+}
+
+function pluginTextsForRender(localUsageChip: string): Map<string, string> {
+	cachedLocalUsageText = stripAnsi(localUsageChip.replace(/[\r\n\t]+/g, " ").trim());
+	const texts = new Map<string, string>(cachedExtensionStatuses);
+	if (cachedLocalUsageText) texts.set(PI_USAGE_KEY, cachedLocalUsageText);
+	else texts.delete(PI_USAGE_KEY);
+	return texts;
+}
+
+function layoutFromConfig(): FooterChipLayout {
+	return {
+		footerHiddenKeys: config.footerHiddenKeys,
+		footerLine1Keys: config.footerLine1Keys,
+		footerLine2Keys: config.footerLine2Keys,
+		footerLine3Keys: config.footerLine3Keys,
+	};
 }
 
 let piUsageMod: any | null | undefined;
@@ -317,26 +355,33 @@ const createCustomFooterFactory =
 			const thinkingLevelStr = ctx.thinkingLevel || "off";
 			const thinkingColor = theme.getThinkingBorderColor(thinkingLevelStr);
 
-			const otherStatuses: string[] = [];
-			const usageStatuses: string[] = [];
-			for (const [key, raw] of Array.from(
+			rememberExtensionStatuses(
 				footerData.getExtensionStatuses().entries() as Iterable<[string, string]>,
-			).sort(([a], [b]) => a.localeCompare(b))) {
-				const t = raw.replace(/[\r\n\t]+/g, " ").trim();
-				if (!t) continue;
-				const kind = classifyStatus(key);
-				if (kind === "skip") continue;
-				if (kind === "usage") {
-					usageStatuses.push(stripAnsi(t));
-				} else {
-					otherStatuses.push(theme.fg("dim", stripAnsi(t)));
-				}
-			}
-
-			const usageText = pickFooterUsageText(usageStatuses[0], localUsageChip);
+			);
+			const pluginTexts = pluginTextsForRender(localUsageChip);
+			const layout = resolveFooterChipLayout(layoutFromConfig(), [...pluginTexts.keys()]);
+			const dimPlugin = (text: string) => colorUsageChip(theme, text);
+			const line1Plugins = visibleFooterPluginTexts(
+				layout.footerLine1Keys,
+				layout.footerHiddenKeys,
+				pluginTexts,
+			).map(dimPlugin);
+			const line2Plugins = visibleFooterPluginTexts(
+				layout.footerLine2Keys,
+				layout.footerHiddenKeys,
+				pluginTexts,
+			).map(dimPlugin);
+			const line3Plugins = visibleFooterPluginTexts(
+				layout.footerLine3Keys,
+				layout.footerHiddenKeys,
+				pluginTexts,
+			).map(dimPlugin);
 
 			const pctLabel = percent === null || percent === undefined ? "?" : `${Math.floor(percent)}%`;
 			const cachePct = getCachePct();
+			const glyphs = footerGlyphs(config.footerNerdIcons);
+			const cacheLabel =
+				cachePct > 0 ? `${glyphs.cache ? `${glyphs.cache} ` : ""}${Math.floor(cachePct)}%` : "";
 			const costChip =
 				cost || usingSubscription
 					? theme.fg("dim", `$${cost.toFixed(2)}`) +
@@ -346,9 +391,9 @@ const createCustomFooterFactory =
 				theme.fg("accent", modelLabel),
 				model?.reasoning ? thinkingColor(thinkingLevelStr) : "",
 				barGauge(percent ?? 0) + theme.fg("dim", ` ${pctLabel}/${fmt(contextWindow)}`),
-				cachePct > 0 ? theme.fg("dim", `${ICON_CACHE} ${Math.floor(cachePct)}%`) : "",
+				cacheLabel ? theme.fg("dim", cacheLabel) : "",
 				costChip,
-				usageText ? colorUsageChip(theme, usageText) : "",
+				...line1Plugins,
 			]);
 
 			const gitColor = theme.getThinkingBorderColor("medium");
@@ -367,11 +412,17 @@ const createCustomFooterFactory =
 							theme.fg("error", `−${gitStats.del}`) +
 							theme.fg("dim", ")")
 						: "";
-				place += theme.fg("muted", " on ") + gitColor(`${ICON_GIT} ${branch}`) + stats;
+				const gitLabel = glyphs.git ? `${glyphs.git} ${branch}` : branch;
+				place += theme.fg("muted", " on ") + gitColor(gitLabel) + stats;
 			}
-			const line2 = joinChips([place, ...otherStatuses]);
+			const line2 = joinChips([place, ...line2Plugins]);
+			const line3 = joinChips(line3Plugins);
 
-			return [truncateToWidth(line1, width), ...(line2 ? [truncateToWidth(line2, width)] : [])];
+			return [
+				truncateToWidth(line1, width),
+				...(line2 ? [truncateToWidth(line2, width)] : []),
+				...(line3 ? [truncateToWidth(line3, width)] : []),
+			];
 		};
 
 		return {

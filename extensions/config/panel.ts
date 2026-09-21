@@ -7,7 +7,22 @@
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Input, SettingsList, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
-import { applyCustomFooter, clearCustomFooter } from "../feature/shell/footer.ts";
+import {
+	applyCustomFooter,
+	clearCustomFooter,
+	getFooterStatusSnapshot,
+} from "../feature/shell/footer.ts";
+import {
+	footerChipDescription,
+	footerLineOfKey,
+	formatFooterChipSummary,
+	orderedFooterKeys,
+	reorderFooterKey,
+	resolveFooterChipLayout,
+	shiftFooterKeyLine,
+	toggleFooterKeyHidden,
+	type FooterChipLayout,
+} from "../feature/shell/footer-layout.ts";
 import { applyStartupHeader, clearStartupHeader } from "../feature/shell/startup-header.ts";
 import type { ToolGroupingHooks } from "../renderer/tool/grouping.ts";
 import {
@@ -57,6 +72,120 @@ function excludeRenderersDescription(names: readonly string[]): string {
 	return names.length === 0
 		? "No tools excluded. Agent always keeps its dedicated renderer. Enter to toggle common tools."
 		: `Native renderer for: ${names.join(", ")}. Agent is always native. Enter to toggle.`;
+}
+
+function customFooterDescription(enabled: boolean): string {
+	if (!enabled) return "Pi native footer restored. Chip layout below still applies when turned on.";
+	return "Custom status bar with model, context, cache, cost, git, and plugin chips.";
+}
+
+function pluginChipsDescription(): string {
+	return `Arrange plugin chips: ${formatFooterChipSummary(config)}. Enter to edit.`;
+}
+
+function footerLayoutFromConfig(): FooterChipLayout {
+	return {
+		footerHiddenKeys: config.footerHiddenKeys,
+		footerLine1Keys: config.footerLine1Keys,
+		footerLine2Keys: config.footerLine2Keys,
+		footerLine3Keys: config.footerLine3Keys,
+	};
+}
+
+function persistFooterLayout(layout: FooterChipLayout): void {
+	updateConfig({
+		footerHiddenKeys: layout.footerHiddenKeys,
+		footerLine1Keys: layout.footerLine1Keys,
+		footerLine2Keys: layout.footerLine2Keys,
+		footerLine3Keys: layout.footerLine3Keys,
+	});
+}
+
+function footerChipItem(
+	key: string,
+	layout: FooterChipLayout,
+	snapshot: ReadonlyMap<string, string>,
+) {
+	const line = footerLineOfKey(layout, key) ?? 2;
+	const hidden = layout.footerHiddenKeys.includes(key);
+	const live = snapshot.get(key)?.trim() ?? "";
+	return {
+		id: key,
+		label: key,
+		description: footerChipDescription(key, live),
+		currentValue: hidden ? `line${line} · hidden` : `line${line}`,
+	};
+}
+
+function buildFooterChipsSubmenu(
+	onClose: () => void,
+	onLiveChange: () => void,
+): {
+	render: (width: number) => string[];
+	invalidate: () => void;
+	handleInput: (data: string) => void;
+} {
+	const snapshot = () => getFooterStatusSnapshot();
+	const resolved = () => resolveFooterChipLayout(footerLayoutFromConfig(), [...snapshot().keys()]);
+	const items: ReturnType<typeof footerChipItem>[] = [];
+	const rebuildItems = (layout: FooterChipLayout, selectedKey?: string) => {
+		const next = orderedFooterKeys(layout).map((key) => footerChipItem(key, layout, snapshot()));
+		items.length = 0;
+		items.push(...next);
+		if (!selectedKey) return 0;
+		const index = items.findIndex((item) => item.id === selectedKey);
+		return index >= 0 ? index : 0;
+	};
+	rebuildItems(resolved());
+	const list = new SettingsList(
+		items,
+		Math.min(8, Math.max(4, items.length)),
+		getSettingsListTheme(),
+		() => {},
+		() => onClose(),
+		{ enableSearch: false },
+	);
+	const listState = list as unknown as { selectedIndex: number; items: typeof items };
+
+	const mutate = (transform: (layout: FooterChipLayout, key: string) => FooterChipLayout) => {
+		const key = listState.items[listState.selectedIndex]?.id;
+		if (!key) return;
+		const next = transform(resolved(), key);
+		persistFooterLayout(next);
+		listState.selectedIndex = rebuildItems(
+			resolveFooterChipLayout(next, [...snapshot().keys()]),
+			key,
+		);
+		onLiveChange();
+	};
+
+	return {
+		render: (width: number) => list.render(width),
+		invalidate: () => list.invalidate(),
+		handleInput: (data: string) => {
+			if (matchesKey(data, "left")) {
+				mutate((layout, key) => shiftFooterKeyLine(layout, key, -1));
+				return;
+			}
+			if (matchesKey(data, "right")) {
+				mutate((layout, key) => shiftFooterKeyLine(layout, key, 1));
+				return;
+			}
+			if (data === "[") {
+				mutate((layout, key) => reorderFooterKey(layout, key, -1));
+				return;
+			}
+			if (data === "]") {
+				mutate((layout, key) => reorderFooterKey(layout, key, 1));
+				return;
+			}
+			if (data === " " || matchesKey(data, "space")) {
+				mutate((layout, key) => toggleFooterKeyHidden(layout, key));
+				return;
+			}
+			list.handleInput(data);
+		},
+	};
 }
 
 function diffViewModeDescription(mode: DiffViewMode): string {
@@ -186,7 +315,7 @@ function buildNumberInputSubmenu(
 
 /** Section tabs for /ccstyle — matches Zentui-style "A / B / C" headers. */
 type CcstyleSection = {
-	id: "style" | "diff" | "thinking" | "ui" | "feature";
+	id: "style" | "diff" | "thinking" | "ui" | "feature" | "footer";
 	label: string;
 	items: any[];
 };
@@ -242,19 +371,22 @@ export async function showCcstylePanel(
 			currentValue: config.mode === "compact" ? "compact (Experimental)" : config.mode,
 			values: ["on", "compact (Experimental)", "off"],
 		};
-		// Tracks whether the Exclude-tools submenu is open so Tab switches sections
+		// Tracks whether a nested submenu is open so Tab switches sections
 		// only at the top level (mirrors Zentui settings: Tab = switch sections).
-		let excludeSubmenuOpen = false;
+		let nestedSubmenuOpen = false;
+		let nestedHint = "";
 		const excludeSetting = {
 			id: "excludeRenderers",
 			label: "Exclude tools",
 			description: excludeRenderersDescription(config.excludeRenderers),
 			currentValue: formatExcludeRenderers(config.excludeRenderers),
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
-				excludeSubmenuOpen = true;
+				nestedSubmenuOpen = true;
+				nestedHint = "  Enter/Space to toggle · Esc back to Style";
 				return buildExcludeRenderersSubmenu(
 					() => {
-						excludeSubmenuOpen = false;
+						nestedSubmenuOpen = false;
+						nestedHint = "";
 						excludeSetting.currentValue = formatExcludeRenderers(config.excludeRenderers);
 						excludeSetting.description = excludeRenderersDescription(config.excludeRenderers);
 						closeSubmenu();
@@ -456,13 +588,45 @@ export async function showCcstylePanel(
 			"Aliases disabled.",
 			config.enableAliases,
 		);
-		const customFooterToggle = featureToggleSetting(
-			"enableCustomFooter",
-			"Status bar",
-			"Two-line chips status bar with model, context, git, and usage. Applies immediately. Needs a Nerd Font.",
-			"Pi native footer restored.",
-			config.enableCustomFooter,
-		);
+		const footerNerdIconsSetting = {
+			id: "footerNerdIcons",
+			label: "Nerd Font icons",
+			description: config.footerNerdIcons
+				? "Git and cache chips use Nerd Font glyphs. Turn off for plain text."
+				: "Git and cache chips use plain text. No Nerd Font required.",
+			currentValue: config.footerNerdIcons ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const customFooterSetting = {
+			id: "enableCustomFooter",
+			label: "Status bar",
+			description: customFooterDescription(config.enableCustomFooter),
+			currentValue: config.enableCustomFooter ? "on" : "off",
+			values: ["on", "off"],
+		};
+		const pluginChipsSetting = {
+			id: "footerPluginChips",
+			label: "Plugin chips",
+			description: pluginChipsDescription(),
+			currentValue: formatFooterChipSummary(config),
+			submenu: (_current: string, closeSubmenu: (selected?: string) => void) => {
+				nestedSubmenuOpen = true;
+				nestedHint = "  ←→ line · [ ] reorder · Space hide · Esc back to Footer";
+				return buildFooterChipsSubmenu(
+					() => {
+						nestedSubmenuOpen = false;
+						nestedHint = "";
+						pluginChipsSetting.currentValue = formatFooterChipSummary(config);
+						pluginChipsSetting.description = pluginChipsDescription();
+						closeSubmenu();
+					},
+					() => {
+						pluginChipsSetting.currentValue = formatFooterChipSummary(config);
+						pluginChipsSetting.description = pluginChipsDescription();
+					},
+				);
+			},
+		};
 		const featureToggles: Record<string, { apply: (on: boolean) => void }> = {
 			enableSessionReference: sessionReferenceToggle,
 			enableSubagentAutocomplete: subagentAutocompleteToggle,
@@ -476,9 +640,20 @@ export async function showCcstylePanel(
 			if (id === "enableCustomFooter") {
 				const enabled = value === "on";
 				updateConfig({ enableCustomFooter: enabled });
-				customFooterToggle.apply(enabled);
+				customFooterSetting.currentValue = enabled ? "on" : "off";
+				customFooterSetting.description = customFooterDescription(enabled);
 				if (enabled) applyCustomFooter(ctx);
 				else clearCustomFooter(ctx);
+				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
+				return;
+			}
+			if (id === "footerNerdIcons") {
+				const enabled = value === "on";
+				updateConfig({ footerNerdIcons: enabled });
+				footerNerdIconsSetting.currentValue = enabled ? "on" : "off";
+				footerNerdIconsSetting.description = enabled
+					? "Git and cache chips use Nerd Font glyphs. Turn off for plain text."
+					: "Git and cache chips use plain text. No Nerd Font required.";
 				ctx.ui.notify(`Updated ${id}: ${value}`, "info");
 				return;
 			}
@@ -634,6 +809,30 @@ export async function showCcstylePanel(
 				items: [modeSetting, excludeSetting],
 			},
 			{
+				id: "feature",
+				label: "Features",
+				items: [
+					sessionReferenceToggle.setting,
+					subagentAutocompleteToggle.setting,
+					contextCommandToggle.setting,
+					agentSummaryToggle.setting,
+					workingMessageToggle.setting,
+					aliasesToggle.setting,
+				],
+			},
+			{
+				id: "ui",
+				label: "UI",
+				items: [
+					expandedInputSetting,
+					expandedOutputSetting,
+					expandedMaxSetting,
+					inputClipSetting,
+					startupHeaderSetting,
+					scrollStepSetting,
+				],
+			},
+			{
 				id: "diff",
 				label: "Diff",
 				items: [
@@ -656,29 +855,9 @@ export async function showCcstylePanel(
 				],
 			},
 			{
-				id: "ui",
-				label: "UI",
-				items: [
-					expandedInputSetting,
-					expandedOutputSetting,
-					expandedMaxSetting,
-					inputClipSetting,
-					startupHeaderSetting,
-					scrollStepSetting,
-				],
-			},
-			{
-				id: "feature",
-				label: "Feature",
-				items: [
-					sessionReferenceToggle.setting,
-					subagentAutocompleteToggle.setting,
-					contextCommandToggle.setting,
-					agentSummaryToggle.setting,
-					workingMessageToggle.setting,
-					aliasesToggle.setting,
-					customFooterToggle.setting,
-				],
+				id: "footer",
+				label: "Footer",
+				items: [customFooterSetting, footerNerdIconsSetting, pluginChipsSetting],
 			},
 		];
 
@@ -699,7 +878,7 @@ export async function showCcstylePanel(
 		const activeList = () => lists[activeSection]!;
 
 		const switchSection = (delta: number) => {
-			if (excludeSubmenuOpen) return;
+			if (nestedSubmenuOpen) return;
 			activeSection = (activeSection + delta + sections.length) % sections.length;
 		};
 
@@ -749,7 +928,8 @@ export async function showCcstylePanel(
 					truncateToWidth(
 						theme.fg(
 							"dim",
-							"  Enter/Space to change · Enter on numbers types a custom value · Tab/Shift+Tab to switch sections · Esc to close",
+							nestedHint ||
+								"  Enter/Space to change · Enter on numbers types a custom value · Tab/Shift+Tab to switch sections · Esc to close",
 						),
 						safeWidth,
 					),
@@ -760,12 +940,12 @@ export async function showCcstylePanel(
 				for (const list of lists) list.invalidate();
 			},
 			handleInput(data: string) {
-				if (!excludeSubmenuOpen && isForwardTabKey(data)) {
+				if (!nestedSubmenuOpen && isForwardTabKey(data)) {
 					switchSection(1);
 					tui.requestRender();
 					return;
 				}
-				if (!excludeSubmenuOpen && isBackTabKey(data)) {
+				if (!nestedSubmenuOpen && isBackTabKey(data)) {
 					switchSection(-1);
 					tui.requestRender();
 					return;

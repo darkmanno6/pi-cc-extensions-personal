@@ -1087,7 +1087,8 @@ export function installCompactThinking(
 		active = false;
 		const shutdown = delegates.get("session_shutdown");
 		delegates.clear();
-		shutdown?.(event ?? session?.event ?? {}, ctx ?? session?.ctx ?? { mode: "rpc", ui: {} });
+		// Never fall back to the session's captured ctx: it is stale after a replacement.
+		shutdown?.(event ?? session?.event ?? {}, ctx ?? { mode: "rpc", ui: {} });
 		session = undefined;
 		if (patchRegistry.get<CompactThinkingOwner>(COMPACT_THINKING_OWNER)?.owner === owner)
 			patchRegistry.delete(COMPACT_THINKING_OWNER);

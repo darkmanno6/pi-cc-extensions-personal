@@ -320,7 +320,7 @@ export default function (
 						delete (globalThis as any)[SESSION_HANDOFF_KEY];
 					}
 				},
-				dispose(nextEvent = event, nextCtx = ctx) {
+				dispose(nextEvent = event, nextCtx?: any) {
 					handoff.cancel();
 					disposeInstallation(nextEvent, nextCtx);
 				},
@@ -329,7 +329,9 @@ export default function (
 			// ponytail: bounded global handoff; successor start normally clears this immediately.
 			timeout = setTimeout(() => {
 				if ((globalThis as any)[SESSION_HANDOFF_KEY] !== handoff) return;
-				handoff.dispose({ ...event, reason: "quit" }, ctx);
+				// The captured ctx is already stale once the session is replaced; deferred
+				// cleanup unwinds the patches only and never touches it.
+				handoff.dispose({ ...event, reason: "quit" });
 			}, SESSION_HANDOFF_TIMEOUT_MS);
 			timeout.unref?.();
 			return;

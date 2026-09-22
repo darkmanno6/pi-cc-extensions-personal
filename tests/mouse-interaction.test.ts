@@ -2,12 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 import { ToolExecutionComponent, initTheme } from "@earendil-works/pi-coding-agent";
 import { Container, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { createJiti } from "jiti";
+import { CONFIG_PATH } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
 	installToolMouseInteraction,
@@ -77,7 +76,7 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		const headerRow = tui.previousLines.findIndex((line: string) => line.includes("to show more"));
 		assert.ok(headerRow >= 0);
 		const hintColumn = tui.previousLines[headerRow].indexOf("to show more") + 1;
-		inputHandler?.(`\x1b[<32;${hintColumn};${headerRow + 1}M`);
+		inputHandler?.(`\x1b[<35;${hintColumn};${headerRow + 1}M`);
 		const hoveredHeader = group.render(100)[headerRow];
 		assert.match(hoveredHeader, /• \x1b\[37m[^\x1b]*to show more\x1b\[39m/);
 		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);
@@ -769,8 +768,7 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 		claudeCodeStyleExtension(pi as any);
 		const command = commands.get("ccstyle");
 		// /ccstyle writes the user's real config; back it up and restore it.
-		const configPath = join(homedir(), ".pi", "agent", "claude-code-style.json");
-		const savedConfig = existsSync(configPath) ? readFileSync(configPath, "utf8") : null;
+		const savedConfig = existsSync(CONFIG_PATH) ? readFileSync(CONFIG_PATH, "utf8") : null;
 		try {
 			await events.get("session_start")?.({}, ctx);
 			await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -830,8 +828,8 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, "tool-1", "on mode: tool click expands again");
 		} finally {
-			if (savedConfig === null) rmSync(configPath, { force: true });
-			else writeFileSync(configPath, savedConfig);
+			if (savedConfig === null) rmSync(CONFIG_PATH, { force: true });
+			else writeFileSync(CONFIG_PATH, savedConfig);
 		}
 	} finally {
 		installToolMouseInteraction({});

@@ -8,6 +8,7 @@ export {
 	parseSgrMousePackets,
 	isSgrLeftPress,
 	isSgrLeftRelease,
+	isSgrIdleMotion,
 	type SgrMousePacket,
 } from "../../utils/sgr-mouse.ts";
 

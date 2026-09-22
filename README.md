@@ -40,19 +40,37 @@ pi install git:github.com/minuque/pi-cc-extensions
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | Mermaid 图、提示框、URL 链接化等                                                        | 自动生效                                        |
 | Fullscreen mode       | 工具卡/group 单击展开、双击收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
-| 配置面板              | `Style / Diff / Thinking / UI / Feature` 五页签                                 | `/ccstyle`                                      |
+| 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
+| 状态栏                | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`                              |
 | 主题                  | 随包提供 CC Dark、CC Light、Claude Warm Dark 主题                               | `/theme`                                        |
 
 ## 配置
 
-`/ccstyle` 的行为由 `~/.pi/agent/claude-code-style.json` 配置：
+`/ccstyle` 的行为由 `~/.pi/agent/pi-cc-extensions.json` 配置：
 
 ```js
 {
+  // style
   "mode": "on",                            // on / compact / off
   "excludeRenderers": [],                  // 走原生渲染的工具名；Agent 始终保留专用渲染器
+
+  // features
+  "enableSessionReference": true,          // @ session 引用
+  "enableSubagentAutocomplete": true,      // @ subagent 补全与委派提示
+  "enableContextCommand": true,            // /context 上下文检查
+  "enableAgentSummary": true,              // 每回合工具摘要
+  "enableWorkingMessage": true,            // Working... 底部 token/耗时
+  "enableAliases": true,                   // /clear、/exit 别名
+
+  // ui
+  "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
+  "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
+  "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
+  "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
+  "showStartupHeader": true,               // 启动头（logo + tips）开关
+  "scrollStepLines": 3,                    // fullscreen 滚轮步进
 
   // diff
   "diffViewMode": "auto",                  // 布局：auto / split / unified
@@ -68,25 +86,17 @@ pi install git:github.com/minuque/pi-cc-extensions
   "animationIntervalMs": 90,               // 标题动画间隔（毫秒）
   "dimThinkingText": false,                // thinking 正文用 dim 色
 
-  // ui
-  "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
-  "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
-  "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
-  "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
-  "showStartupHeader": true,               // 启动头（logo + tips）开关
-  "scrollStepLines": 3,                    // fullscreen 滚轮步进
-
-  // features
-  "enableSessionReference": true,          // @ session 引用
-  "enableSubagentAutocomplete": true,      // @ subagent 补全与委派提示
-  "enableContextCommand": true,            // /context 上下文检查
-  "enableAgentSummary": true,              // 每回合工具摘要
-  "enableWorkingMessage": true,            // Working... 底部 token/耗时
-  "enableAliases": true                    // /clear、/exit 别名
+  // footer
+  "enableCustomFooter": true,              // 自定义状态栏
+  "footerNerdIcons": true,                 // git/缓存用 Nerd Font 图标；false 为纯文本
+  "footerHiddenKeys": [],                  // 隐藏的插件芯片 key
+  "footerLine1Keys": ["pi-usage"],         // line1 插件芯片顺序；pi-usage 默认显示，数据来自 @narumitw/pi-usage
+  "footerLine2Keys": [],                   // line2 插件芯片顺序（接在 cwd/git 后）
+  "footerLine3Keys": []                    // line3 备用槽，有可见芯片才占行
 }
 ```
 
-> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览。双击展开面板收起。
+> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览, 双击展开面板收起。
 >
 > **建议**：`markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
 
@@ -112,7 +122,6 @@ npm run typecheck
 | `npm:@ff-labs/pi-fff`                    | 模糊文件与内容检索（fffind / ffgrep）            |
 | `npm:pi-web-access`                      | 网页搜索、URL 抓取、GitHub 克隆、PDF/视频解析    |
 | `npm:@narumitw/pi-usage`                 | 查看当前账号用量（Codex / Copilot / OpenRouter） |
-| `git:github.com/DietrichGebert/ponytail` | 极简编码：强制最懒但有效的方案                   |
 
 ## 致谢
 

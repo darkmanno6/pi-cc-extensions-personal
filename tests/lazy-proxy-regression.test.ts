@@ -395,7 +395,7 @@ test("lazy-proxy tui: fullscreen owns all-motion under a multiplexer", () => {
 });
 
 test("lazy-proxy tui: fullscreen tool clicks expand and official input passes through", async () => {
-	// 步进数来自用户配置，测试固定为默认 3（避免受本机 claude-code-style.json 影响）。
+	// 步进数来自用户配置，测试固定为默认 3（避免受本机 pi-cc-extensions.json 影响）。
 	const previousStep = config.scrollStepLines;
 	config.scrollStepLines = 3;
 	const tool = createTool("tool-fullscreen");
@@ -434,18 +434,25 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	assert.equal(tool.expanded, false);
 
 	// hover：先经过 dock，再到 collapsed 工具行；dock 空缓存不得污染同一布局的工具缓存。
+	// DECSET 1003：无按键移动是 35；32 是左键拖动（文本选区）。
 	renderer.officialInputs.length = 0;
-	tui.handleViewportInput(`\x1b[<32;20;22M`);
+	tui.handleViewportInput(`\x1b[<35;20;22M`);
 	const renderCallsBefore = renderer.renderCalls;
-	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	tui.handleViewportInput(`\x1b[<35;20;2M`);
 	assert.equal(renderer.officialInputs.length, 2, "motion reaches official chain");
 	assert.ok(renderer.renderCalls > renderCallsBefore, "hover state change triggers render");
 	// 同位置再 hover：状态无变化，不重复渲染。
-	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	tui.handleViewportInput(`\x1b[<35;20;2M`);
 	assert.equal(renderer.renderCalls, renderCallsBefore + 1, "unchanged hover skips render");
 	// hover 移出工具行：清除高亮状态。
-	tui.handleViewportInput(`\x1b[<32;20;22M`);
+	tui.handleViewportInput(`\x1b[<35;20;22M`);
 	assert.ok(renderer.renderCalls > renderCallsBefore + 1, "hover leave clears state");
+	// 左键拖动不走 hover，避免选区每像素命中+重绘。
+	const dragRenders = renderer.renderCalls;
+	renderer.officialInputs.length = 0;
+	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	assert.equal(renderer.renderCalls, dragRenders, "left-button drag does not run hover");
+	assert.equal(renderer.officialInputs.length, 1, "drag still reaches official chain");
 
 	// 滚动后 leaf.localRow 已是文档行，不得再次叠加 scrollTop。
 	const filler = {
@@ -457,7 +464,7 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	scrollBox.children[0].rect.y = -50;
 	renderer.currentLayout = scrolledLayout;
 	const scrolledHoverRenders = renderer.renderCalls;
-	tui.handleViewportInput(`\x1b[<32;20;2M`);
+	tui.handleViewportInput(`\x1b[<35;20;2M`);
 	assert.ok(
 		renderer.renderCalls > scrolledHoverRenders,
 		"scrolled tool hover uses document row once",
@@ -568,12 +575,12 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 	tui.handleViewportInput(`\x1b[<65;10;2M`); // wheel：按钮重新出现
 	await new Promise<void>((resolve) => process.nextTick(resolve));
 	renderer.currentLayout = fullscreenLayout(tool, ui.widget, false); // 重建布局（按钮行已可见）
-	tui.handleViewportInput(`\x1b[<32;40;21M`); // motion 到按钮行
+	tui.handleViewportInput(`\x1b[<35;40;21M`); // motion 到按钮行
 	assert.ok(
 		ui.widget.render(80)[0]?.includes("<text>[ ↓"),
 		"button hover switches label to text color",
 	);
-	tui.handleViewportInput(`\x1b[<32;10;21M`); // motion 移出按钮行
+	tui.handleViewportInput(`\x1b[<35;10;21M`); // motion 移出按钮行
 	assert.ok(ui.widget.render(80)[0]?.includes("<accent>[ ↓"), "hover leave restores accent color");
 
 	// 键盘滚动（官方 PageUp）：同样同步按钮显隐（官方消费按键，扩展监听器无法补偿）。
@@ -592,16 +599,61 @@ test("lazy-proxy tui: fullscreen tool clicks expand and official input passes th
 });
 
 test("lazy-proxy tui: official jump-to-latest overlay is disabled", () => {
+	const previousMode = config.mode;
 	const tool = createTool("tool-overlay");
 	const { terminal } = createTerminalFixture();
 	const renderer = new FullscreenRenderer(tool, null, terminal);
-	(renderer as any).scrollToEndIndicator = () => "Jump to latest message";
+	const indicator = () => "Jump to latest message";
+	(renderer as any).scrollToEndIndicator = indicator;
 	const tui = createLazyProxy(() => renderer);
 	const ui = createUi(tui);
-	installToolMouseInteraction(ui.ctx);
-	ui.widget.render(80);
-	assert.equal((renderer as any).scrollToEndIndicator, undefined, "官方 overlay 已关掉");
-	installToolMouseInteraction({});
+	try {
+		config.mode = "on";
+		installToolMouseInteraction(ui.ctx);
+		ui.widget.render(80);
+		assert.equal((renderer as any).scrollToEndIndicator, undefined, "官方 overlay 已关掉");
+	} finally {
+		config.mode = previousMode;
+		installToolMouseInteraction({});
+	}
+});
+
+test("lazy-proxy tui: off mode keeps official jump-to-latest overlay", () => {
+	const previousMode = config.mode;
+	const tool = createTool("tool-overlay-off");
+	const { terminal } = createTerminalFixture();
+	const renderer = new FullscreenRenderer(tool, null, terminal);
+	const indicator = () => "Jump to latest message";
+	(renderer as any).scrollToEndIndicator = indicator;
+	const tui = createLazyProxy(() => renderer);
+	const ui = createUi(tui);
+	try {
+		config.mode = "off";
+		installToolMouseInteraction(ui.ctx);
+		ui.widget.render(80);
+		assert.equal((renderer as any).scrollToEndIndicator, indicator, "off 模式保留官方 overlay");
+		assert.deepEqual(ui.widget.render(80), [], "off 模式不画 dock 回到底部按钮");
+
+		config.mode = "on";
+		ui.widget.render(80);
+		assert.equal((renderer as any).scrollToEndIndicator, undefined, "切回 on 关掉官方 overlay");
+
+		config.mode = "off";
+		ui.widget.render(80);
+		assert.equal(
+			typeof (renderer as any).scrollToEndIndicator,
+			"function",
+			"再切 off 还回官方 overlay",
+		);
+		assert.equal(
+			(renderer as any).scrollToEndIndicator(),
+			"Jump to latest message",
+			"还回的 overlay 文案与官方一致",
+		);
+	} finally {
+		config.mode = previousMode;
+		installToolMouseInteraction({});
+	}
 });
 
 test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", async () => {
@@ -637,7 +689,7 @@ test("lazy-proxy tui: fullscreen compact assistant hint toggles and hovers", asy
 		assert.ok(hintRow >= 0 && hintCol > 0);
 
 		const rendersBeforeHover = renderer.renderCalls;
-		tui.handleViewportInput(`\x1b[<32;${hintCol};${hintRow + 1}M`);
+		tui.handleViewportInput(`\x1b[<35;${hintCol};${hintRow + 1}M`);
 		assert.ok(renderer.renderCalls > rendersBeforeHover, "assistant hint hover triggers render");
 
 		tui.handleViewportInput(`\x1b[<0;${hintCol};${hintRow + 1}M`);
@@ -787,7 +839,7 @@ test("lazy-proxy tui: fullscreen hover uses scroll ancestor content width after 
 
 	const hintCol = docLines[7].indexOf("/ click") + 1;
 	const rendersBefore = renderer.renderCalls;
-	tui.handleViewportInput(`\x1b[<32;${hintCol};8M`);
+	tui.handleViewportInput(`\x1b[<35;${hintCol};8M`);
 	assert.equal(sharedToolHoverState().toolCallId, "width-tool-b");
 	assert.equal(renderer.renderCalls, rendersBefore + 1);
 	// isToolCallHovered 已移入 hover.ts（interaction.ts 不再 re-export）；
@@ -822,9 +874,9 @@ test("lazy-proxy tui: fullscreen multitool group hover and click toggle", async 
 	installToolMouseInteraction(ui.ctx);
 
 	const hintCol = group.render(80)[1].indexOf("click to show more") + 1;
-	tui.handleViewportInput(`\x1b[<32;${hintCol};2M`);
+	tui.handleViewportInput(`\x1b[<35;${hintCol};2M`);
 	assert.equal((group as any).hintHovered, true, "group hint hover is enabled");
-	tui.handleViewportInput(`\x1b[<32;1;2M`);
+	tui.handleViewportInput(`\x1b[<35;1;2M`);
 	assert.equal((group as any).hintHovered, false, "moving outside hint clears hover");
 	tui.handleViewportInput(`\x1b[<0;${hintCol};2M`);
 	assert.equal((group as any).expanded, true, "group click expands all children");
@@ -991,9 +1043,9 @@ test("lazy-proxy tui: fullscreen skill hint click expands like other cards", asy
 		const plain = heading.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
 		const hintCol = plain.indexOf("to show more") + 1;
 		assert.ok(hintCol > 0, `expected show-more hint, got: ${plain}`);
-		tui.handleViewportInput(`\x1b[<32;${hintCol};1M`);
+		tui.handleViewportInput(`\x1b[<35;${hintCol};1M`);
 		assert.equal((skill as any).hintHovered, true, "skill hint hover is enabled");
-		tui.handleViewportInput(`\x1b[<32;1;1M`);
+		tui.handleViewportInput(`\x1b[<35;1;1M`);
 		assert.equal((skill as any).hintHovered, false, "moving outside hint clears hover");
 		tui.handleViewportInput(`\x1b[<0;${hintCol};1M`);
 		assert.equal((skill as any).expanded, true, "skill hint click expands");
@@ -1054,7 +1106,7 @@ test("lazy-proxy tui: fullscreen expanded group child show-more hover highlights
 		const col = stripAnsi(lines[row]).indexOf(SHOW_MORE_LABEL) + 1;
 		const before = lines[row];
 
-		tui.handleViewportInput(`\x1b[<32;${col};${row + 1}M`);
+		tui.handleViewportInput(`\x1b[<35;${col};${row + 1}M`);
 
 		const after = group.render(80)[row];
 		assert.notEqual(after, before);
@@ -1086,7 +1138,7 @@ test("lazy-proxy tui: fullscreen hover ignores non-IO result renderer components
 	const ui = createUi(tui);
 	installToolMouseInteraction(ui.ctx);
 
-	assert.doesNotThrow(() => tui.handleViewportInput(`\x1b[<32;20;2M`));
+	assert.doesNotThrow(() => tui.handleViewportInput(`\x1b[<35;20;2M`));
 	assert.equal(renderer.officialInputs.length, 1, "motion still reaches official chain");
 	installToolMouseInteraction({});
 });

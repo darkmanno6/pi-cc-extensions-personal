@@ -1,8 +1,8 @@
 {
 	"name": "pi-cc-extensions",
-	"version": "0.8.69-personal.3",
+	"version": "0.9.2-personal.1",
 	"license": "MIT",
-	"description": "A Pi productivity suite with Claude Code-style UI, context inspection, and agent/session references",
+	"description": "Claude Code-style TUI output with some personal touches and handy utilities.",
 	"type": "module",
 	"keywords": [
 		"pi-package",

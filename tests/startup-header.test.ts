@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { VERSION } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
-import piStartupHeader, { renderHeaderLines } from "../extensions/feature/shell/startup-header.ts";
+import { config, normalizeConfig, setConfig } from "../extensions/config/config.ts";
+import piStartupHeader, {
+	applyStartupHeader,
+	clearStartupHeader,
+	renderHeaderLines,
+} from "../extensions/feature/shell/startup-header.ts";
 
 // 模拟 pi 运行时：注册 app.* 键绑定（默认与 pi 内置一致）
 setKeybindings(
@@ -96,4 +101,26 @@ test("replacement session keeps the custom header until its successor starts", a
 	assert.equal(typeof header, "function", "stale shutdown preserves the successor header");
 	await second.get("session_shutdown")?.({ reason: "quit" }, ctx);
 	assert.equal(header, undefined);
+});
+
+test("禁用启动头时不清理其他扩展的 header", () => {
+	const previous = { ...config };
+	const calls: unknown[] = [];
+	const ctx = {
+		hasUI: true,
+		ui: {
+			setHeader: (factory: unknown) => calls.push(factory),
+		},
+	};
+
+	try {
+		setConfig(normalizeConfig({ showStartupHeader: false }));
+		applyStartupHeader(ctx);
+		assert.deepEqual(calls, []);
+
+		clearStartupHeader(ctx);
+		assert.deepEqual(calls, [undefined]);
+	} finally {
+		setConfig(previous);
+	}
 });

@@ -18,6 +18,7 @@ import {
 import {
 	collectToolComponents,
 	extractToolFramePlacements,
+	isSgrIdleMotion,
 	isSgrLeftPress,
 	isSgrLeftRelease,
 	isToolExecutionComponent,
@@ -37,9 +38,10 @@ import {
 	isScrollbarColumnAt,
 } from "./layout.ts";
 import {
-	disableOfficialScrollToEnd,
 	fullscreenLazyTui,
 	hideScrollButton,
+	restoreOfficialScrollToEnd,
+	syncOfficialScrollToEnd,
 	isScrollBottomInput,
 	renderScrollButton,
 	resetScrollButtonState,
@@ -137,7 +139,7 @@ function tryOpenToolIoShowMore(region: InteractionRegion): boolean {
 }
 
 function updateToolSummaryHover(tui: any, packet: SgrMousePacket): void {
-	if ((packet.code & 32) === 0 || packet.final !== "M") return;
+	if (!isSgrIdleMotion(packet)) return;
 	const region = interactionRegionAt(packet);
 	const nextScrollButtonHovered = region?.kind === "scroll-bottom";
 	const scrollButtonChanged = setScrollButtonHovered(nextScrollButtonHovered);
@@ -406,7 +408,7 @@ function handleFullscreenToolClick(tui: any, packet: SgrMousePacket): boolean {
  * expanded 卡截断头 show-more、回到底部按钮。motion 不 consume，官方链照常。
  */
 function handleFullscreenToolHover(tui: any, packet: SgrMousePacket): void {
-	if (packet.final !== "M") return;
+	if (!isSgrIdleMotion(packet)) return;
 	const layout = tui.currentLayout;
 	if (!layout?.root) return;
 	const x = packet.col - 1;
@@ -504,7 +506,8 @@ function patchFullscreenViewportInput(tui: any): void {
 					if (isSgrLeftPress(packet) && handleFullscreenToolClick(tui, packet)) {
 						return { consume: true };
 					}
-					if ((packet.code & 32) !== 0 && packet.final === "M") {
+					// 仅无按键移动走 hover；左键拖动（文本多选）放行官方选区，避免每像素命中+重绘。
+					if (isSgrIdleMotion(packet)) {
 						handleFullscreenToolHover(tui, packet);
 					}
 				}
@@ -881,6 +884,7 @@ export function teardownToolMouseInteraction(
 	}
 	restoreToolMouseRenderPatch();
 	restoreFullscreenViewportInput(getToolMouseTui());
+	restoreOfficialScrollToEnd(getToolMouseTui());
 	resetScrollButtonState();
 	setToolMouseTui(null);
 	toolMouseUi = null;
@@ -896,6 +900,7 @@ export function resetToolHoverState(): void {
 	setHoveredCompactAssistant(null);
 	setScrollButtonVisible(false);
 	setScrollButtonHovered(false);
+	restoreOfficialScrollToEnd(getToolMouseTui());
 	releaseFullscreenToolMouseMotion(getToolMouseTui());
 }
 
@@ -920,12 +925,12 @@ export function installToolMouseInteraction(
 		if (isLazyProxyTui(tui)) {
 			patchFullscreenViewportInput(tui);
 			ensureFullscreenToolMouseMotion(tui);
-			disableOfficialScrollToEnd(tui);
+			syncOfficialScrollToEnd(tui);
 			setScrollButtonWidget({
 				render: (width: number) => {
 					patchFullscreenViewportInput(tui);
 					ensureFullscreenToolMouseMotion(tui);
-					disableOfficialScrollToEnd(tui);
+					syncOfficialScrollToEnd(tui);
 					return renderScrollButton(width, theme);
 				},
 				invalidate() {},

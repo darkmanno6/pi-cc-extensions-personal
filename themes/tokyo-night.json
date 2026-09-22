@@ -13,6 +13,8 @@
 		"fg": "#C0CAF5",
 		"fgDim": "#A9B1D6",
 		"blue": "#7AA2F7",
+		"blue2": "#82AAFF",
+		"blue3": "#A9C1FF",
 		"blueDark": "#3D59A1",
 		"blue1": "#2AC3DE",
 		"cyan": "#7DCFFF",
@@ -76,9 +78,9 @@
 		"thinkingMinimal": "fgDim",
 		"thinkingLow": "blueDark",
 		"thinkingMedium": "blue",
-		"thinkingHigh": "cyan",
-		"thinkingXhigh": "purple",
-		"thinkingMax": "orange",
+		"thinkingHigh": "blue2",
+		"thinkingXhigh": "blue3",
+		"thinkingMax": "fg",
 		"bashMode": "yellow"
 	},
 	"export": {

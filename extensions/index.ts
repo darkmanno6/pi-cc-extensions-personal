@@ -5,7 +5,7 @@ import { config } from "./config/config.ts";
 import piAliases from "./feature/shell/aliases.ts";
 import { installFlushDockedBash } from "./feature/shell/flush-docked-bash.ts";
 import customFooter from "./feature/shell/footer.ts";
-import piStartupHeader from "./feature/shell/startup-header.ts";
+import piStartupHeader, { installEarlyStartupHeader } from "./feature/shell/startup-header.ts";
 import workingMessage from "./feature/shell/working-message.ts";
 
 // feature
@@ -23,6 +23,7 @@ export default function (pi: ExtensionAPI): void {
 	// shell chrome
 	if (config.enableAliases) piAliases(pi);
 	installFlushDockedBash();
+	installEarlyStartupHeader();
 	piStartupHeader(pi);
 	if (config.enableWorkingMessage) workingMessage(pi);
 	customFooter(pi);

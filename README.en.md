@@ -1,26 +1,16 @@
 <p align="center">
-  <img src="./assets/readme/hero.en.svg" width="100%" alt="pi-cc-extensions: a productivity extension suite for Pi">
-</p>
-
-<p align="center">
-  <a href="https://pi.dev/packages?name=pi-cc-extensions"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="https://www.npmjs.com/package/pi-cc-extensions"><img alt="npm version" src="https://img.shields.io/npm/v/pi-cc-extensions?style=flat-square&color=66E3C4"></a>
-  <a href="#compatibility"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
-</p>
-
-<p align="center">
-  Claude Code-style TUI output with some personal touches and handy utilities.
-</p>
-
-<p align="center">
   <a href="./README.md">简体中文</a> · <strong>English</strong>
 </p>
 
----
+# pi-cc-extensions
+
+> Claude Code-style TUI output with some personal touches and handy utilities.
 
 ## Preview
 
-https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498
+<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-cc-extensions UI preview" width="100%"></a>
+
+Click the cover to play the demo video
 
 ## Quick start
 
@@ -39,18 +29,20 @@ Run `/reload` after installation.
 | --------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI              | Tool summaries, expand/collapse, rich edit/write diffs, and `on` / `compact` / `off` modes | `/ccstyle`                                      |
 | Markdown enhancements       | Mermaid diagrams, admonitions, URL linking, and more                                      | Automatic                                       |
-| Fullscreen mode             | Tool card/group click to expand, double-click to collapse, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
+| Fullscreen mode             | Tool card/group expand and collapse on click, previews, hover highlight, and a back-to-bottom button | `TUIMODE=fullscreen` or `--tui-mode fullscreen` |
 | Settings panel              | `Style / Features / UI / Diff / Thinking / Footer` tabs                                   | `/ccstyle`                                      |
 | Context inspection          | Usage breakdown and previews for the system prompt, memory, skills, tools definition, and messages | `/context`                                      |
 | Session/Subagent references | Search and inject effective context from previous Sessions or existing SubAgents          | `@`                                             |
 | Status bar                  | Shows model, context, cache, cost, and git; also works with `@narumitw/pi-usage` for live quota. Git/cache Nerd Font icons can be turned off | `/ccstyle`                                      |
 | Theme                       | Bundled CC Dark and CC Light themes                                                       | `/theme`                                        |
 
+Renderer snapshots for `on` / `compact` modes: [default](./docs/tool-render-examples-default.md) · [compact](./docs/tool-render-examples-compact.md)
+
 ## Configuration
 
 `/ccstyle` behavior is configured through `~/.pi/agent/pi-cc-extensions.json`:
 
-```js
+```jsonc
 {
   // style
   "mode": "on",                            // on / compact / off
@@ -58,7 +50,7 @@ Run `/reload` after installation.
 
   // features
   "enableSessionReference": true,          // @ session references
-  "enableSubagentAutocomplete": true,      // @ subagent completion and delegation hints
+  "enableSubagentAutocomplete": true,      // @subagent:[name] completion and delegation hints
   "enableContextCommand": true,            // /context usage check
   "enableAgentSummary": true,              // per-turn tool summary
   "enableWorkingMessage": true,            // Working... bottom token/elapsed
@@ -67,8 +59,8 @@ Run `/reload` after installation.
   // ui
   "expandedInputMaxLines": 5,              // expanded tool Input lines; overflow shows a footer hint
   "expandedOutputMaxLines": 10,            // expanded tool Output lines; overflow shows a footer hint
-  "expandedPreviewMaxLines": 40,           // max lines for expanded diff/TaskList bodies
-  "inputClip": 100,                        // tool summary path/command clip length
+  "expandedPreviewMaxLines": 40,           // max lines for expanded TaskList bodies (expanded diffs always show all)
+  "inputClip": 0,                          // tool summary path/command clip length; 0 = fit width
   "showStartupHeader": true,               // startup header (logo + tips) toggle
   "scrollStepLines": 3,                    // fullscreen wheel scroll step
 
@@ -96,9 +88,11 @@ Run `/reload` after installation.
 }
 ```
 
-> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. When expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Double-click an expanded panel to collapse it.
->
-> **Tip**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
+> [!TIP]
+> **Fullscreen**: click `click to show more` to expand tool cards, thinking, Skill, and compact summaries. An expanded diff always shows every line; when expanded Input/Output exceeds the line cap, the footer `… +N more lines • click to show more` opens a full preview. Click to collapse (dragging inside the card selects text).
+
+> [!NOTE]
+> **Mermaid rendering**: set `markdown.mermaid` to `final` via `~/.pi/agent/settings.json` or the Mermaid diagrams option in `/settings`. Default `streaming` redraws per frame; `final` renders once at completion.
 
 ## Local development
 
@@ -126,3 +120,7 @@ npm run typecheck
 ## Credits
 
 - Rich diffs are adapted from [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display) (MIT). See [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md).
+
+## License
+
+[MIT](./LICENSE) © minuque

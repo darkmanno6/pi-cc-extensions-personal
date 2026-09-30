@@ -13,13 +13,14 @@ import claudeCodeStyleExtension, {
 	SHOW_MORE_LABEL,
 } from "../extensions/renderer/index.ts";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import {
+	renderRichToolResult,
+	DEFAULT_TOOL_DISPLAY_CONFIG,
+} from "../extensions/renderer/tool/diff/index.ts";
+import { WriteExecutionMetadataStore } from "../extensions/renderer/tool/diff/write-execution.ts";
+import { insetComponent } from "../extensions/renderer/tool/result.ts";
 
 initTheme("dark");
-
-/** 与 interaction 里松开后 50ms 武装双击对齐。 */
-function armExpandDoubleClick() {
-	return new Promise((resolve) => setTimeout(resolve, 60));
-}
 
 test("tool groups expand from their hint and collapse from any expanded group row", async () => {
 	const grouping = installToolGrouping(() => true);
@@ -82,16 +83,39 @@ test("tool groups expand from their hint and collapse from any expanded group ro
 		assert.doesNotMatch(hoveredHeader, /\x1b\[37m•/);
 		assert.equal(inputHandler?.(`\x1b[<0;${hintColumn};${headerRow + 1}M`)?.consume, true);
 		assert.equal(group.expanded, true);
+		assert.match(
+			group.render(100)[headerRow],
+			/collapse/,
+			"expanded group offers the collapse hint",
+		);
 
 		tui.doRender();
+		// 展开态提示同样可 hover 高亮（圆点保持 dim，只亮文字）。
+		const collapseCol = group.render(100)[1].indexOf("to collapse") + 1;
+		assert.ok(collapseCol > 0, "expanded group renders the collapse hint");
+		inputHandler?.(`\x1b[<35;${collapseCol};2M`);
+		assert.equal((group as any).hintHovered, true, "expanded collapse hint hovers");
+		assert.match(
+			group.render(100)[1],
+			/\x1b\[37m[^\x1b]*to collapse/,
+			"hover highlights the text only",
+		);
+		inputHandler?.(`\x1b[<35;1;2M`);
+		assert.equal(
+			(group as any).hintHovered,
+			false,
+			"moving outside clears the collapse hint hover",
+		);
 		const bottomPaddingRow = tui.previousLines.length - 1;
 		assert.equal(tui.previousLines[bottomPaddingRow].trim(), "");
+		// 按下只记账，松手位置不变才算单击；拖动（松手位置不同）保持展开。
 		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
-		assert.equal(group.expanded, true, "single click on expanded group does not collapse");
+		assert.equal(group.expanded, true, "press alone does not collapse");
+		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 4}m`);
+		assert.equal(group.expanded, true, "drag release keeps the group expanded");
+		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`);
 		inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}m`);
-		await armExpandDoubleClick();
-		assert.equal(inputHandler?.(`\x1b[<0;100;${bottomPaddingRow + 1}M`)?.consume, true);
-		assert.equal(group.expanded, false);
+		assert.equal(group.expanded, false, "single click collapses the group");
 	} finally {
 		installToolMouseInteraction({});
 		grouping.shutdown();
@@ -417,6 +441,94 @@ test("expanded tool group show-more opens preview instead of collapsing the grou
 	} finally {
 		installToolMouseInteraction({});
 		grouping.shutdown();
+	}
+});
+
+test("collapsed diff card swallows card-wide clicks outside its remainder row", () => {
+	// 伪造 pi 0.87 的结果区 MouseRegion：左键 click 整卡 setExpanded。
+	const prototype = (ToolExecutionComponent as any).prototype;
+	const originalHandleMouse = prototype.handleMouse;
+	const delegated: Array<Record<string, unknown>> = [];
+	prototype.handleMouse = function (event: any) {
+		delegated.push({ type: event?.type, button: event?.button, y: event?.y });
+		return { handled: true };
+	};
+	const plainTheme = {
+		fg: (_color: string, text: string) => text,
+		bg: (_color: string, text: string) => text,
+		bold: (text: string) => text,
+	};
+	const diff = ["@@ -1,6 +1,6 @@"];
+	// 正文里出现与 remainder 同款的文案，不能变成展开入口。
+	diff.push("+   ↳ 2 lines returned • click to show more");
+	for (let index = 2; index <= 6; index++) diff.push(`+code line ${index}`);
+	const inner: any = renderRichToolResult(
+		"edit",
+		{ details: { diff: diff.join("\n") }, content: [] },
+		{ expanded: false },
+		plainTheme,
+		{ args: { path: "a.ts" } },
+		new WriteExecutionMetadataStore(),
+		{ ...DEFAULT_TOOL_DISPLAY_CONFIG, editDiffCollapsedLines: 2 },
+	);
+	const result = insetComponent(inner);
+	const card: any = {
+		toolName: "edit",
+		expanded: false,
+		resultRendererComponent: result,
+		render: (width: number) => ["✓ Edit a.ts", ...result.render(width)],
+	};
+	const strip = (line: string) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+	const rows = (card.render(80) as string[]).map(strip);
+	const bodyRow = rows.findIndex((line: string) => line.includes("2 lines returned"));
+	const hintRow = rows.findIndex((line: string) => line.includes("more diff lines"));
+	assert.ok(bodyRow >= 0 && hintRow >= 0, "collapsed diff renders body and remainder");
+	const tui = {
+		terminal: { columns: 80, write() {} },
+		mode: "tui",
+		requestRender() {},
+	};
+	try {
+		installToolMouseInteraction({
+			mode: "tui",
+			hasUI: true,
+			ui: {
+				setWidget(_key: string, factory: any) {
+					if (typeof factory === "function") factory(tui, plainTheme);
+				},
+				onTerminalInput() {
+					return () => undefined;
+				},
+			},
+		} as any);
+
+		prototype.handleMouse.call(card, { type: "click", button: "left", y: bodyRow, width: 80 });
+		assert.deepEqual(delegated, [], "正文行不能交给官方整卡 toggle");
+
+		prototype.handleMouse.call(card, { type: "click", button: "left", y: hintRow, width: 80 });
+		assert.equal(delegated.length, 1, "remainder 行仍走官方 toggle");
+		assert.deepEqual(delegated[0], { type: "click", button: "left", y: hintRow });
+
+		prototype.handleMouse.call(card, { type: "wheel", button: "none", y: bodyRow, width: 80 });
+		const expandedCard: any = {
+			...card,
+			expanded: true,
+			setExpanded(value: boolean) {
+				this.expanded = value;
+			},
+			invalidate() {},
+		};
+		prototype.handleMouse.call(expandedCard, {
+			type: "click",
+			button: "left",
+			y: bodyRow,
+			width: 80,
+		});
+		assert.equal(delegated.length, 2, "wheel 仍走官方；展开卡 click 由扩展接管收起");
+		assert.equal(expandedCard.expanded, false, "展开卡单击收起");
+	} finally {
+		installToolMouseInteraction({});
+		prototype.handleMouse = originalHandleMouse;
 	}
 });
 
@@ -779,17 +891,18 @@ test("ccstyle mode off restores native mouse input: no hover/click, wheel still 
 			const row = tui.previousLines.indexOf(hintLine) + 1;
 			const col = hintLine.indexOf("/ click") + 1;
 
-			// Baseline in on mode: click expands (frame rebuilds), double-click collapses,
-			// hover repaints.
+			// Baseline in on mode: press records, matching release collapses, hover repaints.
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
 			assert.equal(expandedToolId, "tool-1");
 			tui.doRender();
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
-			assert.equal(expandedToolId, "tool-1", "single click on expanded card does not collapse");
-			tui.handleInput(`\x1b[<0;${col};${row}m`);
-			await armExpandDoubleClick();
+			assert.equal(expandedToolId, "tool-1", "press alone does not collapse");
+			// 松手位置不同视为拖动选择，保持展开。
+			tui.handleInput(`\x1b[<0;${col + 4};${row}m`);
+			assert.equal(expandedToolId, "tool-1", "drag release keeps the card expanded");
 			tui.handleInput(`\x1b[<0;${col};${row}M`);
-			assert.equal(expandedToolId, null);
+			tui.handleInput(`\x1b[<0;${col};${row}m`);
+			assert.equal(expandedToolId, null, "single click collapses the expanded card");
 			tui.doRender();
 			const rendersBeforeHover = renderRequests;
 			tui.handleInput(`\x1b[<35;${col};${row}M`);

@@ -12,7 +12,6 @@ type AnyToolDefinition = ToolDefinition<any, any, any>;
 import { config } from "../extensions/config/config.ts";
 import claudeCodeStyleExtension, {
 	ExpandedToolIoView,
-	humanizeMcpToolName,
 	isMcpToolDefinition,
 	preservesOriginalRenderer,
 } from "../extensions/renderer/index.ts";
@@ -41,12 +40,18 @@ test("claude-code-style registers the write override at session_start", async ()
 	claudeCodeStyleExtension(pi as any);
 
 	// 加载阶段不注册 write override：此时其他扩展（如 pi-spark）尚未加载，
-	// 直接注册会与对方撞名。延迟到 session_start 后所有扩展已就绪再注册。
+	// 直接注册会与对方撞名。延后到 session_start 之后一拍，等所有扩展注册完再检测。
 	assert.deepEqual(
 		registeredTools.map((tool: any) => tool.name),
 		[],
 	);
 	await emit("session_start", {}, { mode: "print", hasUI: false });
+	assert.deepEqual(
+		registeredTools.map((tool: any) => tool.name),
+		[],
+	);
+	// 延后一拍：等所有扩展的 session_start 跑完，确认没有外部 write 后才注册。
+	await new Promise((resolve) => setTimeout(resolve, 0));
 	assert.deepEqual(
 		registeredTools.map((tool: any) => tool.name),
 		["write"],
@@ -205,15 +210,12 @@ test("expanded ccstyle tools use Pi's native background card", async () => {
 test("MCP detection, titles, details, and custom tools use the global wrapper", async () => {
 	const previousOutputLines = config.expandedOutputMaxLines;
 	config.expandedOutputMaxLines = 80;
-	assert.equal(isMcpToolDefinition({ label: "MCP: Files" }, "read_file"), true);
 	assert.equal(isMcpToolDefinition({}, "mcp__filesystem__read_file"), true);
-	assert.equal(isMcpToolDefinition({ description: "Model Context Protocol tool" }, "remote"), true);
-	assert.equal(
-		isMcpToolDefinition({ label: "Ordinary", description: "mentions MCP" }, "remote"),
-		false,
-	);
-	assert.equal(isMcpToolDefinition({ description: "not an MCP tool" }, "remote"), false);
-	assert.equal(humanizeMcpToolName("mcp__filesystem__read_file"), "Filesystem Read File");
+	// 名字里没有 mcp 片段时靠 adapter 的 label 判定
+	assert.equal(isMcpToolDefinition({ label: "MCP: read_file" }, "read_file"), true);
+	assert.equal(isMcpToolDefinition({ label: "read" }, "read"), false);
+	assert.equal(isMcpToolDefinition({}, "remote"), false);
+	assert.equal(isMcpToolDefinition({}, "github_search_code"), false);
 
 	const events = new Map<string, Function>();
 	claudeCodeStyleExtension(
@@ -235,7 +237,8 @@ test("MCP detection, titles, details, and custom tools use the global wrapper", 
 	try {
 		await events.get("session_start")?.({}, ctx);
 		for (const [name, expected] of [
-			["mcp__filesystem__read_file", "Filesystem Read File"],
+			// MCP 工具标题用真实工具名
+			["mcp__filesystem__read_file", "mcp__filesystem__read_file"],
 			["openai_custom_search", "Openai Custom Search"],
 			["custom_lookup", "Custom Lookup"],
 		] as const) {

@@ -36,7 +36,13 @@ import { showMoreHintText } from "./tool/show-more-hint.ts";
 import { countWriteDiffStats } from "./tool/diff/diff-renderer.ts";
 import { renderRichToolResult, type WriteExecutionMetadataStore } from "./tool/diff/index.ts";
 import { getMessageDisplayTheme } from "./tool/message-display.ts";
-import { fitToolCallSummary, humanizeToolLabel, toolCallSummary } from "./tool/names.ts";
+import { mcpToolTitle } from "./tool/mcp-title.ts";
+import {
+	fitToolCallSummary,
+	humanizeToolLabel,
+	renderToolSummary,
+	toolCallSummary,
+} from "./tool/names.ts";
 
 // 成功勾：亮绿 truecolor（与 message-display 一致）
 const BRIGHT_GREEN = "\x1b[38;2;80;220;100m";
@@ -94,31 +100,14 @@ type ToolExpandedBackgroundPatch = {
 	dispose: () => void;
 };
 
+/** rich diff 的两个入口（本处与 compact 的 paintCompactEditWrite）都靠 renderRichToolResult
+ * 返回 undefined 让位，这里只判断模式与工具名，避免多一个可能与让位不一致的 gate。 */
 export function shouldRenderRichDiff(
 	mode: CompactStyleMode,
 	toolName: string,
 	isError: boolean,
 ): boolean {
 	return mode === "on" && !isError && (toolName === "edit" || toolName === "write");
-}
-
-export function isMcpToolDefinition(definition: any, toolName: string): boolean {
-	const label = typeof definition?.label === "string" ? definition.label.trim() : "";
-	if (/^MCP(?::|$)/i.test(label)) return true;
-	if (toolName === "mcp" || /^mcp[_:-]|[_:-]mcp[_:-]/i.test(toolName)) return true;
-	if (label) return false;
-	const description = typeof definition?.description === "string" ? definition.description : "";
-	return /\bModel Context Protocol\b/i.test(description);
-}
-
-export function humanizeMcpToolName(toolName: string): string {
-	const words = toolName
-		.replace(/^mcp(?:[_:-]+)+/i, "")
-		.split(/[_:-]+/)
-		.filter(Boolean);
-	return words.length
-		? words.map((word) => word[0]!.toUpperCase() + word.slice(1)).join(" ")
-		: "MCP";
 }
 
 /** 排除名单内且自带 renderer 的工具保留原渲染。 */
@@ -225,15 +214,16 @@ function createCcstyleTool(
 	writeExecutionMetadata: WriteExecutionMetadataStore,
 ): any {
 	const toolName = originalTool.name;
-	const label = isMcpToolDefinition(originalTool, toolName)
-		? humanizeMcpToolName(toolName)
-		: originalTool.label || toolName;
+	const label = originalTool.label || toolName;
+	const defaultTitle = label === toolName ? humanizeToolLabel(label) : label;
+	// MCP 工具直接用 adapter 暴露的真实工具名，不做人性化
+	const title = mcpToolTitle({ toolName, definition: originalTool }) ?? defaultTitle;
 
 	return {
 		...originalTool,
 		renderShell: "self",
 		renderCall(args: any, theme: any, context: any) {
-			if (config.mode !== "on") {
+			if (config.mode === "off") {
 				return renderDefault(originalTool, "renderCall", [args, theme, context], String(toolName));
 			}
 
@@ -241,14 +231,18 @@ function createCcstyleTool(
 			const isPending =
 				visualState === "pending" ||
 				(!visualState && (context?.isPartial || context?.executionStarted));
-			if (isPending && context?.executionStarted) scheduleAnimation(context);
-			const rawIcon = isPending ? pendingIcon(toolName) : settledIcon(toolName, visualState);
-			const icon =
+			const animating = isPending && Boolean(context?.executionStarted);
+			if (animating) scheduleAnimation(context, { light: true });
+			const settledRawIcon = isPending ? "" : settledIcon(toolName, visualState);
+			const settledIconStyled =
 				visualState === "success"
-					? `${BRIGHT_GREEN}${rawIcon}${ANSI_FG_RESET}`
-					: theme.fg(toolIconColor(context), rawIcon);
+					? `${BRIGHT_GREEN}${settledRawIcon}${ANSI_FG_RESET}`
+					: theme.fg(toolIconColor(context), settledRawIcon);
+			// 逐帧 spinner：帧在 render() 内取，动画定时器只需 requestRender，
+			// 不再每次 tick 走 updateDisplay 把整张卡重建一遍。
+			const pendingIconStyled = () => theme.fg(toolIconColor(context), pendingIcon(toolName));
 			const summary = toolCallSummary(toolName, args, {
-				title: label === toolName ? humanizeToolLabel(label) : label,
+				title,
 				variant: "default",
 				cwd: context?.cwd,
 			});
@@ -270,10 +264,16 @@ function createCcstyleTool(
 			const extraStyled = writeStatsStyled || theme.fg("dim", summary.detail);
 			let cachedWidth: number | undefined;
 			let cachedLine: string | undefined;
+			let cachedIcon: string | undefined;
 			const expanded = Boolean(context?.expanded);
 			return {
 				render(width: number) {
-					if (cachedLine !== undefined && cachedWidth === width) return [cachedLine];
+					// 轻量 tick 只会 requestRender，靠这里续期，动画才能自维持。
+					if (animating) scheduleAnimation(context, { light: true });
+					const icon = isPending ? pendingIconStyled() : settledIconStyled;
+					if (cachedLine !== undefined && cachedWidth === width && cachedIcon === icon) {
+						return [cachedLine];
+					}
 					const viewportWidth = toolViewportWidth(width);
 					// 展开态贴左（外层 Box 已 pad 1）；折叠 self-shell 保留 1 格前导空格
 					const lead = expanded ? "" : " ";
@@ -283,15 +283,19 @@ function createCcstyleTool(
 					);
 					const mainWidth = Math.max(0, callWidth - visibleWidth(extraText));
 					cachedWidth = width;
+					cachedIcon = icon;
 					// 路径按最终可用宽度中间截断，避免整行二次截断隐藏文件名。
-					cachedLine = `${lead}${icon} ${theme.fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${extraStyled}`;
+					cachedLine = `${lead}${icon} ${renderToolSummary(summary, mainWidth, theme.fg.bind(theme))}${extraStyled}`;
 					return [truncateToWidth(cachedLine, viewportWidth, "")];
 				},
-				invalidate() {},
+				invalidate() {
+					cachedLine = undefined;
+					cachedIcon = undefined;
+				},
 			};
 		},
 		renderResult(result: any, options: any, theme: any, context: any) {
-			if (config.mode !== "on") {
+			if (config.mode === "off") {
 				return renderDefault(
 					originalTool,
 					"renderResult",
@@ -414,8 +418,9 @@ function shouldGloballyStyleTool(component: any, patch: GlobalToolRenderPatch): 
 	const builtInDefinition = component.builtInToolDefinition;
 	const definition = extensionDefinition ?? builtInDefinition;
 	const toolName = String(component.toolName || definition?.name || "");
+	// compact 也复用同一套 ccstyle call/result，避免折叠态工具卡回落到 Pi 原生样式。
 	const useCcstyle =
-		patch.mode() === "on" &&
+		patch.mode() !== "off" &&
 		!DEDICATED_RENDERER_TOOLS.has(toolName) &&
 		!preservesOriginalRenderer(extensionDefinition, toolName, builtInDefinition);
 	component[COMPONENT_TOOL_RENDER_MODE] = useCcstyle;
@@ -583,19 +588,27 @@ function installGlobalToolRendering(
 			return originalRender.call(this, width);
 		}
 		const cache = patch.paintCache;
-		const hit = cache?.get(this);
+		// A running partial tool owns a time-varying spinner. Light animation ticks
+		// request a repaint without invalidating the component, so settled-content
+		// caching must not intercept those paints.
+		const cacheable = !(this.executionStarted && this.isPartial);
+		const hit = cacheable ? cache?.get(this) : undefined;
 		if (hit && toolPaintMatches(hit, this, width)) return hit.lines;
 		const lines = originalRender.call(this, width);
-		cache?.set(this, {
-			width,
-			expanded: Boolean(this.expanded),
-			isPartial: Boolean(this.isPartial),
-			result: this.result,
-			args: this.args,
-			callHover: isToolCallHovered(this.toolCallId),
-			ioHover: ioHoverOf(this),
-			lines,
-		});
+		if (cacheable) {
+			cache?.set(this, {
+				width,
+				expanded: Boolean(this.expanded),
+				isPartial: Boolean(this.isPartial),
+				result: this.result,
+				args: this.args,
+				callHover: isToolCallHovered(this.toolCallId),
+				ioHover: ioHoverOf(this),
+				lines,
+			});
+		} else {
+			cache?.delete(this);
+		}
 		return lines;
 	};
 	patch.invalidatePaint = function (this: any): void {

@@ -27,6 +27,7 @@ import {
 	getMessageDisplayTheme,
 	setMessageDisplayTheme,
 } from "../extensions/renderer/tool/message-display.ts";
+import { setToolMouseTui } from "../extensions/renderer/mouse/scroll.ts";
 import { setToolTuiFullscreen } from "../extensions/renderer/tool/show-more-hint.ts";
 import {
 	DEFAULT_TOOL_DISPLAY_CONFIG,
@@ -76,10 +77,19 @@ function fence(lines: string[] | string): string {
 	return `\`\`\`text\n${body}\n\`\`\``;
 }
 
+/** Braille loading 帧与耗时都由挂钟推导；渲染期间固定时钟，保证快照可复现。 */
+const SNAPSHOT_NOW = 0;
+
 function renderLines(component: any, width = WIDTH): string[] {
-	return component
-		.render(width)
-		.map((line: string) => stripAnsi(String(line)).replace(/\s+$/g, ""));
+	const realNow = Date.now;
+	Date.now = () => SNAPSHOT_NOW;
+	try {
+		return component
+			.render(width)
+			.map((line: string) => stripAnsi(String(line)).replace(/\s+$/g, ""));
+	} finally {
+		Date.now = realNow;
+	}
 }
 
 function renderBlock(component: any, width = WIDTH): string {
@@ -94,7 +104,7 @@ function header(modeLabel: string, modeKey: string): string {
 	return `# 工具 Render 示例（ccstyle · ${modeLabel}）
 
 > 由真实 renderer 驱动生成的示例快照，已剥离 ANSI。
-> 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧会随时间变化。
+> 实际 TUI 中包含状态色、背景色和 hover 高亮；Braille loading 帧与耗时快照取固定时钟。
 > 当前版本：ccstyle ${version} · mode=\`${modeKey}\`。
 > renderer 变更后请运行 \`npm run docs:tool-render\` 同步本文件。
 `;
@@ -277,8 +287,8 @@ async function generateDefault() {
 					fence([longHint]),
 					[
 						"- hover `click to show more` 时由 muted 切换为白色 text。",
-						"- 点击提示可展开工具；展开后仍受 `expandedPreviewMaxLines` 限制。",
-						"- 展开态下 diff 行数提示为 warning 色。",
+						"- 点击提示展开工具，展开态 diff 全量显示，不再截断。",
+						"- 折叠态 diff 行数提示为 muted 色。",
 					].join("\n"),
 					"write 新建 / 覆盖：",
 					fence([...renderLines(writeCreate), "", ...renderLines(writeOver)]),
@@ -367,21 +377,41 @@ async function generateDefault() {
 	// 8. MCP / custom
 	{
 		const blocks: string[] = [];
+		// 网关：沿用 mcp-adapter 自己的 `mcp <动作> <目标>` 风格
+		blocks.push(
+			...renderLines(
+				succeed(
+					tool("mcp", "mcp0", { tool: "github_search_code", args: { query: "pi" } }),
+					"1 hit",
+				),
+			),
+		);
+		blocks.push(...renderLines(succeed(tool("mcp", "mcp0b", { server: "chrome-devtools" }), "29 tools")));
+		blocks.push(
+			...renderLines(succeed(tool("mcp", "mcp0d", { search: "screenshot", regex: true }), "2 tools")),
+		);
+		blocks.push(...renderLines(succeed(tool("mcpScript", "mcp0c", { code: "emit(1)" }), "1 line")));
+		// 命名空间工具：标题用 adapter 暴露的真实工具名
 		blocks.push(
 			...renderLines(
 				succeed(
 					tool(
-						"mcp__github__search",
+						"mcp__github_search_code",
 						"mcp1",
 						{ query: "pi" },
-						{ name: "mcp__github__search", label: "MCP: Github Search" },
+						{ name: "mcp__github_search_code", label: "MCP: search_code" },
 					),
 					"1 hit",
 				),
 			),
 		);
 		blocks.push(...renderLines(succeed(tool("customTranslate", "c1", { text: "hi" }), "你好")));
-		chunks.push(section("8. MCP / 自定义工具", fence(blocks)));
+		chunks.push(
+			section(
+				"8. MCP / 自定义工具",
+				`${fence(blocks)}\n\n网关的标题沿用 mcp-adapter 自己的 \`mcp <动作> <目标>\` 风格（\`list\` / \`search\` / \`describe\` / \`call\` / \`connect\` / \`status\`），内层工具入参跟其他载荷一样用 dim 接在后面；开关类参数（\`regex\` / \`includeSchemas\`）作为 dim 附注。具体工具的标题用 adapter 暴露的真实工具名（如 \`mcp__github_search_code\`），入参先走字段链（\`query\` / \`url\` / \`command\` / \`path\` …），字段链认不出的键（命名空间代理的 \`tool\`+\`args\`、第三方自定义键）回退完整入参 JSON；入口两个跟普通工具一样人性化：\`MCP\` / \`MCP Script\`。超过卡片宽度与 Input clip 的部分尾部截断。`,
+			),
+		);
 	}
 
 	// 9. tool grouping
@@ -537,12 +567,13 @@ async function generateCompact() {
 				content: [{ type: "text", text: "done" }],
 			} as unknown as AssistantMessage);
 
-			// 展开预览：setExpanded(true) 后恢复原生渲染（摘要行 + Thinking + 工具卡）。
+			// 展开预览：setExpanded(true) 后助手文本原生渲染，thinking 与工具卡进面板。
 			const expandMsg = {
 				role: "assistant",
 				timestamp: 3,
 				content: [
-					{ type: "thinking", thinking: "check" },
+					{ type: "thinking", thinking: "check the diff first" },
+					{ type: "text", text: "checking the diff" },
 					{ type: "toolCall", id: "x1", name: "bash", arguments: { command: "npm test" } },
 					{ type: "toolCall", id: "x2", name: "read", arguments: { path: "a.ts" } },
 				],
@@ -566,19 +597,20 @@ async function generateCompact() {
 				section(
 					"1. 消息折叠摘要行",
 					[
-						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）：",
+						"含 toolCall 的 assistant 折叠为单行摘要（运行时长 + 工具计数）。独立渲染下摘要跟在正文后（如下）；挂进 transcript 容器后，摘要行是回合末尾的独立尾行组件：",
 						fence([...activeLines, ...doneLines]),
-						"展开（Ctrl+O / 点击摘要行）后恢复原生渲染：",
+						"展开（Ctrl+O / 点击摘要行）后助手文本按原生渲染，thinking 与工具卡装进 userMessageBg 面板：",
 						fence(expandedLines),
 						[
 							"- 进行中：`Running... · <时长>`；结束后：`Ran for <时长>`。",
+							"- 摘要行挂在 transcript 容器内回合末尾（工具卡/diff 之下）：运行中恒在视口底缘可写区刷新，回合结束就地落成 `Ran for` 随 transcript 进入 scrollback；新工具卡追加时自动归位，不会越出回合。",
 							"- 时长 = max(thinking, 回合挂钟)；thinking 冻结后挂钟继续抬高。",
 							"- 工具按消息内首次出现顺序；`read` 按非空路径去重。",
 							"- `edit` / `write` **不进**摘要计数（各自独立单行）。",
 							"- Agent/Task 调用只进摘要；tool 卡始终折叠。底部面板走独立 widget。",
-							"- abort/error/length 状态行挂在摘要外层，不被折叠吞掉。",
+							"- abort/error/length 状态行挂在回合内摘要之上，不被折叠吞掉。",
 							"- 行末 `click to show more`；摘要永不换行。",
-							"- 展开后：摘要行隐藏，thinking 与工具卡恢复原生渲染，子卡片背景更深且带内部 padding。",
+							"- 展开后：摘要行隐藏，助手文本按原生渲染（不进面板），thinking 与工具卡进面板；展开的 thinking 再套一层更深的内卡，工具卡只用外卡底色。",
 						].join("\n"),
 						"纯函数口径（`buildMessageSummary`）：",
 						fence([
@@ -649,16 +681,48 @@ async function generateCompact() {
 			// write metadata for collapsed stats if needed
 			store.set("cw1", { fileExistedBeforeWrite: false });
 
-			chunks.push(
-				section(
-					"3. edit / write 独立行",
-					[
-						"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
-						fence([...renderLines(edit), ...renderLines(write)]),
-						"展开 edit：",
-					].join("\n\n"),
-				),
-			);
+			// 挂进 transcript 容器后的真实回合布局：摘要尾行在 diff 之下、回合末尾，
+			// 运行中恒在可写视口底缘；回合结束后原地落成 Ran for 进 scrollback。
+			const chat = new Container() as any;
+			setToolMouseTui({ children: [chat] });
+			let tailLayout: string[] = [];
+			try {
+				const tailMsg = {
+					role: "assistant",
+					timestamp: 2,
+					content: [
+						{ type: "text", text: "updated sample.ts" },
+						{ type: "toolCall", id: "te1", name: "edit", arguments: { path: "sample.ts" } },
+					],
+				} as unknown as AssistantMessage;
+				const anchorC = new AssistantMessageComponent(tailMsg, true) as any;
+				const editT = succeed(tool("edit", "te1", { path: "sample.ts" }), undefined, {
+					diff: editDiff,
+				});
+				chat.addChild(anchorC);
+				chat.addChild(editT);
+				anchorC.updateContent(tailMsg);
+				// 下一条可见文本结束本回合，尾行就地翻成 Ran for。
+				const finMsg = {
+					role: "assistant",
+					content: [{ type: "text", text: "task done" }],
+				} as unknown as AssistantMessage;
+				const fin = new AssistantMessageComponent(finMsg, true) as any;
+				chat.addChild(fin);
+				fin.updateContent(finMsg);
+				tailLayout = renderLines(chat).filter((l) => l.trim());
+			} finally {
+				setToolMouseTui(null);
+			}
+
+			const bodyIntro = [
+				"edit/write 标题行带统计；折叠预览与展开正文复用 mode=on 的 Diff 配置：",
+				fence([...renderLines(edit), ...renderLines(write)]),
+				"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
+				fence(tailLayout),
+				"展开 edit：",
+			].join("\n\n");
+			chunks.push(section("3. edit / write 独立行", bodyIntro));
 			edit.setExpanded(true);
 			chunks[chunks.length - 1] = section(
 				"3. edit / write 独立行",
@@ -670,6 +734,8 @@ async function generateCompact() {
 						})),
 						...renderLines(write),
 					]),
+					"挂进 transcript 容器后的回合布局——摘要尾行落在 diff 之下、回合末尾：",
+					fence(tailLayout),
 					"展开 edit：",
 					fence(renderLines(edit, 46)),
 				].join("\n\n"),

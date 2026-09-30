@@ -1,26 +1,16 @@
 <p align="center">
-  <img src="./assets/readme/hero.svg" width="100%">
-</p>
-
-<p align="center">
-  <a href="https://pi.dev/packages?name=pi-cc-extensions"><img alt="Pi package catalog" src="https://img.shields.io/badge/Pi-package-58B7FF?style=flat-square"></a>
-  <a href="https://www.npmjs.com/package/pi-cc-extensions"><img alt="npm version" src="https://img.shields.io/npm/v/pi-cc-extensions?style=flat-square&color=66E3C4"></a>
-  <a href="#兼容性"><img alt="Node.js 22.19 or newer" src="https://img.shields.io/badge/Node.js-%E2%89%A522.19-66E3C4?style=flat-square"></a>
-</p>
-
-<p align="center">
-  类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
-</p>
-
-<p align="center">
   <strong>简体中文</strong> · <a href="./README.en.md">English</a>
 </p>
 
----
+# pi-cc-extensions
+
+> 类 Claude Code TUI 输出风格，并融入了一些个人喜好，和一些实用小功能。
 
 ## 界面预览
 
-https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498
+<a href="https://github.com/user-attachments/assets/6c858000-fdad-43f9-957f-4d0278648498"><img src="./assets/readme/preview.webp" alt="pi-cc-extensions 界面预览" width="100%"></a>
+
+点击封面播放演示视频
 
 ## 快速开始
 
@@ -39,18 +29,20 @@ pi install git:github.com/minuque/pi-cc-extensions
 | --------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------- |
 | Claude Code UI        | 工具摘要、折叠展开、rich edit/write diff，以及`on` / `compact` / `off` 三种模式 | `/ccstyle`                                      |
 | Markdown 增强         | Mermaid 图、提示框、URL 链接化等                                                        | 自动生效                                        |
-| Fullscreen mode       | 工具卡/group 单击展开、双击收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
+| Fullscreen mode       | 工具卡/group 单击展开与收起、预览、hover 高亮、回到底部按钮                 | `TUIMODE=fullscreen` 或 `--tui-mode fullscreen` |
 | 配置面板              | `Style / Features / UI / Diff / Thinking / Footer` 六页签                       | `/ccstyle`                                      |
 | 上下文检查            | 查看上下文占用，并预览 System prompt、Memory、Skills、Tools definition 和消息内容 | `/context`                                      |
 | Session/Subagent 引用 | 搜索并注入历史 Session 或现有 SubAgent 的有效上下文                             | `@`                                             |
 | 状态栏                | 显示：模型、上下文、缓存、费用、git并适配 @narumitw/pi-usage 实时显示额度；git/缓存图标可关 Nerd Font | `/ccstyle`                              |
 | 主题                  | 随包提供 CC Dark、CC Light、Claude Warm Dark 主题                               | `/theme`                                        |
 
+`on` / `compact` 两种模式的渲染样例：[默认模式](./docs/tool-render-examples-default.md) · [紧凑模式](./docs/tool-render-examples-compact.md)
+
 ## 配置
 
 `/ccstyle` 的行为由 `~/.pi/agent/pi-cc-extensions.json` 配置：
 
-```js
+```jsonc
 {
   // style
   "mode": "on",                            // on / compact / off
@@ -58,7 +50,7 @@ pi install git:github.com/minuque/pi-cc-extensions
 
   // features
   "enableSessionReference": true,          // @ session 引用
-  "enableSubagentAutocomplete": true,      // @ subagent 补全与委派提示
+  "enableSubagentAutocomplete": true,      // @subagent:[name] 补全与委派提示
   "enableContextCommand": true,            // /context 上下文检查
   "enableAgentSummary": true,              // 每回合工具摘要
   "enableWorkingMessage": true,            // Working... 底部 token/耗时
@@ -67,8 +59,8 @@ pi install git:github.com/minuque/pi-cc-extensions
   // ui
   "expandedInputMaxLines": 5,              // 展开工具卡 Input 可见行数，超出在末行显示展开提示
   "expandedOutputMaxLines": 10,            // 展开工具卡 Output 可见行数，超出在末行显示展开提示
-  "expandedPreviewMaxLines": 40,           // 展开 diff/TaskList 正文最大行数
-  "inputClip": 100,                        // 工具摘要 path/command 折叠字符数
+  "expandedPreviewMaxLines": 40,           // 展开 TaskList 正文最大行数（展开 diff 始终全量）
+  "inputClip": 0,                          // 工具摘要 path/command 折叠字符数；0 = 按可用宽度
   "showStartupHeader": true,               // 启动头（logo + tips）开关
   "scrollStepLines": 3,                    // fullscreen 滚轮步进
 
@@ -96,9 +88,11 @@ pi install git:github.com/minuque/pi-cc-extensions
 }
 ```
 
-> **Fullscreen**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；展开后 Input/Output 超行时，末行 `… +N more lines • click to show more` 打开全量预览, 双击展开面板收起。
->
-> **建议**：`markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
+> [!TIP]
+> **全屏模式**：单击 `click to show more` 展开工具卡、思考、Skill 和 compact 摘要；工具卡展开态 diff 全量显示，Input/Output 超行时末行 `… +N more lines • click to show more` 打开全量预览，单击收起（卡内拖动为选中文本）。
+
+> [!NOTE]
+> **Mermaid 渲染**：建议把 `markdown.mermaid` 设为 `final`（`~/.pi/agent/settings.json` 或 `/settings` 面板的 Mermaid diagrams 选项）。默认 `streaming` 逐帧重绘，`final` 渲染最终版更稳定。
 
 ## 本地开发
 
@@ -126,3 +120,7 @@ npm run typecheck
 ## 致谢
 
 - Rich diff 改编自 [`MasuRii/pi-tool-display`](https://github.com/MasuRii/pi-tool-display)（MIT）；详见 [`extensions/renderer/tool/diff/ATTRIBUTION.md`](./extensions/renderer/tool/diff/ATTRIBUTION.md)。
+
+## 许可证
+
+[MIT](./LICENSE) © minuque

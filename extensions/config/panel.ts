@@ -38,6 +38,7 @@ import {
 	EXPANDED_PREVIEW_MAX_LINES_VALUES,
 	formatExcludeRenderers,
 	getCompactThinkingConfig,
+	pickInputClip,
 	pickPositiveInt,
 	pickPositiveNumber,
 	SCROLL_STEP_LINES_VALUES,
@@ -403,7 +404,7 @@ export async function showCcstylePanel(
 			id: "inputClip",
 			label: "Input clip",
 			description:
-				"Max characters for path/command/name in single and grouped tool summaries. Enter to type a custom value.",
+				"Max characters for path/command/name in single and grouped tool summaries; 0 fits available width. Enter to type a custom value.",
 			currentValue: String(config.inputClip),
 			values: [...INPUT_CLIP_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -485,8 +486,7 @@ export async function showCcstylePanel(
 		const expandedMaxSetting = {
 			id: "expandedPreviewMaxLines",
 			label: "Expanded max lines",
-			description:
-				"Max diff/TaskList body lines when expanded. Tool Input/Output use the two settings above.",
+			description: "Max TaskList body lines when expanded. Expanded diffs show every line.",
 			currentValue: String(config.expandedPreviewMaxLines),
 			values: [...EXPANDED_PREVIEW_MAX_LINES_VALUES],
 			submenu: (_current: string, closeSubmenu: (selected?: string) => void) =>
@@ -556,7 +556,7 @@ export async function showCcstylePanel(
 		const subagentAutocompleteToggle = featureToggleSetting(
 			"enableSubagentAutocomplete",
 			"Subagent autocomplete",
-			"@ subagent mentions suggest agents and inject delegation instructions. Next restart applies.",
+			"@subagent:[name] mentions suggest agents and inject delegation instructions. Next restart applies.",
 			"Subagent autocomplete disabled.",
 			config.enableSubagentAutocomplete,
 		);
@@ -668,7 +668,7 @@ export async function showCcstylePanel(
 			switch (id) {
 				case "inputClip":
 					updateConfig({
-						inputClip: pickPositiveInt(value, DEFAULT_CONFIG.inputClip, 8, 500),
+						inputClip: pickInputClip(value),
 					});
 					inputClipSetting.currentValue = String(config.inputClip);
 					break;

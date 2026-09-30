@@ -7,15 +7,19 @@ import {
 	type Component,
 } from "@earendil-works/pi-tui";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
-import { isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
+import { getToolMouseTui } from "../mouse/scroll.ts";
+import { mcpToolTitle } from "./mcp-title.ts";
+import { collapseHintText, isToolTuiFullscreen, showMoreHintText } from "./show-more-hint.ts";
 import { stripAnsi, stripBackgroundAnsi, stripLeadingStatusIcon } from "../../utils/ansi-text.ts";
 import { walkComponentTree } from "../../utils/component-tree.ts";
 import {
 	fitToolCallSummary,
 	humanizeToolLabel,
+	renderToolSummary,
 	toolCallSummary,
 	type ToolCallSummary,
 } from "./names.ts";
+import { toolViewportWidth } from "./result.ts";
 import {
 	patchRegistry,
 	TOOL_GROUPING_GENERATION_KEY as GENERATION_KEY,
@@ -41,6 +45,19 @@ type Patch = {
 
 function toolName(tool: any): string {
 	return String(tool?.toolName ?? tool?.toolDefinition?.name ?? "tool");
+}
+
+/**
+ * 标题：MCP 工具用 adapter 暴露的真实工具名，其余回退工具名人性化。
+ */
+function toolTitle(tool: any): string {
+	const name = toolName(tool);
+	return (
+		mcpToolTitle({
+			toolName: name,
+			definition: tool?.toolDefinition ?? tool?.builtInToolDefinition,
+		}) ?? humanizeToolLabel(name)
+	);
 }
 
 function isGroupable(value: unknown): boolean {
@@ -89,16 +106,36 @@ function scheduleGroupAnimation(patch: Patch): void {
 	patch.animationTimer = setTimeout(() => {
 		patch.animationTimer = null;
 		if (!patch.active) return;
+		let needsRender = false;
 		for (const group of patch.groups) {
 			if (
 				(group.children as any[]).some(
 					(tool) => tool?.executionStarted && status(tool) === "pending",
 				)
-			)
+			) {
 				group.invalidate();
+				// 分组卡不是 ToolExecutionComponent：它的 invalidate() 不会请求渲染，
+				// 不补这一步 spinner 只在别人渲染时才跳帧（并行工具下表现为卡顿/冻结）。
+				needsRender = true;
+			}
 		}
+		if (needsRender) requestAnimationRender(patch);
 	}, TOOL_LOADING_INTERVAL_MS);
 	patch.animationTimer.unref?.();
+}
+
+/** 借用子工具卡的 ui 请求一帧；子卡缺失时回退到扩展持有的 TUI 槽。 */
+function requestAnimationRender(patch: Patch): void {
+	for (const group of patch.groups) {
+		const ui = (group.children as any[]).find(
+			(tool) => typeof tool?.ui?.requestRender === "function",
+		)?.ui;
+		if (ui) {
+			ui.requestRender();
+			return;
+		}
+	}
+	getToolMouseTui()?.requestRender?.();
 }
 
 function visibleLines(lines: string[]): string[] {
@@ -149,6 +186,7 @@ export function paddedBackgroundRow(
 
 function toolSummary(tool: any): ToolCallSummary {
 	return toolCallSummary(toolName(tool), tool?.args ?? {}, {
+		title: toolTitle(tool),
 		variant: "grouping",
 		cwd: tool?.cwd,
 	});
@@ -326,8 +364,7 @@ export class ToolGroupComponent extends Container {
 			})
 			.join(` ${fg("dim", "•")} `);
 		const names = new Set(this.children.map(toolName));
-		const label =
-			names.size === 1 ? humanizeToolLabel(toolName(this.children[0])) : "Multiple Tools";
+		const label = names.size === 1 ? toolTitle(this.children[0]) : "Multiple Tools";
 		const overall: ToolStatus = counts.error ? "error" : counts.pending ? "pending" : "success";
 		if (
 			(this.children as any[]).some((tool) => tool?.executionStarted && status(tool) === "pending")
@@ -336,12 +373,13 @@ export class ToolGroupComponent extends Container {
 		const overallColor = overall === "pending" ? "accent" : overall;
 		const nameList = names.size > 1 ? ` ${fg("dim", `• ${toolNameList(this.children)}`)}` : "";
 		// 圆点保持 dim；hover 只高亮可点击文字。
-		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", showMoreHintText())}`;
+		const hintText = this._expanded ? collapseHintText() : showMoreHintText();
+		const hint = `${fg("dim", "•")} ${fg(this.hintHovered ? "text" : "dim", hintText)}`;
 		const lines = [
 			"",
 			truncateToWidth(
 				` ${fg(overallColor, "●")} ${label}: ${countText}${nameList} ${hint}`,
-				width,
+				toolViewportWidth(width),
 				"…",
 			),
 		];
@@ -374,11 +412,13 @@ export class ToolGroupComponent extends Container {
 				const summary = toolSummary(tool);
 				const prefix = ` ${fg("dim", branch)} ${fg(color, statusIcon(toolStatus))} `;
 				const detail = fg("dim", summary.detail);
-				const mainWidth = Math.max(0, width - visibleWidth(prefix) - visibleWidth(detail));
+				// 与单工具卡标题同宽，宽屏右侧留白一致
+				const rowWidth = toolViewportWidth(width);
+				const mainWidth = Math.max(0, rowWidth - visibleWidth(prefix) - visibleWidth(detail));
 				lines.push(
 					truncateToWidth(
-						`${prefix}${fg("toolTitle", fitToolCallSummary(summary, mainWidth))}${detail}`,
-						width,
+						`${prefix}${renderToolSummary(summary, mainWidth, fg)}${detail}`,
+						rowWidth,
 						"",
 					),
 				);

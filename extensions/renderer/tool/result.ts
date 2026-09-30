@@ -3,17 +3,24 @@ import { inspect } from "node:util";
 import { config } from "../../config/config.ts";
 import { showMoreHintText } from "./show-more-hint.ts";
 import { TOOL_LOADING_INTERVAL_MS, toolLoadingIcon } from "../../utils/tool-loading-icon.ts";
+import { getToolMouseTui } from "../mouse/scroll.ts";
 import { sanitizeToolResultText } from "../../utils/tool-result-sanitize.ts";
 
 const TOOL_VIEWPORT_WIDTH_RATIO = 0.8;
+/** 宽屏右侧留白上限：比例留白超过这么多列时改用固定留白。 */
+const TOOL_VIEWPORT_MAX_GUTTER = 24;
 
 export function toolViewportWidth(width: number): number {
-	return Math.max(1, Math.floor(width * TOOL_VIEWPORT_WIDTH_RATIO));
+	return Math.max(
+		1,
+		Math.floor(width * TOOL_VIEWPORT_WIDTH_RATIO),
+		Math.floor(width) - TOOL_VIEWPORT_MAX_GUTTER,
+	);
 }
 
 /** 与默认工具结果相同的一级缩进包装。子组件只扣始终加上的 1 列；↳ 行多出的 2 列由 truncateToWidth 吃掉。 */
 export function insetComponent(component: any): any {
-	return {
+	const wrapped: Record<string, unknown> = {
 		render: (width: number) =>
 			component.render(Math.max(1, width - 1)).map((line: string) => {
 				const nestedMarker = line.replace(/^((?:\x1b\[[0-?]*[ -/]*[@-~])*)↳/, "$1  ↳");
@@ -21,6 +28,11 @@ export function insetComponent(component: any): any {
 			}),
 		invalidate: () => component.invalidate?.(),
 	};
+	// 内层 diff 声明的 remainder 行：鼠标层只能看到这个包装组件。
+	if (typeof component.isCollapsedHintLine === "function") {
+		wrapped.isCollapsedHintLine = (line: string) => component.isCollapsedHintLine(line);
+	}
+	return wrapped;
 }
 
 function rawTextFromResult(result: any): string {
@@ -70,6 +82,7 @@ const activeAnimationContexts = new Set<any>();
 let sharedAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearAnimation(context: any) {
+	if (context?.state) context.state.ccstyleAnimationLight = false;
 	if (!context?.state?.ccstyleAnimationScheduled) return;
 	context.state.ccstyleAnimationScheduled = false;
 	activeAnimationContexts.delete(context);
@@ -82,6 +95,7 @@ function clearAnimation(context: any) {
 export function clearAllAnimations() {
 	for (const ctx of activeAnimationContexts) {
 		ctx.state.ccstyleAnimationScheduled = false;
+		ctx.state.ccstyleAnimationLight = false;
 	}
 	activeAnimationContexts.clear();
 	if (sharedAnimationTimer) {
@@ -90,8 +104,15 @@ export function clearAllAnimations() {
 	}
 }
 
-export function scheduleAnimation(context: any, intervalMs = TOOL_LOADING_INTERVAL_MS) {
+export function scheduleAnimation(
+	context: any,
+	options: { light?: boolean; intervalMs?: number } = {},
+) {
 	const state = (context.state ??= {});
+	// light：调用方自己在 render() 内重取 loading 帧，定时器只需请求重绘；
+	// 否则定时器走 context.invalidate()（compact 摘要等靠它重建）。
+	// 每次调用都按本次 options 写入，避免上次 light 残留后非 light 调用仍跳过 invalidate。
+	state.ccstyleAnimationLight = Boolean(options.light);
 	if (state.ccstyleAnimationScheduled) return;
 	state.ccstyleAnimationScheduled = true;
 	activeAnimationContexts.add(context);
@@ -100,11 +121,16 @@ export function scheduleAnimation(context: any, intervalMs = TOOL_LOADING_INTERV
 			sharedAnimationTimer = null;
 			const contexts = Array.from(activeAnimationContexts);
 			activeAnimationContexts.clear();
+			const tui = getToolMouseTui();
+			const canRequestRender = typeof tui?.requestRender === "function";
+			let lightFrames = false;
 			for (const ctx of contexts) {
 				ctx.state.ccstyleAnimationScheduled = false;
-				ctx.invalidate?.();
+				if (ctx.state.ccstyleAnimationLight && canRequestRender) lightFrames = true;
+				else ctx.invalidate?.();
 			}
-		}, intervalMs);
+			if (lightFrames) tui.requestRender();
+		}, options.intervalMs ?? TOOL_LOADING_INTERVAL_MS);
 	}
 }
 

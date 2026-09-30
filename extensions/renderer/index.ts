@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { ToolExecutionComponent, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { CompactThinkingController } from "../feature/compact-thinking.ts";
 import { installToolGrouping, type ToolGroupingHooks } from "./tool/grouping.ts";
 import {
@@ -12,7 +12,7 @@ import {
 	installToolExpandedBackground,
 	type DefaultModeHooks,
 } from "./default-mode.ts";
-import { isLazyProxyTui } from "../utils/fullscreen-detect.ts";
+import { installMainScreenDoRenderPatch, isLazyProxyTui } from "../utils/fullscreen-detect.ts";
 import { showCcstylePanel } from "../config/panel.ts";
 import {
 	config,
@@ -30,7 +30,7 @@ import {
 	teardownToolMouseInteraction,
 	TOOL_MOUSE_DISABLE,
 } from "./mouse/interaction.ts";
-import { getToolMouseTui } from "./mouse/scroll.ts";
+import { getToolMouseTui, noteNewTranscriptItem } from "./mouse/scroll.ts";
 import { setHoveredToolGroup, setHoveredToolIo } from "./mouse/hover.ts";
 import { clearAllAnimations } from "./tool/result.ts";
 import {
@@ -169,6 +169,8 @@ export default function (
 		// 渲染层（工具样式/分组）是原型与组件级 patch，fullscreen 官方布局
 		// 同样渲染这些组件，因此两种模式都安装。
 		if (installation) return installation;
+		// regular 主屏的差分渲染补丁：视口上方变化不再触发清回滚的 fullRender。
+		installMainScreenDoRenderPatch();
 		const defaultMode = installDefaultMode(writeExecutionMetadata);
 		const toolGrouping = installToolGrouping(() => config.mode === "on");
 		const compactMode = installCompactMode({
@@ -242,6 +244,13 @@ export default function (
 		}
 	});
 
+	// 回到底部按钮的累计计数：离开底部期间每落一块内容 +1。
+	pi.on("message_start", async (event) => {
+		const role = event.message?.role;
+		// toolResult 不单独成块（渲染在工具卡内），跳过以免与工具卡重复计数。
+		if (role === "user" || role === "assistant" || role === "custom") noteNewTranscriptItem();
+	});
+
 	pi.on("tool_execution_end", async (event) => {
 		if (config.mode !== "compact") return;
 		// Agent 等工具收尾后延迟刷新，让 compact-thinking 先落最终态。
@@ -252,10 +261,18 @@ export default function (
 	});
 
 	pi.on("session_start", async (event, ctx) => {
-		// 延迟到 session_start 注册 write override：加载阶段 getAllTools 不可用且其他扩展
-		// 尚未注册工具，无法检测外部 write 所有者（如 pi-spark），直接注册会与对方撞名。
-		// session_start 时所有扩展已加载完毕，installWriteOverride 内部会检测并让位。
-		installWriteOverride(pi, writeExecutionMetadata);
+		// 延后一拍再确认 write 归属：其他扩展同样在各自的 session_start 里注册工具，
+		// 本 handler 执行时可能还看不到对方，此时注册会与对方撞名（注册表先到先得），
+		// 对方的 write 会被静默丢弃。等所有 session_start 跑完，检测结果才是权威的。
+		setTimeout(() => {
+			installWriteOverride(pi, writeExecutionMetadata, (owner) => {
+				// 冲突可见：对方接管 write 后本插件不再提供富 diff。
+				ctx.ui?.notify?.(
+					`ccstyle: write 工具已被 ${owner.path || owner.source} 占用，富 diff 已让位`,
+					"warning",
+				);
+			});
+		}, 0);
 		const hooks = ensureTuiInstallation(ctx);
 		// 鼠标交互独立于渲染层：fullscreen 渲染层让位（hooks undefined）但
 		// 工具点击/回到底部适配仍需安装；保持在渲染层安装之后以维持原顺序。
@@ -296,6 +313,7 @@ export default function (
 
 	pi.on("tool_execution_start", async (_event, ctx) => {
 		installation?.toolGrouping.setTheme(ctx.ui.theme);
+		noteNewTranscriptItem();
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
@@ -344,11 +362,13 @@ export default function (
 // ---- 对外导出：入口/测试实际消费的符号 ----
 export { getCompactThinkingConfig } from "../config/config.ts";
 export {
-	humanizeMcpToolName,
-	isMcpToolDefinition,
 	preservesOriginalRenderer,
 	shouldRenderRichDiff,
 } from "./default-mode.ts";
+export {
+	isMcpToolDefinition,
+	mcpToolTitle,
+} from "./tool/mcp-title.ts";
 export {
 	ExpandedToolIoView,
 	ExpandedToolResultText,

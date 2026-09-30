@@ -9,6 +9,7 @@ import {
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import { Container, Spacer } from "@earendil-works/pi-tui";
 import { installToolGrouping, ToolGroupComponent } from "../extensions/renderer/tool/grouping.ts";
+import { humanizeToolLabel, toolCallSummary } from "../extensions/renderer/tool/names.ts";
 
 initTheme("dark");
 const ui = { theme: { fg: (_color: string, text: string) => text }, requestRender() {} } as any;
@@ -406,11 +407,123 @@ test("settled collapsed groups reuse the last render until inputs change", () =>
 		assert.strictEqual(group.render(160), collapsed, "collapsed output is memoized again");
 
 		parent.addChild(started("grep", "cached-grep", { pattern: "todo" }));
-		const grown = group.render(160);
+		const grown = group.render(200);
 		assert.notStrictEqual(grown, collapsed);
 		assert.match(grown.join("\n"), /running/);
 		assert.match(grown.join("\n"), /<success>1<\/success> done/);
 		assert.match(grown.join("\n"), /<error>1<\/error> failed/);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+function plain(lines: string[]): string[] {
+	return lines
+		.map((line) => line.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, ""))
+		.filter((line) => line.trim());
+}
+
+test("powershell 分组行显示具体命令（issue 26）", () => {
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		parent.addChild(started("powershell", "ps-1", { command: "Get-ChildItem -Recurse" }));
+		parent.addChild(started("powershell", "ps-2", { command: "$env:FOO = 'bar'" }));
+		const group = parent.children[0] as ToolGroupComponent;
+		const collapsed = plain(group.render(120));
+		assert.match(collapsed[0], /^ ● PowerShell: 2 running/);
+		assert.match(collapsed[1], /PowerShell Get-ChildItem -Recurse$/);
+		assert.match(collapsed[2], /PowerShell \$env:FOO = 'bar'$/);
+	} finally {
+		hooks.shutdown();
+	}
+});
+
+test("default 与 grouping 共用同一份摘要取值链", () => {
+	const cases: Array<[string, any, string]> = [
+		["powershell", { command: "npm test" }, "PowerShell npm test"],
+		["bash", { command: "npm test" }, "Bash npm test"],
+		["grep", { pattern: "foo|bar", path: "extensions/" }, 'Grep "foo|bar" in extensions/'],
+		["ffgrep", { pattern: "hero", path: "assets/" }, 'Ffgrep "hero" in assets/'],
+		["source_check", { claim: "README 用 webp" }, "Source Check README 用 webp"],
+		["web_search", { queries: ["a", "b"] }, "Web Search a (+1)"],
+		["web_search", { queries: ["a"] }, "Web Search a"],
+		["fetch_content", { urls: ["https://a", "https://b"] }, "Fetch Content https://a (+1)"],
+		["get_search_content", { responseId: "rid-1" }, "Get Search Content rid-1"],
+		["Agent", { description: "review code" }, "Agent review code"],
+	];
+	for (const [name, args, expected] of cases) {
+		for (const variant of ["default", "grouping"] as const) {
+			assert.equal(
+				toolCallSummary(name, args, { variant, cwd: process.cwd() }).main,
+				expected,
+				`${name} / ${variant}`,
+			);
+		}
+	}
+});
+
+test("humanizeToolLabel 保留品牌大小写", () => {
+	assert.equal(humanizeToolLabel("powershell"), "PowerShell");
+	assert.equal(humanizeToolLabel("bash"), "Bash");
+	// MCP 入口两个的缩写固定写法
+	assert.equal(humanizeToolLabel("mcp"), "MCP");
+	assert.equal(humanizeToolLabel("mcpScript"), "MCP Script");
+});
+
+test("collapsed group rows share the single-card viewport width", async () => {
+	const { config } = await import("../extensions/config/config.ts");
+	const { toolViewportWidth } = await import("../extensions/renderer/tool/result.ts");
+	const { visibleWidth } = await import("@earendil-works/pi-tui");
+	const previousInputClip = config.inputClip;
+	config.inputClip = 0;
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const long = `echo ${"x".repeat(400)}`;
+		for (const id of ["a", "b"]) {
+			const bash = tool("bash", id, { command: long });
+			bash.updateResult({ content: [], isError: false });
+			parent.addChild(bash);
+		}
+		const rows = (parent.children[0] as ToolGroupComponent)
+			.render(200)
+			.filter((line: string) => /[├└]/.test(line));
+		assert.equal(rows.length, 2);
+		for (const row of rows) assert.equal(visibleWidth(row), toolViewportWidth(200));
+	} finally {
+		config.inputClip = previousInputClip;
+		hooks.shutdown();
+	}
+});
+
+test("group headers share the single-card viewport limit without stretching short titles", async () => {
+	const { toolViewportWidth } = await import("../extensions/renderer/tool/result.ts");
+	const { visibleWidth } = await import("@earendil-works/pi-tui");
+	const hooks = installToolGrouping(() => true);
+	try {
+		const parent = new Container() as any;
+		const command = `echo ${"x".repeat(400)}`;
+		parent.addChild(started("read", "header-read", { path: "x".repeat(400) }));
+		const bash = tool("bash", "header-bash", { command });
+		bash.updateResult({ content: [], isError: false });
+		parent.addChild(bash);
+		const grep = tool("grep", "header-grep", { pattern: "x".repeat(400) });
+		grep.updateResult({ content: [], isError: true });
+		parent.addChild(grep);
+		const group = parent.children[0] as ToolGroupComponent;
+		for (const expanded of [false, true]) {
+			group.setExpanded(expanded);
+			const fullHeader = group.render(400)[1];
+			for (const width of [60, 120, 200]) {
+				const header = group.render(width)[1];
+				assert.equal(
+					visibleWidth(header),
+					Math.min(visibleWidth(fullHeader), toolViewportWidth(width)),
+				);
+				if (width === 200) assert.equal(header, fullHeader);
+			}
+		}
 	} finally {
 		hooks.shutdown();
 	}
